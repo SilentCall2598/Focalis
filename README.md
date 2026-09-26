@@ -66,7 +66,7 @@ All code lives under `io.github.silentcall2598.focalis`:
 | `render` | Rendering subsystem |
 | `render.lifecycle` | Frame stage model and the hooks that dispatch it |
 | `render.state` | OpenGL context information |
-| `shader` | Shader support. So far only shaderpack loading (`shader.pack`), nothing renders yet |
+| `shader` | Shader support. So far shaderpack loading (`shader.pack`) and program compiling (`shader.program`), nothing renders yet |
 | `diagnostics` | Environment and OpenGL reports, crash report section, diagnostic features |
 
 ## License
