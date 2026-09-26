@@ -71,4 +71,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Optional local pack for ShaderPackSmokeTest, e.g. ./gradlew test -PsmokeTestShaderPack=<folder or zip>
+    providers.gradleProperty("smokeTestShaderPack").orNull?.let {
+        systemProperty("focalis.smokeTestShaderPack", file(it).absolutePath)
+    }
 }
