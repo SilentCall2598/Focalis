@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 import io.github.silentcall2598.focalis.Focalis;
 import io.github.silentcall2598.focalis.feature.FeatureState;
 import io.github.silentcall2598.focalis.feature.FeatureStatus;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
@@ -51,9 +52,9 @@ import java.util.TreeMap;
 import java.util.function.Supplier;
 
 /**
- * Development QA mode. It checks the GL state around Focalis's world-end work, drives one scenario from client
- * ticks and writes probe.json for tools/qa. It only exists when {@code focalis.qa.scenario} is set, so normal play
- * never runs any of it.
+ * Development QA mode. It checks the GL state around Focalis's world-end work and the order of WORLD START and END,
+ * drives one scenario from client ticks and writes probe.json for tools/qa. It only exists when
+ * {@code focalis.qa.scenario} is set, so normal play never runs any of it.
  */
 public final class QaProbe {
 
@@ -89,6 +90,7 @@ public final class QaProbe {
     private final QaReport report;
     private final List<QaStep> steps;
     private final Monitor monitor = new Monitor();
+    private final WorldPhaseTracker worldPhases;
 
     private int ticks;
     private int stepIndex;
@@ -143,6 +145,7 @@ public final class QaProbe {
         this.glContext = glContext;
         this.report = new QaReport(settings.scenario);
         this.steps = settings.scenario.steps();
+        this.worldPhases = new WorldPhaseTracker(report.worldPhases);
         report.environment.focalisVersion = Focalis.VERSION;
         report.environment.fullscreenAllowed = settings.fullscreenAllowed;
         report.environment.startedAt = Instant.now().toString();
@@ -157,7 +160,17 @@ public final class QaProbe {
         LOGGER.warn("Development QA mode is on, running scenario '{}'. It is not meant for normal play.",
                 settings.scenario.id);
         lifecycle.register(RenderStage.FRAME, OWNER, this::onFrame);
-        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> beforeFocalisWorld());
+        // WORLD START only feeds the phase bookkeeping. Counting world passes, GL checks, state changes and the
+        // injected failure all belong to the end of the world pass.
+        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> {
+            if (finished || brokenReason != null) {
+                return;
+            }
+            if (phase == RenderPhase.END) {
+                beforeFocalisWorld();
+            }
+            worldPhases.dispatchStarted(phase, report.frames.total);
+        });
         MinecraftForge.EVENT_BUS.register(this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::writeOnExit, "Focalis QA report"));
         write(false);
@@ -165,7 +178,12 @@ public final class QaProbe {
 
     /** Registers the listener that has to run after the features' own. */
     public void installAfter(RenderLifecycle lifecycle) {
-        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> afterFocalisWorld());
+        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> {
+            worldPhases.dispatchFinished();
+            if (phase == RenderPhase.END) {
+                afterFocalisWorld();
+            }
+        });
     }
 
     @SubscribeEvent
@@ -348,6 +366,7 @@ public final class QaProbe {
         if (world != null && world != currentWorld) {
             report.worldSessions++;
             report.postPass.renderedPerSession.add(0);
+            worldPhases.newSession();
             ticksInWorld = 0;
         }
         currentWorld = world;
@@ -740,6 +759,17 @@ public final class QaProbe {
                         + " frames changed promised state");
         report.check("probe-healthy", report.probeErrors.isEmpty(),
                 report.probeErrors.isEmpty() ? "no probe errors" : report.probeErrors.get(0));
+        // Every scenario renders the world, so the Mixin hook has to have fired.
+        QaReport.WorldPhases phases = report.worldPhases;
+        report.check("world-start-hook", phases.starts > 0 && RenderHooks.worldStart().isAvailable(),
+                phases.starts + " WORLD START from the Mixin hook, hook " + phases.startHook);
+        report.check("world-phases-paired", phases.pairs > 0 && phases.pairs == phases.starts
+                        && phases.pairs == phases.ends && !worldPhases.waitingForEnd(),
+                phases.starts + " starts, " + phases.ends + " ends, " + phases.pairs + " pairs, "
+                        + phases.repeatedStarts + " repeated starts, " + phases.endsWithoutStart
+                        + " ends without a start");
+        report.check("post-pass-only-at-world-end", phases.passesOutsideEnd == 0 && phases.repeatedPasses == 0,
+                phases.passesOutsideEnd + " outside WORLD END, " + phases.repeatedPasses + " repeated in one END");
         if (!settings.scenario.expectsFeatureFailure()) {
             List<String> failed = new ArrayList<>();
             for (QaReport.FeatureEntry feature : report.features) {
@@ -772,6 +802,7 @@ public final class QaProbe {
         for (FeatureStatus status : features.get()) {
             report.features.add(new QaReport.FeatureEntry(status.featureId(), status.state().name(), status.detail()));
         }
+        report.worldPhases.startHook = RenderHooks.worldStart().state().name();
         QaReport.Frames frames = report.frames;
         frames.world = worldFrames;
         frames.averageFrameMs = frameIntervals == 0 ? 0 : frameNanos / 1e6 / frameIntervals;
@@ -861,6 +892,7 @@ public final class QaProbe {
         @Override
         public void passRendered() {
             frameRendered = true;
+            worldPhases.passRendered(report.frames.total);
         }
 
         @Override

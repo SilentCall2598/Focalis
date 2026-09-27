@@ -20,6 +20,8 @@ skies, video settings, and compatibility tooling for large modpacks.
 - On the first rendered frame, logs the OpenGL driver, version, limits, video memory and the capabilities
   future systems depend on.
 - Adds a Focalis line with feature states to crash reports.
+- Marks the start of each world pass with a Mixin in `EntityRenderer.renderWorldPass`, so future rendering systems
+  can hook in there. It only reports the boundary and doesn't change what is drawn.
 - Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
 - Provides an experimental, off-by-default `shaders` feature. It is the first step of shader support and
   only runs Focalis's own test program (`shaders/focalis_post.vsh` and `.fsh`) as a single post-process pass
@@ -33,6 +35,8 @@ skies, video settings, and compatibility tooling for large modpacks.
 
 - Minecraft 1.12.2
 - Forge 14.23.5.2860 recommended. Focalis currently accepts 14.23.5.2847 or newer.
+- [MixinBooter](https://github.com/CleanroomMC/MixinBooter) 10.7 or a later 10.x release, installed separately.
+  Only 10.7 is tested. Keep its release file name (`!mixinbooter-<version>.jar`) so Forge loads it before Focalis.
 - Java 8
 - Client only. Servers don't need Focalis installed.
 
@@ -72,12 +76,13 @@ All code lives under `io.github.silentcall2598.focalis`:
 
 | Package | Responsibility |
 | --- | --- |
-| `core` | Startup order, system wiring and shared logging |
+| `core` | Startup order, system wiring, shared logging and the coremod that hands the Mixin config to MixinBooter |
 | `config` | `config/focalis.cfg` access |
 | `feature` | Toggleable features, availability checks and failure isolation |
 | `compat` | Detection of other mods Focalis must coexist with |
 | `render` | Rendering subsystem |
 | `render.lifecycle` | Frame stage model and the hooks that dispatch it |
+| `mixin` | Mixins. They only report render boundaries to `render.lifecycle` |
 | `render.state` | OpenGL context information |
 | `shader` | Shader support. So far shaderpack loading (`shader.pack`), program compiling (`shader.program`) and the experimental post pass (`shader.post`) |
 | `diagnostics` | Environment and OpenGL reports, crash report section, diagnostic features |

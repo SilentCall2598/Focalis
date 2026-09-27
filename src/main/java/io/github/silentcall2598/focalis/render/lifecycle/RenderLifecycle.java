@@ -4,13 +4,12 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 
 import io.github.silentcall2598.focalis.core.FocalisLog;
 
-import java.util.EnumMap;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Every listener belongs to an owner, which is a feature id or an internal name containing a colon. If a listener
@@ -25,15 +24,19 @@ public final class RenderLifecycle {
         void onListenerFailure(String owner, RenderStage stage, RenderPhase phase, Throwable error);
     }
 
-    private final Map<RenderStage, List<Registration>> listeners = new EnumMap<>(RenderStage.class);
+    private static final Registration[] NONE = new Registration[0];
+
+    // One array per stage, indexed by ordinal. Changes replace the arrays, so a dispatch walks its own snapshot
+    // without allocating.
+    private volatile Registration[][] listeners;
     private final Set<RenderStage> dispatchedStages = EnumSet.noneOf(RenderStage.class);
     private volatile FailureHandler failureHandler = (owner, stage, phase, error) -> {
     };
 
     public RenderLifecycle() {
-        for (RenderStage stage : RenderStage.values()) {
-            listeners.put(stage, new CopyOnWriteArrayList<>());
-        }
+        Registration[][] empty = new Registration[RenderStage.values().length][];
+        Arrays.fill(empty, NONE);
+        listeners = empty;
     }
 
     public void setFailureHandler(FailureHandler failureHandler) {
@@ -49,7 +52,7 @@ public final class RenderLifecycle {
         return dispatchedStages.contains(stage);
     }
 
-    public void register(RenderStage stage, String owner, RenderStageListener listener) {
+    public synchronized void register(RenderStage stage, String owner, RenderStageListener listener) {
         Objects.requireNonNull(stage, "stage");
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(listener, "listener");
@@ -57,23 +60,32 @@ public final class RenderLifecycle {
             FocalisLog.LOGGER.warn("'{}' registered a listener for render stage {}, which no hook dispatches yet."
                     + " It will not be called.", owner, stage);
         }
-        listeners.get(stage).add(new Registration(owner, listener));
+        Registration[][] updated = listeners.clone();
+        Registration[] current = updated[stage.ordinal()];
+        Registration[] grown = Arrays.copyOf(current, current.length + 1);
+        grown[current.length] = new Registration(owner, listener);
+        updated[stage.ordinal()] = grown;
+        listeners = updated;
     }
 
-    public void removeOwner(String owner) {
-        for (List<Registration> stageListeners : listeners.values()) {
-            stageListeners.removeIf(registration -> {
+    public synchronized void removeOwner(String owner) {
+        Registration[][] updated = listeners.clone();
+        for (int i = 0; i < updated.length; i++) {
+            List<Registration> kept = new ArrayList<>();
+            for (Registration registration : updated[i]) {
                 if (registration.owner.equals(owner)) {
                     registration.active = false;
-                    return true;
+                } else {
+                    kept.add(registration);
                 }
-                return false;
-            });
+            }
+            updated[i] = kept.toArray(NONE);
         }
+        listeners = updated;
     }
 
     public void dispatch(RenderStage stage, RenderPhase phase, float partialTicks) {
-        for (Registration registration : listeners.get(stage)) {
+        for (Registration registration : listeners[stage.ordinal()]) {
             // The iteration snapshot may still hold listeners removed earlier in this dispatch.
             if (!registration.active) {
                 continue;

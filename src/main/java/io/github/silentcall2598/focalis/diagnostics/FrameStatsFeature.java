@@ -90,8 +90,11 @@ public final class FrameStatsFeature extends Feature {
             }
         }
 
+        // Counted at END only, so each world pass counts once.
         void onWorld(RenderStage stage, RenderPhase phase, float partialTicks) {
-            worldPasses++;
+            if (phase == RenderPhase.END) {
+                worldPasses++;
+            }
         }
 
         private void report(long elapsedNanos) {

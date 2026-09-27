@@ -10,7 +10,7 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 public enum RenderStage {
     /** One whole client frame, including the world, hand, HUD and screens. */
     FRAME,
-    /** The whole world pass, before the first-person hand. */
+    /** One whole world pass, from the start of EntityRenderer.renderWorldPass to right before the hand. */
     WORLD,
     /** Sky, sun, moon and stars. */
     SKY,
