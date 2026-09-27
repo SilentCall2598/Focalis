@@ -31,8 +31,9 @@ public final class ForgeRenderEventBridge {
         lifecycle.dispatch(RenderStage.FRAME, phase, event.renderTickTime);
     }
 
-    // Fires at the end of the world pass, right before the first-person hand. Forge has no event for the start of
-    // the world pass, so WORLD only gets END.
+    // WORLD END. Fires near the end of EntityRenderer.renderWorldPass, right before the first-person hand. Forge has
+    // no event for the start of the world pass, so WORLD START comes from a Mixin through RenderHooks instead. END
+    // stays on this event for now because the post pass was tested against it.
     // LOWEST only puts this after higher-priority listeners of the same event. Other LOWEST listeners and anything
     // drawn outside the event can still come later.
     @SubscribeEvent(priority = EventPriority.LOWEST)

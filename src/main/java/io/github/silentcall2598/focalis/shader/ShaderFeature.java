@@ -7,6 +7,7 @@ import io.github.silentcall2598.focalis.config.ConfigSection;
 import io.github.silentcall2598.focalis.feature.Availability;
 import io.github.silentcall2598.focalis.feature.Feature;
 import io.github.silentcall2598.focalis.feature.FeatureContext;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
@@ -95,7 +96,12 @@ public final class ShaderFeature extends Feature {
             return;
         }
         logger.info("Running the experimental post pass from shaderpack '{}'", packName);
-        context.addRenderListener(RenderStage.WORLD, (stage, phase, partialTicks) -> onWorldEnd(program));
+        context.addRenderListener(RenderStage.WORLD, (stage, phase, partialTicks) -> {
+            // The pass needs the finished world image, so it only runs at the end of the world pass.
+            if (phase == RenderPhase.END) {
+                onWorldEnd(program);
+            }
+        });
     }
 
     private void onWorldEnd(PreparedProgram source) {

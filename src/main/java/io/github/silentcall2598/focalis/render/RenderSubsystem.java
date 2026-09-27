@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.render;
 
 import io.github.silentcall2598.focalis.core.FocalisLog;
 import io.github.silentcall2598.focalis.render.lifecycle.ForgeRenderEventBridge;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
@@ -34,6 +35,7 @@ public final class RenderSubsystem {
     // Call during pre-init, before features register render listeners.
     public void install() {
         ForgeRenderEventBridge.install(lifecycle);
+        RenderHooks.install(lifecycle);
         lifecycle.register(RenderStage.FRAME, LISTENER_OWNER, this::onFrame);
     }
 

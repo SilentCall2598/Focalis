@@ -35,9 +35,12 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `post-process-failure` | The pass throws after changing its state. The feature must fail cleanly, the state must be restored on that same frame and the capture and program must be deleted. |
 | `post-process-bad-pack` | A pack that doesn't compile. Rendering stays vanilla, nothing is created and the feature stays active. |
 | `world-reload` | Leaves and rejoins twice. The pass keeps running and the capture isn't recreated. |
+| `world-lifecycle` | Test pack on, with a pause screen and a rejoin. Start/end pairs match the world frames in both sessions and the pass runs once in every WORLD END. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
-state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log.
+state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
+also fails when the WORLD START hook never fires, when a WORLD START doesn't get exactly one WORLD END before the
+next one, or when the post pass renders anywhere but inside a WORLD END or more than once in one.
 
 ## Output
 
@@ -45,7 +48,7 @@ Everything goes under `build/`, which Git ignores.
 
 - `build/qa/latest/report.json` and `summary.md` cover the whole run. `source` records the commit, branch and
   whether the working tree had uncommitted or untracked files. With `-Obfuscated`, `artifact` has the SHA-256 of
-  the release jar the client loaded.
+  the release jar the client loaded. It stays null unless every scenario found the same jar.
 - `build/qa/latest/<scenario>/probe.json` has the probe's detailed results for one scenario
 - `build/qa/latest/<scenario>/screenshots/` has named screenshots such as `post-smoke-f3.png`
 - `build/qa/latest/<scenario>/client.log` and `gradle.log`
@@ -55,10 +58,14 @@ Everything goes under `build/`, which Git ignores.
 ## How it works
 
 The runner passes `-PqaScenario`, `-PqaGameDir` and `-PqaOutputDir` to Gradle, which point `runClient` at the
-QA game folder and set the `focalis.qa.*` system properties. Without those properties no QA code runs at all.
+QA game folder and set the `focalis.qa.*` system properties. Startup always checks for a scenario property.
+Without one no probe is created, so there are no QA listeners, GL checks, scenario steps or screenshots, and
+nothing is written.
 
-In QA mode the probe (`diagnostics.qa`) registers one world-end listener before the features and one after, so it
-can record and compare the GL state around their work and drain `glGetError` on both sides. It drives the
+In QA mode the probe (`diagnostics.qa`) registers one world listener before the features and one after. At WORLD
+END it records and compares the GL state around their work and drains `glGetError` on both sides. At WORLD START
+it only records the order of the phases and makes no GL calls. WORLD START comes from the Mixin hook at the start
+of `EntityRenderer.renderWorldPass` and WORLD END from Forge's `RenderWorldLastEvent`. It drives the
 scenario from client ticks with vanilla calls: it creates or loads the QA world, sets the HUD flags that F1 and
 F3 toggle, opens GUI screens, turns the camera, leaves and rejoins, and saves named screenshots between frames
 just like F2. Window resizes are the one thing it asks the runner for, through a request in `probe.json`.

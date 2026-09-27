@@ -15,7 +15,8 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
         // Lets clients with Focalis join servers that don't have it.
         acceptableRemoteVersions = "*",
         // 2847 is the Forge build in the RetroFuturaGradle dev environment. 2860 is still the release target.
-        dependencies = "required-after:forge@[14.23.5.2847,)"
+        // MixinBooter 10.7 is the version Focalis is built and tested against.
+        dependencies = "required-after:forge@[14.23.5.2847,);required-after:mixinbooter@[10.7,)"
 )
 public final class Focalis {
 

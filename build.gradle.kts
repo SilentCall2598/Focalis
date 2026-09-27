@@ -63,6 +63,39 @@ listOf(tasks.jar, tasks.named<Jar>("sourcesJar")).forEach { task ->
     }
 }
 
+repositories {
+    maven {
+        // MixinBooter
+        name = "CleanroomMC"
+        url = uri("https://maven.cleanroommc.com")
+        mavenContent {
+            includeGroup("zone.rong")
+        }
+    }
+}
+
+// Mixin comes from MixinBooter, which players install next to Focalis. It is never bundled.
+val mixinBooter = "zone.rong:mixinbooter:10.7"
+// Has the Mixin annotation processor write the refmap and feeds its mappings to reobfJar.
+modUtils.enableMixins(mixinBooter, "mixins.focalis.refmap.json")
+
+// The coremod queues the Mixin config with MixinBooter. The jar still holds the @Mod. runClient runs the dev jar,
+// where RFG's launcher finds the coremod through this same manifest.
+tasks.jar.configure {
+    manifest {
+        attributes(
+            "FMLCorePlugin" to "io.github.silentcall2598.focalis.core.FocalisLoadingPlugin",
+            "FMLCorePluginContainsFMLMod" to "true"
+        )
+    }
+}
+
+// runObfClient loads mods from its mods folder like a real install. Forge loads coremods there in file name
+// order, so MixinBooter gets its release name. Otherwise the Focalis coremod comes first and can't load.
+tasks.named<Copy>("prepareObfModsFolder") {
+    rename("^(mixinbooter-.+\\.jar)$", "!$1")
+}
+
 // tools/qa/run-qa.ps1 sets these. QA runs get their own game folder, so the normal run folder is never touched.
 val qaScenario = providers.gradleProperty("qaScenario")
 if (qaScenario.isPresent) {
@@ -82,6 +115,11 @@ if (qaScenario.isPresent) {
 }
 
 dependencies {
+    implementation(mixinBooter)
+    // The annotation processor needs ASM, which MixinBooter doesn't include. 5.2 is what Forge 1.12.2 ships.
+    annotationProcessor(mixinBooter)
+    annotationProcessor("org.ow2.asm:asm-debug-all:5.2")
+
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

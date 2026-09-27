@@ -34,6 +34,7 @@ final class QaReport {
     final Environment environment = new Environment();
     final Frames frames = new Frames();
     int worldSessions;
+    final WorldPhases worldPhases = new WorldPhases();
     final PostPass postPass = new PostPass();
     final List<FeatureEntry> features = new ArrayList<>();
     final GlErrors glErrors = new GlErrors();
@@ -120,6 +121,35 @@ final class QaReport {
         double maxFrameMs;
         double averageFocalisWorldEndMs;
         double maxFocalisWorldEndMs;
+    }
+
+    // WORLD START comes from the Mixin hook and WORLD END from Forge's RenderWorldLastEvent.
+    static final class WorldPhases {
+        int starts;
+        int ends;
+        int pairs;
+        // A START while the previous one still waited for its END.
+        int repeatedStarts;
+        int endsWithoutStart;
+        // Post passes rendered anywhere but a WORLD END, or more than once in the same one.
+        int passesOutsideEnd;
+        int repeatedPasses;
+        final List<Integer> pairsPerSession = new ArrayList<>();
+        final List<PhaseProblem> problems = new ArrayList<>();
+    }
+
+    static final class PhaseProblem {
+        final int frame;
+        final int starts;
+        final int ends;
+        final String problem;
+
+        PhaseProblem(int frame, int starts, int ends, String problem) {
+            this.frame = frame;
+            this.starts = starts;
+            this.ends = ends;
+            this.problem = problem;
+        }
     }
 
     static final class PostPass {

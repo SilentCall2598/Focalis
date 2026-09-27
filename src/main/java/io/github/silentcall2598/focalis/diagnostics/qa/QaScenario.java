@@ -241,6 +241,40 @@ public enum QaScenario {
             r.check("pass-ran-every-session", everySession, "rendered per session " + r.postPass.renderedPerSession);
             r.check("no-skips", r.postPass.skips.isEmpty(), "skips " + r.postPass.skips);
         }
+    },
+
+    WORLD_LIFECYCLE("world-lifecycle",
+            "Test pack on. Every WORLD START from the Mixin hook needs one WORLD END and the pass only runs at END,"
+                    + " also behind a screen and after a rejoin.") {
+        @Override
+        List<QaStep> steps() {
+            List<QaStep> steps = enterWorld();
+            steps.add(screenshot("lifecycle-world"));
+            steps.addAll(screenShot("lifecycle-pause", "pause"));
+            steps.add(leaveWorld());
+            steps.add(QaStep.waitTicks(20));
+            steps.add(joinWorld());
+            steps.add(QaStep.waitTicks(20));
+            steps.add(screenshot("lifecycle-rejoined"));
+            steps.add(QaStep.waitTicks(60));
+            return steps;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkShadersActive(r);
+            QaReport.WorldPhases phases = r.worldPhases;
+            // World frames are counted at END, so a START that counted too would break this.
+            r.check("pairs-match-world-frames", phases.pairs == r.frames.world,
+                    phases.pairs + " start/end pairs, " + r.frames.world + " world frames");
+            boolean everySession = phases.pairsPerSession.size() == 2;
+            for (int pairs : phases.pairsPerSession) {
+                everySession &= pairs > 0;
+            }
+            r.check("pairs-every-session", everySession, "pairs per session " + phases.pairsPerSession);
+            checkEveryFrameRendered(r);
+            r.check("screenshots", r.screenshots.size() == 3, r.screenshots.size() + " of 3 saved");
+        }
     };
 
     static final String SHADERS = ShaderFeature.ID;

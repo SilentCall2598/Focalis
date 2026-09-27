@@ -44,6 +44,7 @@ $Scenarios = [ordered]@{
     'post-process-failure'           = @{ Shaders = $true; Pack = 'focalis-depth-view' }
     'post-process-bad-pack'          = @{ Shaders = $true; Pack = 'focalis-broken' }
     'world-reload'                   = @{ Shaders = $true; Pack = 'focalis-depth-view' }
+    'world-lifecycle'                = @{ Shaders = $true; Pack = 'focalis-depth-view' }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.
@@ -125,6 +126,45 @@ function Get-ArtifactInfo {
         Select-Object -First 1
     if (-not $jar) { return $null }
     return [ordered]@{ file = $jar.Name; sha256 = (Get-FileHash -Algorithm SHA256 $jar.FullName).Hash.ToLowerInvariant() }
+}
+
+# Each scenario stages its own copy of the release jar. The run only has one when every scenario found a jar and
+# they are all the same.
+function Get-RunArtifact($Results) {
+    $artifacts = New-Object System.Collections.Generic.List[object]
+    foreach ($result in @($Results)) {
+        if (-not $result.artifact) { return $null }
+        $artifacts.Add($result.artifact)
+    }
+    $hashes = @($artifacts | ForEach-Object { $_.sha256 } | Select-Object -Unique)
+    if ($artifacts.Count -eq 0 -or $hashes.Count -ne 1) { return $null }
+    return [ordered]@{ file = $artifacts[0].file; sha256 = $hashes[0] }
+}
+
+# Stops a process and everything started under it, children first. A child can't be older than its parent, so a
+# reused process id never pulls in an unrelated process. Returns how many processes were stopped.
+function Stop-ProcessTree([int]$RootId) {
+    $all = @(Get-CimInstance Win32_Process)
+    $root = $all | Where-Object { $_.ProcessId -eq $RootId } | Select-Object -First 1
+    if (-not $root) { return 0 }
+    $tree = New-Object System.Collections.Generic.List[object]
+    $parents = New-Object System.Collections.Generic.Queue[object]
+    $parents.Enqueue($root)
+    while ($parents.Count -gt 0) {
+        $parent = $parents.Dequeue()
+        foreach ($process in $all) {
+            if ($process.ParentProcessId -eq $parent.ProcessId -and $process.ProcessId -ne $parent.ProcessId -and
+                $process.CreationDate -ge $parent.CreationDate -and -not $tree.Contains($process)) {
+                $tree.Add($process)
+                $parents.Enqueue($process)
+            }
+        }
+    }
+    for ($i = $tree.Count - 1; $i -ge 0; $i--) {
+        Stop-Process -Id $tree[$i].ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    Stop-Process -Id $RootId -Force -ErrorAction SilentlyContinue
+    return $tree.Count + 1
 }
 
 function Get-QaClient {
@@ -261,6 +301,7 @@ function Invoke-Scenario([string]$Name) {
     $lastStep = ''
     $lastWrite = $null
     $lastWriteSeen = Get-Date
+    $treeStopped = 0
     try {
         while (-not $gradle.HasExited) {
             if ((Get-Date) -gt $deadline) {
@@ -306,6 +347,17 @@ function Invoke-Scenario([string]$Name) {
             Stop-QaClient
             $gradle.WaitForExit(60000) | Out-Null
         }
+        # Last resort. Only the cmd.exe started above and whatever runs under it are stopped.
+        if (-not $gradle.HasExited) {
+            Write-Warning "$Name`: Gradle still hasn't exited, stopping the processes this scenario started"
+            if (-not $threadDump) {
+                $dumpFile = Join-Path $out 'client-threads.txt'
+                if (Save-ThreadDump $dumpFile) { $threadDump = "$Name/client-threads.txt" }
+            }
+            Stop-QaClient
+            $treeStopped = Stop-ProcessTree $gradle.Id
+            $gradle.WaitForExit(15000) | Out-Null
+        }
     }
     $seconds = [Math]::Round(((Get-Date) - $started).TotalSeconds, 1)
 
@@ -329,6 +381,8 @@ function Invoke-Scenario([string]$Name) {
             detail = $(if ($stalled) { "client stopped responding, thread dump: $threadDump" } else { 'kept responding' }) })
     $checks.Add([ordered]@{ name = 'client-exited-cleanly'; passed = ($gradle.HasExited -and $gradle.ExitCode -eq 0)
             detail = "Gradle exit code $(if ($gradle.HasExited) { $gradle.ExitCode } else { 'none' })" })
+    $checks.Add([ordered]@{ name = 'gradle-exited-by-itself'; passed = ($treeStopped -eq 0)
+            detail = $(if ($treeStopped -gt 0) { "had to stop $treeStopped processes this scenario started" } else { 'no processes had to be stopped' }) })
     $checks.Add([ordered]@{ name = 'probe-report'; passed = ($null -ne $probe -and $probe.status -eq 'finished')
             detail = $(if ($probe) { "status $($probe.status)" } else { 'probe.json missing' }) })
     $checks.Add([ordered]@{ name = 'log-clean'; passed = ($logProblems.Count -eq 0)
@@ -357,8 +411,13 @@ function Invoke-Scenario([string]$Name) {
         unexpectedLogLines = $logProblems
         screenshots       = $screenshots
         numbers           = $(if ($probe) {
+                $phases = $probe.worldPhases
                 [ordered]@{
                     worldFrames      = $probe.frames.world
+                    worldStarts      = $phases.starts
+                    worldEnds        = $phases.ends
+                    startEndPairs    = $phases.pairs
+                    phaseProblems    = $phases.repeatedStarts + $phases.endsWithoutStart + $phases.passesOutsideEnd + $phases.repeatedPasses
                     renderedFrames   = $probe.postPass.renderedFrames
                     skips            = $probe.postPass.skips
                     captures         = @($probe.postPass.captures).Count
@@ -431,11 +490,9 @@ $report = [ordered]@{
     task        = $(if ($Obfuscated) { 'runObfClient' } else { 'runClient' })
     source      = $source
 }
-# Only runObfClient tests a release jar. Each scenario stages its own copy, so they have to agree.
+# Only runObfClient tests a release jar.
 if ($Obfuscated) {
-    $staged = @($results | Where-Object { $_.artifact } | ForEach-Object { $_.artifact })
-    $hashes = @($staged | ForEach-Object { $_.sha256 } | Select-Object -Unique)
-    $report.artifact = $(if ($hashes.Count -eq 1) { [ordered]@{ file = $staged[0].file; sha256 = $hashes[0] } } else { $null })
+    $report.artifact = Get-RunArtifact $results
 }
 $report.host = [ordered]@{
     os         = [Environment]::OSVersion.VersionString
@@ -452,17 +509,17 @@ $summary.Add('')
 $dirtyText = $(if ($null -eq $source.dirty) { 'unknown' } elseif ($source.dirty) { 'uncommitted changes' } else { 'clean' })
 $summary.Add("Source: $(if ($source.head) { $source.head } else { 'unknown' }) on $(if ($source.branch) { $source.branch } else { 'no branch' }), $dirtyText")
 if ($Obfuscated) {
-    $summary.Add("Release jar SHA-256: $(if ($report.artifact) { $report.artifact.sha256 } else { 'unknown or differed between scenarios' })")
+    $summary.Add("Release jar SHA-256: $(if ($report.artifact) { $report.artifact.sha256 } else { 'unknown, a scenario found no jar or the jars differed' })")
 }
 $summary.Add('')
-$summary.Add('| Scenario | Result | World frames | Rendered | Mismatches | GL errors | Captures | Seconds |')
-$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
+$summary.Add('| Scenario | Result | World frames | Start/end pairs | Phase problems | Rendered | Mismatches | GL errors | Captures | Seconds |')
+$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($result in $results) {
     $n = $result.numbers
     if ($n) {
-        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.renderedFrames) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.renderedFrames) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
     } else {
-        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | $($result.durationSeconds) |")
     }
 }
 foreach ($result in $results) {

@@ -41,6 +41,31 @@ class RenderLifecycleTest {
     }
 
     @Test
+    void listenerGetsBothPhasesOfItsStage() {
+        lifecycle.register(RenderStage.WORLD, "a", (stage, phase, partialTicks) -> calls.add(stage + ":" + phase));
+
+        lifecycle.dispatch(RenderStage.WORLD, RenderPhase.START, 0F);
+        lifecycle.dispatch(RenderStage.WORLD, RenderPhase.END, 0F);
+
+        assertEquals(Arrays.asList("WORLD:START", "WORLD:END"), calls);
+    }
+
+    @Test
+    void listenerAddedDuringDispatchWaitsForTheNextOne() {
+        lifecycle.register(RenderStage.FRAME, "a", (stage, phase, partialTicks) -> {
+            calls.add("a");
+            if (calls.size() == 1) {
+                lifecycle.register(RenderStage.FRAME, "late", (s, p, t) -> calls.add("late"));
+            }
+        });
+
+        lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
+        lifecycle.dispatch(RenderStage.FRAME, RenderPhase.END, 0F);
+
+        assertEquals(Arrays.asList("a", "a", "late"), calls);
+    }
+
+    @Test
     void failingListenerDetachesOnlyItsOwner() {
         lifecycle.register(RenderStage.FRAME, "broken", (stage, phase, partialTicks) -> {
             throw new IllegalStateException("boom");

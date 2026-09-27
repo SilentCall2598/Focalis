@@ -8,6 +8,6 @@
     "url": "https://github.com/SilentCall2598/Focalis",
     "authorList": ["SilentCall2598"],
     "credits": "",
-    "dependencies": []
+    "dependencies": ["mixinbooter"]
   }
 ]
