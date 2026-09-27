@@ -5,8 +5,8 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,19 +21,31 @@ class FirstPassStagesTest {
         stages = new FirstPassStages();
     }
 
-    private void fire(RenderStage stage, int times) {
-        for (int i = 0; i < times; i++) {
-            stages.stageStarted(stage);
+    private void fire(RenderStage stage, RenderDrawKind kind) {
+        stages.stageStarted(stage, kind);
+    }
+
+    // Vanilla's required calls in one world pass, leaving out the one named.
+    private void requiredVanillaCallsExcept(RenderStage skipStage, RenderDrawKind skipKind) {
+        Object[][] calls = {
+                {RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID},
+                {RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT_MIPPED},
+                {RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT},
+                {RenderStage.TRANSLUCENT, RenderDrawKind.TERRAIN_TRANSLUCENT},
+                {RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0},
+                {RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1},
+                {RenderStage.PARTICLES, RenderDrawKind.PARTICLES_LIT},
+                {RenderStage.PARTICLES, RenderDrawKind.PARTICLES_NORMAL},
+                {RenderStage.WEATHER, RenderDrawKind.DEFAULT}};
+        for (Object[] call : calls) {
+            if (call[0] != skipStage || call[1] != skipKind) {
+                fire((RenderStage) call[0], (RenderDrawKind) call[1]);
+            }
         }
     }
 
-    // Vanilla's required calls in one world pass, without the conditional ones.
     private void requiredVanillaCalls() {
-        fire(RenderStage.TERRAIN, 3);
-        fire(RenderStage.ENTITIES, 2);
-        fire(RenderStage.PARTICLES, 2);
-        fire(RenderStage.TRANSLUCENT, 1);
-        fire(RenderStage.WEATHER, 1);
+        requiredVanillaCallsExcept(null, null);
     }
 
     @Test
@@ -45,55 +57,69 @@ class FirstPassStagesTest {
     }
 
     @Test
-    void exactVanillaCountsMatch() {
+    void exactVanillaDistributionMatches() {
         stages.worldPassStarted();
         requiredVanillaCalls();
-        fire(RenderStage.SKY, 1);
-        fire(RenderStage.CLOUDS, 1);
-        fire(RenderStage.HAND, 1);
+        fire(RenderStage.SKY, RenderDrawKind.DEFAULT);
+        fire(RenderStage.CLOUDS, RenderDrawKind.DEFAULT);
+        fire(RenderStage.HAND, RenderDrawKind.DEFAULT);
 
         assertTrue(stages.mismatches().isEmpty());
-        assertEquals(Integer.valueOf(3), stages.seen().get(RenderStage.TERRAIN));
+        assertTrue(stages.seen().contains("TERRAIN/TERRAIN_CUTOUT=1"));
     }
 
     @Test
-    void partialTerrainIsDetected() {
+    void missingCutoutIsDetected() {
         stages.worldPassStarted();
-        fire(RenderStage.TERRAIN, 2);
-        fire(RenderStage.ENTITIES, 2);
-        fire(RenderStage.PARTICLES, 2);
-        fire(RenderStage.TRANSLUCENT, 1);
-        fire(RenderStage.WEATHER, 1);
+        requiredVanillaCallsExcept(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT);
 
-        assertEquals(Collections.singletonMap(RenderStage.TERRAIN, 2), stages.mismatches());
-        assertEquals(Collections.singletonList("TERRAIN 2 instead of 3"),
-                FirstPassStages.describe(stages.mismatches()));
+        assertEquals(Collections.singletonList("TERRAIN/TERRAIN_CUTOUT 0 instead of 1"), stages.mismatches());
     }
 
     @Test
-    void partialEntitiesAndParticlesAreDetected() {
+    void missingEntityPass1IsDetected() {
         stages.worldPassStarted();
-        fire(RenderStage.TERRAIN, 3);
-        fire(RenderStage.ENTITIES, 1);
-        fire(RenderStage.PARTICLES, 1);
-        fire(RenderStage.TRANSLUCENT, 1);
-        fire(RenderStage.WEATHER, 1);
+        requiredVanillaCallsExcept(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1);
 
-        Map<RenderStage, Integer> wrong = stages.mismatches();
-        assertEquals(2, wrong.size());
-        assertEquals(Integer.valueOf(1), wrong.get(RenderStage.ENTITIES));
-        assertEquals(Integer.valueOf(1), wrong.get(RenderStage.PARTICLES));
+        assertEquals(Collections.singletonList("ENTITIES/ENTITY_PASS_1 0 instead of 1"), stages.mismatches());
+    }
+
+    @Test
+    void unclassifiedEntityPassIsDetected() {
+        stages.worldPassStarted();
+        requiredVanillaCallsExcept(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1);
+        fire(RenderStage.ENTITIES, RenderDrawKind.DEFAULT);
+
+        assertEquals(Arrays.asList("ENTITIES/DEFAULT 1 instead of 0",
+                "ENTITIES/ENTITY_PASS_1 0 instead of 1"), stages.mismatches());
+    }
+
+    @Test
+    void missingLitParticlesIsDetected() {
+        stages.worldPassStarted();
+        requiredVanillaCallsExcept(RenderStage.PARTICLES, RenderDrawKind.PARTICLES_LIT);
+
+        assertEquals(Collections.singletonList("PARTICLES/PARTICLES_LIT 0 instead of 1"), stages.mismatches());
     }
 
     @Test
     void missingWeatherIsDetected() {
         stages.worldPassStarted();
-        fire(RenderStage.TERRAIN, 3);
-        fire(RenderStage.ENTITIES, 2);
-        fire(RenderStage.PARTICLES, 2);
-        fire(RenderStage.TRANSLUCENT, 1);
+        requiredVanillaCallsExcept(RenderStage.WEATHER, RenderDrawKind.DEFAULT);
 
-        assertEquals(Collections.singletonMap(RenderStage.WEATHER, 0), stages.mismatches());
+        assertEquals(Collections.singletonList("WEATHER/DEFAULT 0 instead of 1"), stages.mismatches());
+    }
+
+    @Test
+    void duplicateOrWrongKindsAreDetected() {
+        stages.worldPassStarted();
+        requiredVanillaCalls();
+        fire(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        fire(RenderStage.TERRAIN, RenderDrawKind.DEFAULT);
+
+        assertTrue(stages.mismatches().contains("ENTITIES/ENTITY_PASS_0 2 instead of 1"));
+        assertTrue(stages.mismatches().contains("TERRAIN/DEFAULT 1 instead of 0"));
+        assertEquals(2, stages.mismatches().size());
     }
 
     @Test
@@ -102,21 +128,21 @@ class FirstPassStagesTest {
         requiredVanillaCalls();
 
         assertTrue(stages.mismatches().isEmpty());
-        assertFalse(stages.seen().containsKey(RenderStage.SKY));
-        assertFalse(stages.seen().containsKey(RenderStage.CLOUDS));
-        assertFalse(stages.seen().containsKey(RenderStage.HAND));
+        assertFalse(stages.seen().toString().contains("SKY"));
+        assertFalse(stages.seen().toString().contains("CLOUDS"));
+        assertFalse(stages.seen().toString().contains("HAND"));
     }
 
     @Test
     void onlyTheFirstWorldPassIsMeasured() {
-        fire(RenderStage.TERRAIN, 5);
+        fire(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
         stages.worldPassStarted();
         requiredVanillaCalls();
         stages.worldPassStarted();
-        fire(RenderStage.TERRAIN, 1);
-        fire(RenderStage.WEATHER, 4);
+        fire(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        fire(RenderStage.WEATHER, RenderDrawKind.DEFAULT);
 
         assertTrue(stages.mismatches().isEmpty());
-        assertEquals(Integer.valueOf(3), stages.seen().get(RenderStage.TERRAIN));
+        assertTrue(stages.seen().contains("TERRAIN/TERRAIN_SOLID=1"));
     }
 }

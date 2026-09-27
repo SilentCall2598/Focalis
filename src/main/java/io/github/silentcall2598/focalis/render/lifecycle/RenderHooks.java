@@ -7,7 +7,7 @@ import io.github.silentcall2598.focalis.core.FocalisLog;
 import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.EnumSet;
-import java.util.Map;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -73,31 +73,38 @@ public final class RenderHooks {
         }
     }
 
-    // Called by the Mixins right before and after a wrapped vanilla render call.
-    public static void stageStart(RenderStage stage, float partialTicks) {
+    // Called by the Mixins right before and after a wrapped vanilla render call, with the same kind both times.
+    public static void stageStart(RenderStage stage, RenderDrawKind drawKind, float partialTicks) {
         RenderLifecycle target = lifecycle;
         if (target == null) {
             return;
         }
-        FIRST_PASS.stageStarted(stage);
-        target.dispatch(stage, RenderPhase.START, partialTicks);
+        FIRST_PASS.stageStarted(stage, drawKind);
+        target.dispatch(stage, RenderPhase.START, drawKind, partialTicks);
+    }
+
+    public static void stageEnd(RenderStage stage, RenderDrawKind drawKind, float partialTicks) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatch(stage, RenderPhase.END, drawKind, partialTicks);
+        }
+    }
+
+    public static void stageStart(RenderStage stage, float partialTicks) {
+        stageStart(stage, RenderDrawKind.DEFAULT, partialTicks);
     }
 
     public static void stageEnd(RenderStage stage, float partialTicks) {
-        RenderLifecycle target = lifecycle;
-        if (target != null) {
-            target.dispatch(stage, RenderPhase.END, partialTicks);
-        }
+        stageEnd(stage, RenderDrawKind.DEFAULT, partialTicks);
     }
 
     private static void reportFirstPass() {
         FocalisLog.LOGGER.info("Render stages seen in the first world pass: {}", FIRST_PASS.seen());
-        Map<RenderStage, Integer> wrong = FIRST_PASS.mismatches();
+        List<String> wrong = FIRST_PASS.mismatches();
         if (!wrong.isEmpty()) {
-            FocalisLog.LOGGER.warn("Render stage hooks fired a different number of times than vanilla calls them in"
-                    + " the first world pass: {}. Another mod probably changed those calls in"
-                    + " EntityRenderer.renderWorldPass. Rendering is unaffected, only those stage events are missing"
-                    + " or extra.", FirstPassStages.describe(wrong));
+            FocalisLog.LOGGER.warn("Render stage hooks in the first world pass don't match vanilla's calls: {}."
+                    + " Another mod probably changed those calls in EntityRenderer.renderWorldPass. Rendering is"
+                    + " unaffected, only those stage events are missing, extra or misclassified.", wrong);
         }
     }
 }

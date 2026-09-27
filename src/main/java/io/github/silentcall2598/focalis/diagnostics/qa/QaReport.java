@@ -156,9 +156,11 @@ final class QaReport {
         }
     }
 
-    // The precise stages the Mixins wrap inside each world pass, keyed by stage name.
+    // The precise stages the Mixins wrap inside each world pass, keyed by stage name, and again by stage and draw
+    // kind, like TERRAIN/TERRAIN_SOLID.
     static final class RenderStages {
         final Map<String, StageCounts> stages = new TreeMap<>();
+        final Map<String, StageCounts> kinds = new TreeMap<>();
         // START still open when its frame or world pass ended.
         int unmatchedStarts;
         int endsWithoutStart;
@@ -170,11 +172,13 @@ final class QaReport {
         int outsideFrame;
         // HAND comes after WORLD END, so a HAND inside an open world pass is misplaced.
         int handBeforeWorldEnd;
+        // END with another draw kind than the START it closes.
+        int kindMismatches;
         final List<StageProblem> problems = new ArrayList<>();
 
         int problemCount() {
             return unmatchedStarts + endsWithoutStart + badNesting + repeatedStarts + outsideWorld + outsideFrame
-                    + handBeforeWorldEnd;
+                    + handBeforeWorldEnd + kindMismatches;
         }
     }
 
@@ -188,11 +192,13 @@ final class QaReport {
     static final class StageProblem {
         final int frame;
         final String stage;
+        final String kind;
         final String problem;
 
-        StageProblem(int frame, String stage, String problem) {
+        StageProblem(int frame, String stage, String kind, String problem) {
             this.frame = frame;
             this.stage = stage;
+            this.kind = kind;
             this.problem = problem;
         }
     }

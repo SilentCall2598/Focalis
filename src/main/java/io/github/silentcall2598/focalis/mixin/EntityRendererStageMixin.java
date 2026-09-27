@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import net.minecraft.client.particle.ParticleManager;
@@ -12,6 +13,7 @@ import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraftforge.client.MinecraftForgeClient;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -32,7 +34,7 @@ public abstract class EntityRendererStageMixin {
         }
     }
 
-    // All four block layers go through this one call. Only TRANSLUCENT is its own stage for now.
+    // All four block layers go through this one call, and the layer argument says which one it is.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderBlockLayer("
                     + "Lnet/minecraft/util/BlockRenderLayer;DILnet/minecraft/entity/Entity;)I"),
@@ -40,26 +42,49 @@ public abstract class EntityRendererStageMixin {
     private int focalis$blockLayer(RenderGlobal renderGlobal, BlockRenderLayer layer, double partialTicks, int pass,
             Entity entity, Operation<Integer> original) {
         RenderStage stage = layer == BlockRenderLayer.TRANSLUCENT ? RenderStage.TRANSLUCENT : RenderStage.TERRAIN;
+        RenderDrawKind kind = focalis$terrainKind(layer);
         float ticks = (float) partialTicks;
-        RenderHooks.stageStart(stage, ticks);
+        RenderHooks.stageStart(stage, kind, ticks);
         try {
             return original.call(renderGlobal, layer, partialTicks, pass, entity);
         } finally {
-            RenderHooks.stageEnd(stage, ticks);
+            RenderHooks.stageEnd(stage, kind, ticks);
         }
     }
 
+    private static RenderDrawKind focalis$terrainKind(BlockRenderLayer layer) {
+        if (layer == BlockRenderLayer.SOLID) {
+            return RenderDrawKind.TERRAIN_SOLID;
+        }
+        if (layer == BlockRenderLayer.CUTOUT_MIPPED) {
+            return RenderDrawKind.TERRAIN_CUTOUT_MIPPED;
+        }
+        if (layer == BlockRenderLayer.CUTOUT) {
+            return RenderDrawKind.TERRAIN_CUTOUT;
+        }
+        if (layer == BlockRenderLayer.TRANSLUCENT) {
+            return RenderDrawKind.TERRAIN_TRANSLUCENT;
+        }
+        // A layer some mod added isn't classified.
+        return RenderDrawKind.DEFAULT;
+    }
+
+    // Forge sets its entity render pass before each call, so the kind comes from Forge rather than call order. An
+    // unexpected pass stays unclassified and shows up in the first pass check.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderEntities("
                     + "Lnet/minecraft/entity/Entity;Lnet/minecraft/client/renderer/culling/ICamera;F)V"),
             require = 0, expect = 2)
     private void focalis$entities(RenderGlobal renderGlobal, Entity entity, ICamera camera, float partialTicks,
             Operation<Void> original) {
-        RenderHooks.stageStart(RenderStage.ENTITIES, partialTicks);
+        int forgePass = MinecraftForgeClient.getRenderPass();
+        RenderDrawKind kind = forgePass == 0 ? RenderDrawKind.ENTITY_PASS_0
+                : forgePass == 1 ? RenderDrawKind.ENTITY_PASS_1 : RenderDrawKind.DEFAULT;
+        RenderHooks.stageStart(RenderStage.ENTITIES, kind, partialTicks);
         try {
             original.call(renderGlobal, entity, camera, partialTicks);
         } finally {
-            RenderHooks.stageEnd(RenderStage.ENTITIES, partialTicks);
+            RenderHooks.stageEnd(RenderStage.ENTITIES, kind, partialTicks);
         }
     }
 
@@ -69,11 +94,11 @@ public abstract class EntityRendererStageMixin {
             require = 0, expect = 1)
     private void focalis$litParticles(ParticleManager particles, Entity entity, float partialTicks,
             Operation<Void> original) {
-        RenderHooks.stageStart(RenderStage.PARTICLES, partialTicks);
+        RenderHooks.stageStart(RenderStage.PARTICLES, RenderDrawKind.PARTICLES_LIT, partialTicks);
         try {
             original.call(particles, entity, partialTicks);
         } finally {
-            RenderHooks.stageEnd(RenderStage.PARTICLES, partialTicks);
+            RenderHooks.stageEnd(RenderStage.PARTICLES, RenderDrawKind.PARTICLES_LIT, partialTicks);
         }
     }
 
@@ -83,11 +108,11 @@ public abstract class EntityRendererStageMixin {
             require = 0, expect = 1)
     private void focalis$particles(ParticleManager particles, Entity entity, float partialTicks,
             Operation<Void> original) {
-        RenderHooks.stageStart(RenderStage.PARTICLES, partialTicks);
+        RenderHooks.stageStart(RenderStage.PARTICLES, RenderDrawKind.PARTICLES_NORMAL, partialTicks);
         try {
             original.call(particles, entity, partialTicks);
         } finally {
-            RenderHooks.stageEnd(RenderStage.PARTICLES, partialTicks);
+            RenderHooks.stageEnd(RenderStage.PARTICLES, RenderDrawKind.PARTICLES_NORMAL, partialTicks);
         }
     }
 

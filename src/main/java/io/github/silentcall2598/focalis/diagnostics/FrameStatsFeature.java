@@ -5,6 +5,7 @@ package io.github.silentcall2598.focalis.diagnostics;
 import io.github.silentcall2598.focalis.config.ConfigSection;
 import io.github.silentcall2598.focalis.feature.Feature;
 import io.github.silentcall2598.focalis.feature.FeatureContext;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import org.apache.logging.log4j.Logger;
@@ -59,7 +60,7 @@ public final class FrameStatsFeature extends Feature {
             this.intervalNanos = intervalNanos;
         }
 
-        void onFrame(RenderStage stage, RenderPhase phase, float partialTicks) {
+        void onFrame(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
             long now = System.nanoTime();
             if (phase == RenderPhase.START) {
                 if (started) {
@@ -91,7 +92,7 @@ public final class FrameStatsFeature extends Feature {
         }
 
         // Counted at END only, so each world pass counts once.
-        void onWorld(RenderStage stage, RenderPhase phase, float partialTicks) {
+        void onWorld(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
             if (phase == RenderPhase.END) {
                 worldPasses++;
             }

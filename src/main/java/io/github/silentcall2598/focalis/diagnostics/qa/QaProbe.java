@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 import io.github.silentcall2598.focalis.Focalis;
 import io.github.silentcall2598.focalis.feature.FeatureState;
 import io.github.silentcall2598.focalis.feature.FeatureStatus;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
@@ -164,7 +165,7 @@ public final class QaProbe {
         lifecycle.register(RenderStage.FRAME, OWNER, this::onFrame);
         // WORLD START only feeds the phase bookkeeping. Counting world passes, GL checks, state changes and the
         // injected failure all belong to the end of the world pass.
-        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> {
+        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, drawKind, partialTicks) -> {
             if (finished || brokenReason != null) {
                 return;
             }
@@ -184,7 +185,7 @@ public final class QaProbe {
 
     /** Registers the listener that has to run after the features' own. */
     public void installAfter(RenderLifecycle lifecycle) {
-        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> {
+        lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, drawKind, partialTicks) -> {
             worldPhases.dispatchFinished();
             if (phase == RenderPhase.END) {
                 afterFocalisWorld();
@@ -247,7 +248,7 @@ public final class QaProbe {
         }
     }
 
-    private void onFrame(RenderStage stage, RenderPhase phase, float partialTicks) {
+    private void onFrame(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         if (phase != RenderPhase.START) {
             if (!finished && brokenReason == null) {
                 renderStages.frameEnded(report.frames.total);
@@ -268,9 +269,9 @@ public final class QaProbe {
         report.frames.total++;
     }
 
-    private void onStage(RenderStage stage, RenderPhase phase, float partialTicks) {
+    private void onStage(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         if (!finished && brokenReason == null) {
-            renderStages.stage(stage, phase, report.frames.total);
+            renderStages.stage(stage, phase, drawKind, report.frames.total);
         }
     }
 
@@ -822,11 +823,15 @@ public final class QaProbe {
         for (QaReport.StageCounts counts : stages.stages.values()) {
             balanced &= counts.starts == counts.ends && counts.pairs == counts.ends;
         }
+        for (QaReport.StageCounts counts : stages.kinds.values()) {
+            balanced &= counts.starts == counts.ends && counts.pairs == counts.ends;
+        }
         report.check("render-stages-balanced", balanced && stages.problemCount() == 0,
                 stages.unmatchedStarts + " unmatched starts, " + stages.endsWithoutStart + " ends without a start, "
                         + stages.badNesting + " out of order, " + stages.repeatedStarts + " repeated starts, "
                         + stages.outsideWorld + " outside a world pass, " + stages.outsideFrame + " outside a frame, "
-                        + stages.handBeforeWorldEnd + " HAND before WORLD END");
+                        + stages.handBeforeWorldEnd + " HAND before WORLD END, " + stages.kindMismatches
+                        + " END with another draw kind");
     }
 
     @Nullable

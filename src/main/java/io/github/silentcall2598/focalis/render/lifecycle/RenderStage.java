@@ -14,16 +14,16 @@ public enum RenderStage {
     WORLD,
     /** Sky, sun, moon and stars. Skipped below 4 chunks of render distance. */
     SKY,
-    /** Solid and cutout chunk layers, one pair per layer. */
+    /** Solid and cutout chunk layers, one pair per layer with the layer as draw kind. */
     TERRAIN,
     /**
      * RenderGlobal.renderEntities, with entities and tile entities. It runs twice per world pass, for Forge render
-     * pass 0 and again after translucent terrain for pass 1.
+     * pass 0 and again after translucent terrain for pass 1. The draw kind comes from Forge's render pass.
      */
     ENTITIES,
-    /** Lit particles and normal particles, one pair each. */
+    /** Lit particles and normal particles, one pair each with its own draw kind. */
     PARTICLES,
-    /** The translucent chunk layer. */
+    /** The translucent chunk layer, draw kind TERRAIN_TRANSLUCENT. */
     TRANSLUCENT,
     /** Rain and snow. It runs every world pass, also in clear weather. */
     WEATHER,

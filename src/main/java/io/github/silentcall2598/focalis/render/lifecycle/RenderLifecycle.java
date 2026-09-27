@@ -21,7 +21,8 @@ public final class RenderLifecycle {
     @FunctionalInterface
     public interface FailureHandler {
 
-        void onListenerFailure(String owner, RenderStage stage, RenderPhase phase, Throwable error);
+        void onListenerFailure(String owner, RenderStage stage, RenderPhase phase, RenderDrawKind drawKind,
+                Throwable error);
     }
 
     private static final Registration[] NONE = new Registration[0];
@@ -30,7 +31,7 @@ public final class RenderLifecycle {
     // without allocating.
     private volatile Registration[][] listeners;
     private final Set<RenderStage> dispatchedStages = EnumSet.noneOf(RenderStage.class);
-    private volatile FailureHandler failureHandler = (owner, stage, phase, error) -> {
+    private volatile FailureHandler failureHandler = (owner, stage, phase, drawKind, error) -> {
     };
 
     public RenderLifecycle() {
@@ -85,19 +86,23 @@ public final class RenderLifecycle {
     }
 
     public void dispatch(RenderStage stage, RenderPhase phase, float partialTicks) {
+        dispatch(stage, phase, RenderDrawKind.DEFAULT, partialTicks);
+    }
+
+    public void dispatch(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         for (Registration registration : listeners[stage.ordinal()]) {
             // The iteration snapshot may still hold listeners removed earlier in this dispatch.
             if (!registration.active) {
                 continue;
             }
             try {
-                registration.listener.onRenderStage(stage, phase, partialTicks);
+                registration.listener.onRenderStage(stage, phase, drawKind, partialTicks);
             } catch (Exception | LinkageError e) { // VM errors such as OutOfMemoryError deliberately propagate
                 // Any GL state the listener left behind stays as it is.
                 removeOwner(registration.owner);
-                FocalisLog.LOGGER.error("Render listener of '{}' failed during {} {}. All of its render listeners"
-                        + " have been removed.", registration.owner, stage, phase, e);
-                failureHandler.onListenerFailure(registration.owner, stage, phase, e);
+                FocalisLog.LOGGER.error("Render listener of '{}' failed during {} {} ({}). All of its render"
+                        + " listeners have been removed.", registration.owner, stage, phase, drawKind, e);
+                failureHandler.onListenerFailure(registration.owner, stage, phase, drawKind, e);
             }
         }
     }
