@@ -24,8 +24,8 @@ import java.util.List;
 public final class ScenePostPass {
 
     // Unit 0 holds the block atlas and unit 1 the lightmap. These stay clear of both.
-    static final int SCENE_COLOR_UNIT = 2;
-    static final int SCENE_DEPTH_UNIT = 3;
+    public static final int SCENE_COLOR_UNIT = 2;
+    public static final int SCENE_DEPTH_UNIT = 3;
 
     /** The only uniforms the pass sets, with the type each has to be declared as. */
     enum Input {
@@ -57,14 +57,16 @@ public final class ScenePostPass {
 
     private final ShaderProgram program;
     private final Logger logger;
+    private final PostPassMonitor monitor;
     private final int[] locations = new int[Input.values().length];
     private final PassGlState state = new PassGlState(SCENE_COLOR_UNIT, SCENE_DEPTH_UNIT);
     @Nullable
     private SceneCapture capture;
 
-    private ScenePostPass(ShaderProgram program, Logger logger) {
+    private ScenePostPass(ShaderProgram program, Logger logger, PostPassMonitor monitor) {
         this.program = program;
         this.logger = logger;
+        this.monitor = monitor;
         for (Input input : Input.values()) {
             // -1 when the program doesn't use it, and setting -1 does nothing.
             locations[input.ordinal()] = GL20.glGetUniformLocation(program.id(), input.uniformName);
@@ -75,9 +77,10 @@ public final class ScenePostPass {
      * Checks that the program only asks for inputs the pass provides. The pass owns the program once this returns,
      * and the caller keeps it if this throws.
      */
-    public static ScenePostPass create(ShaderProgram program, Logger logger) throws PostPassException {
+    public static ScenePostPass create(ShaderProgram program, Logger logger, PostPassMonitor monitor)
+            throws PostPassException {
         checkUniforms(program);
-        return new ScenePostPass(program, logger);
+        return new ScenePostPass(program, logger, monitor);
     }
 
     // A uniform nothing sets would quietly read zero, and a sampler would read whatever unit 0 holds. Refusing the
@@ -138,6 +141,8 @@ public final class ScenePostPass {
         capture = created;
         logger.info("Scene capture is {}x{} with {} depth", created.width(), created.height(),
                 created.depthFormat());
+        monitor.captureCreated(created.framebuffer(), created.colorTexture(), created.depthTexture(),
+                created.width(), created.height(), created.depthFormat().name());
         return created;
     }
 
@@ -152,6 +157,7 @@ public final class ScenePostPass {
         GL20.glUniform1i(locations[Input.SCENE_DEPTH.ordinal()], SCENE_DEPTH_UNIT);
         GL20.glUniform1f(locations[Input.VIEW_WIDTH.ordinal()], capture.width());
         GL20.glUniform1f(locations[Input.VIEW_HEIGHT.ordinal()], capture.height());
+        monitor.beforeDraw();
 
         // One triangle with its corners already in clip space covers the screen without touching Minecraft's
         // matrices. It winds counterclockwise, so the back-face culling vanilla leaves on keeps it.

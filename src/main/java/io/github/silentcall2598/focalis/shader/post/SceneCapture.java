@@ -129,6 +129,10 @@ final class SceneCapture {
         return depthFormat;
     }
 
+    int framebuffer() {
+        return framebuffer;
+    }
+
     int colorTexture() {
         return colorTexture;
     }

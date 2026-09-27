@@ -8,25 +8,35 @@ import io.github.silentcall2598.focalis.diagnostics.EnvironmentReport;
 import io.github.silentcall2598.focalis.diagnostics.FocalisCrashSection;
 import io.github.silentcall2598.focalis.diagnostics.FrameStatsFeature;
 import io.github.silentcall2598.focalis.diagnostics.OpenGlReport;
+import io.github.silentcall2598.focalis.diagnostics.qa.QaProbe;
+import io.github.silentcall2598.focalis.diagnostics.qa.QaSettings;
 import io.github.silentcall2598.focalis.feature.FeatureManager;
 import io.github.silentcall2598.focalis.render.RenderSubsystem;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.shader.ShaderFeature;
+import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
+import javax.annotation.Nullable;
 import java.io.File;
 
 public final class FocalisCore {
 
     private final RenderSubsystem render;
     private final FeatureManager features;
+    // Only set in development QA runs from tools/qa.
+    @Nullable
+    private final QaProbe qa;
     private FocalisConfig config;
 
     public FocalisCore() {
         render = new RenderSubsystem(this::onGlContextReady);
         features = new FeatureManager(render.lifecycle());
+        QaSettings qaSettings = QaSettings.fromSystemProperties();
+        qa = qaSettings == null ? null : new QaProbe(qaSettings, features::statuses, render::glContext);
         features.register(new FrameStatsFeature());
-        features.register(new ShaderFeature(render::glContext));
+        PostPassMonitor postPassMonitor = qa == null ? PostPassMonitor.NONE : qa.postPassMonitor();
+        features.register(new ShaderFeature(render::glContext, postPassMonitor));
     }
 
     public void preInit(File configFile) {
@@ -39,7 +49,14 @@ public final class FocalisCore {
 
         // Hooks first, so features see which render stages are dispatched when they register listeners.
         render.install();
+        // Listeners run in registration order, so this puts the QA checks on both sides of the features' work.
+        if (qa != null) {
+            qa.installBefore(render.lifecycle());
+        }
         features.initialize(config, compat);
+        if (qa != null) {
+            qa.installAfter(render.lifecycle());
+        }
         config.saveIfChanged();
     }
 

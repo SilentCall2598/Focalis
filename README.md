@@ -63,6 +63,9 @@ downloads them automatically.
 The first build downloads and decompiles Minecraft, which takes a few minutes. The jar to install is
 `build/libs/focalis-<version>.jar`. The `-dev` and `-sources` jars are for development.
 
+Rendering changes can be checked in the development client with the graphics QA runner in
+[tools/qa](tools/qa/README.md).
+
 ## Project layout
 
 All code lives under `io.github.silentcall2598.focalis`:

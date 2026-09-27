@@ -11,6 +11,7 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.post.PostPassException;
+import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import io.github.silentcall2598.focalis.shader.post.ScenePostPass;
 import io.github.silentcall2598.focalis.shader.program.PreparedProgram;
 import io.github.silentcall2598.focalis.shader.program.ProgramBuildException;
@@ -40,6 +41,7 @@ public final class ShaderFeature extends Feature {
     static final String PROGRAM = "focalis_post";
 
     private final Supplier<GlContextInfo> glContext;
+    private final PostPassMonitor monitor;
     private String packName = "";
     private Logger logger;
     @Nullable
@@ -49,11 +51,15 @@ public final class ShaderFeature extends Feature {
     private boolean loggedAnaglyph;
     private boolean loggedOtherTarget;
 
-    /** @param glContext returns null until the first frame has captured the context */
-    public ShaderFeature(Supplier<GlContextInfo> glContext) {
+    /**
+     * @param glContext returns null until the first frame has captured the context
+     * @param monitor {@link PostPassMonitor#NONE} except in development QA runs
+     */
+    public ShaderFeature(Supplier<GlContextInfo> glContext, PostPassMonitor monitor) {
         super(ID, "Experimental. Runs a Focalis test program from a shaderpack over the world image."
                 + " Regular shaderpacks are not supported yet.", false);
         this.glContext = glContext;
+        this.monitor = monitor;
     }
 
     @Override
@@ -99,12 +105,12 @@ public final class ShaderFeature extends Feature {
         Minecraft mc = Minecraft.getMinecraft();
         // Without framebuffers the world draws straight to the window and there's no depth buffer to copy.
         if (!OpenGlHelper.isFramebufferEnabled()) {
-            loggedFramebuffersOff = skip(loggedFramebuffersOff, "Framebuffers are turned off");
+            loggedFramebuffersOff = skip(loggedFramebuffersOff, "framebuffers-off", "Framebuffers are turned off");
             return;
         }
         // Anaglyph draws the world twice through color masks, which the pass doesn't handle.
         if (mc.gameSettings.anaglyph) {
-            loggedAnaglyph = skip(loggedAnaglyph, "3D anaglyph is on");
+            loggedAnaglyph = skip(loggedAnaglyph, "anaglyph", "3D anaglyph is on");
             return;
         }
         ScenePostPass current = pass;
@@ -116,9 +122,11 @@ public final class ShaderFeature extends Feature {
             pass = current;
         }
         try {
-            if (!current.render(mc.getFramebuffer())) {
-                loggedOtherTarget = skip(loggedOtherTarget, "Something other than Minecraft's framebuffer is"
-                        + " being drawn to");
+            if (current.render(mc.getFramebuffer())) {
+                monitor.passRendered();
+            } else {
+                loggedOtherTarget = skip(loggedOtherTarget, "other-target", "Something other than Minecraft's"
+                        + " framebuffer is being drawn to");
             }
         } catch (PostPassException e) {
             stop(e.getMessage());
@@ -126,7 +134,8 @@ public final class ShaderFeature extends Feature {
     }
 
     // Each reason tends to hold for many frames in a row, so it's only logged the first time.
-    private boolean skip(boolean alreadyLogged, String reason) {
+    private boolean skip(boolean alreadyLogged, String key, String reason) {
+        monitor.passSkipped(key);
         if (!alreadyLogged) {
             logger.info("{}, so the post pass is skipped while that lasts", reason);
         }
@@ -157,9 +166,10 @@ public final class ShaderFeature extends Feature {
         if (!program.driverLog().isEmpty()) {
             logger.warn("{} was built, and the driver reported:\n{}", program.name(), program.driverLog());
         }
+        monitor.programBuilt(program.id());
         ScenePostPass created = null;
         try {
-            created = ScenePostPass.create(program, logger);
+            created = ScenePostPass.create(program, logger, monitor);
             return created;
         } catch (PostPassException e) {
             stop(e.getMessage());
@@ -175,6 +185,7 @@ public final class ShaderFeature extends Feature {
     // and only the pass stops.
     private void stop(String problem) {
         stopped = true;
+        monitor.passStopped(problem);
         logger.error("The post pass stopped for this session and rendering stays vanilla. {}", problem);
         releaseGl();
     }
