@@ -38,11 +38,12 @@ class HookAvailabilityTest {
     }
 
     @Test
-    void lateFireStillCountsAsAvailable() {
+    void lateFireCannotRestoreAnUnavailableHook() {
         HookAvailability hook = new HookAvailability();
         hook.hookExpected();
 
-        assertTrue(hook.hookFired());
-        assertTrue(hook.isAvailable());
+        assertFalse(hook.hookFired());
+        assertFalse(hook.isAvailable());
+        assertEquals(HookAvailability.State.UNAVAILABLE, hook.state());
     }
 }

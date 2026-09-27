@@ -4,7 +4,7 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 
 /**
  * Whether a precise Mixin hook works in this session. A hook can't report that it never applied, so a later point
- * that it always comes before decides that it is unavailable.
+ * that it always comes before decides that it is unavailable. Both results are final for the session.
  */
 public final class HookAvailability {
 
@@ -24,9 +24,10 @@ public final class HookAvailability {
         return state == State.AVAILABLE;
     }
 
-    // True the first time the hook fires, so the caller logs it once.
+    // True the first time the hook fires, so the caller logs it once. A hook that already missed its point stays
+    // unavailable, since its contract was broken.
     boolean hookFired() {
-        if (state == State.AVAILABLE) {
+        if (state != State.UNKNOWN) {
             return false;
         }
         state = State.AVAILABLE;
