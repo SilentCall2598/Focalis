@@ -36,4 +36,10 @@ class RenderHooksTest {
         assertEquals(Arrays.asList("WORLD/START/0.25", "WORLD/START/0.75"), calls);
         assertThrows(IllegalStateException.class, () -> RenderHooks.install(new RenderLifecycle()));
     }
+
+    @Test
+    void preciseStagesCannotBeChanged() {
+        assertThrows(UnsupportedOperationException.class, () -> RenderHooks.PRECISE_STAGES.add(RenderStage.GUI));
+        assertThrows(UnsupportedOperationException.class, () -> RenderHooks.PRECISE_STAGES.remove(RenderStage.SKY));
+    }
 }

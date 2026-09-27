@@ -3,20 +3,30 @@
 package io.github.silentcall2598.focalis.render.lifecycle;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
+import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
-// Which stage hooks fired during the first world pass. The stage hooks may not apply without any error, so this is
-// how a missing one shows up in a normal log.
+// How often each stage hook fired during the first world pass. The stage hooks may not apply without any error, so
+// this is how a missing one, or one of several call sites of a stage, shows up in a normal log.
 final class FirstPassStages {
 
-    // Vanilla calls these in every world pass, so their hooks must have fired by the end of the first one.
-    static final Set<RenderStage> ALWAYS = EnumSet.of(RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.PARTICLES,
-            RenderStage.TRANSLUCENT, RenderStage.WEATHER);
+    // Vanilla calls these exactly this often in every world pass. SKY, CLOUDS and HAND depend on settings.
+    static final Map<RenderStage, Integer> EXPECTED;
 
+    static {
+        Map<RenderStage, Integer> expected = new EnumMap<>(RenderStage.class);
+        expected.put(RenderStage.TERRAIN, 3);
+        expected.put(RenderStage.ENTITIES, 2);
+        expected.put(RenderStage.PARTICLES, 2);
+        expected.put(RenderStage.TRANSLUCENT, 1);
+        expected.put(RenderStage.WEATHER, 1);
+        EXPECTED = Collections.unmodifiableMap(expected);
+    }
+
+    private final int[] counts = new int[RenderStage.values().length];
     private int passesStarted;
-    private int seen;
 
     // True when the first world pass, hand included, has just finished and should be reported.
     boolean worldPassStarted() {
@@ -29,27 +39,37 @@ final class FirstPassStages {
 
     void stageStarted(RenderStage stage) {
         if (passesStarted == 1) {
-            seen |= 1 << stage.ordinal();
+            counts[stage.ordinal()]++;
         }
     }
 
-    List<RenderStage> seen() {
-        List<RenderStage> stages = new ArrayList<>();
+    Map<RenderStage, Integer> seen() {
+        Map<RenderStage, Integer> seen = new EnumMap<>(RenderStage.class);
         for (RenderStage stage : RenderStage.values()) {
-            if ((seen & 1 << stage.ordinal()) != 0) {
-                stages.add(stage);
+            if (counts[stage.ordinal()] > 0) {
+                seen.put(stage, counts[stage.ordinal()]);
             }
         }
-        return stages;
+        return seen;
     }
 
-    List<RenderStage> missing() {
-        List<RenderStage> stages = new ArrayList<>();
-        for (RenderStage stage : ALWAYS) {
-            if ((seen & 1 << stage.ordinal()) == 0) {
-                stages.add(stage);
+    // Required stages whose first pass count isn't vanilla's, with the count that was seen.
+    Map<RenderStage, Integer> mismatches() {
+        Map<RenderStage, Integer> wrong = new EnumMap<>(RenderStage.class);
+        for (Map.Entry<RenderStage, Integer> expected : EXPECTED.entrySet()) {
+            int actual = counts[expected.getKey().ordinal()];
+            if (actual != expected.getValue()) {
+                wrong.put(expected.getKey(), actual);
             }
         }
-        return stages;
+        return wrong;
+    }
+
+    static List<String> describe(Map<RenderStage, Integer> mismatches) {
+        List<String> lines = new ArrayList<>();
+        for (Map.Entry<RenderStage, Integer> mismatch : mismatches.entrySet()) {
+            lines.add(mismatch.getKey() + " " + mismatch.getValue() + " instead of " + EXPECTED.get(mismatch.getKey()));
+        }
+        return lines;
     }
 }

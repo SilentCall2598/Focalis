@@ -168,10 +168,13 @@ final class QaReport {
         int repeatedStarts;
         int outsideWorld;
         int outsideFrame;
+        // HAND comes after WORLD END, so a HAND inside an open world pass is misplaced.
+        int handBeforeWorldEnd;
         final List<StageProblem> problems = new ArrayList<>();
 
         int problemCount() {
-            return unmatchedStarts + endsWithoutStart + badNesting + repeatedStarts + outsideWorld + outsideFrame;
+            return unmatchedStarts + endsWithoutStart + badNesting + repeatedStarts + outsideWorld + outsideFrame
+                    + handBeforeWorldEnd;
         }
     }
 

@@ -5,8 +5,9 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 import io.github.silentcall2598.focalis.core.FocalisLog;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
 import java.util.EnumSet;
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -15,10 +16,10 @@ import java.util.Set;
  */
 public final class RenderHooks {
 
-    /** Stages the Mixins wrap around vanilla calls inside the world pass. */
-    public static final Set<RenderStage> PRECISE_STAGES = EnumSet.of(RenderStage.SKY, RenderStage.TERRAIN,
-            RenderStage.ENTITIES, RenderStage.PARTICLES, RenderStage.TRANSLUCENT, RenderStage.WEATHER,
-            RenderStage.CLOUDS, RenderStage.HAND);
+    /** Stages the Mixins wrap around vanilla calls inside the world pass. Read only. */
+    public static final Set<RenderStage> PRECISE_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.SKY,
+            RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.PARTICLES, RenderStage.TRANSLUCENT,
+            RenderStage.WEATHER, RenderStage.CLOUDS, RenderStage.HAND));
 
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
@@ -91,11 +92,12 @@ public final class RenderHooks {
 
     private static void reportFirstPass() {
         FocalisLog.LOGGER.info("Render stages seen in the first world pass: {}", FIRST_PASS.seen());
-        List<RenderStage> missing = FIRST_PASS.missing();
-        if (!missing.isEmpty()) {
-            FocalisLog.LOGGER.warn("Vanilla renders {} in every world pass, but those stage hooks didn't fire."
-                    + " Another mod probably changed those calls in EntityRenderer.renderWorldPass. Rendering is"
-                    + " unaffected, only those stage events are missing.", missing);
+        Map<RenderStage, Integer> wrong = FIRST_PASS.mismatches();
+        if (!wrong.isEmpty()) {
+            FocalisLog.LOGGER.warn("Render stage hooks fired a different number of times than vanilla calls them in"
+                    + " the first world pass: {}. Another mod probably changed those calls in"
+                    + " EntityRenderer.renderWorldPass. Rendering is unaffected, only those stage events are missing"
+                    + " or extra.", FirstPassStages.describe(wrong));
         }
     }
 }

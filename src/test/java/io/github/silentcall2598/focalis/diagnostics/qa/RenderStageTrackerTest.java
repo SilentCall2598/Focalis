@@ -123,6 +123,19 @@ class RenderStageTrackerTest {
     }
 
     @Test
+    void handInsideTheWorldPassIsRejected() {
+        tracker.frameStarted();
+        tracker.world(RenderPhase.START, 1);
+        pair(RenderStage.HAND);
+        tracker.world(RenderPhase.END, 1);
+        tracker.frameEnded(1);
+
+        assertEquals(1, report.handBeforeWorldEnd);
+        assertEquals(1, report.problemCount());
+        assertEquals("HAND", report.problems.get(0).stage);
+    }
+
+    @Test
     void stageLeftOpenIsReportedAtTheNextBoundary() {
         tracker.frameStarted();
         tracker.world(RenderPhase.START, 1);

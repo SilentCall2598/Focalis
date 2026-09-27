@@ -825,7 +825,8 @@ public final class QaProbe {
         report.check("render-stages-balanced", balanced && stages.problemCount() == 0,
                 stages.unmatchedStarts + " unmatched starts, " + stages.endsWithoutStart + " ends without a start, "
                         + stages.badNesting + " out of order, " + stages.repeatedStarts + " repeated starts, "
-                        + stages.outsideWorld + " outside a world pass, " + stages.outsideFrame + " outside a frame");
+                        + stages.outsideWorld + " outside a world pass, " + stages.outsideFrame + " outside a frame, "
+                        + stages.handBeforeWorldEnd + " HAND before WORLD END");
     }
 
     @Nullable

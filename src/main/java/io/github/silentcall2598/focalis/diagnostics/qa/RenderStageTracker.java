@@ -10,7 +10,7 @@ import java.util.Deque;
 
 /**
  * Checks the precise render stages. Every START needs its END, stages close in the reverse order they opened, stages
- * of the world pass only happen while WORLD is open, and HAND happens in the frame after a world pass started. The
+ * of the world pass only happen while WORLD is open, and HAND happens in the frame after its world pass ended. The
  * highest count per world pass is kept, so a hook that fires twice stands out. Client thread only.
  */
 final class RenderStageTracker {
@@ -72,6 +72,9 @@ final class RenderStageTracker {
             if (worldPassesInFrame == 0) {
                 report.outsideFrame++;
                 problem(frame, stage, "HAND before any world pass in this frame");
+            } else if (worldOpen) {
+                report.handBeforeWorldEnd++;
+                problem(frame, stage, "HAND while the world pass is still open");
             }
         } else if (!worldOpen) {
             report.outsideWorld++;
