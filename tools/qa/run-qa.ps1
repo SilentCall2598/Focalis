@@ -512,7 +512,7 @@ if ($Obfuscated) {
     $summary.Add("Release jar SHA-256: $(if ($report.artifact) { $report.artifact.sha256 } else { 'unknown, a scenario found no jar or the jars differed' })")
 }
 $summary.Add('')
-$summary.Add('| Scenario | Result | World frames | Start/end pairs | Phase problems | Rendered | Mismatches | GL errors | Captures | Seconds |')
+$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Rendered | Mismatches | GL errors | Captures | Seconds |')
 $summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($result in $results) {
     $n = $result.numbers

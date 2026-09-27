@@ -123,8 +123,11 @@ final class QaReport {
         double maxFocalisWorldEndMs;
     }
 
-    // WORLD START comes from the Mixin hook and WORLD END from Forge's RenderWorldLastEvent.
+    // WORLD START comes from the Mixin hook and WORLD END from Forge's RenderWorldLastEvent. Counts are per world
+    // pass, which can happen more than once in a displayed frame.
     static final class WorldPhases {
+        @Nullable
+        String startHook;
         int starts;
         int ends;
         int pairs;

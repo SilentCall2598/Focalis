@@ -264,9 +264,9 @@ public enum QaScenario {
         void evaluate(QaReport r) {
             checkShadersActive(r);
             QaReport.WorldPhases phases = r.worldPhases;
-            // World frames are counted at END, so a START that counted too would break this.
-            r.check("pairs-match-world-frames", phases.pairs == r.frames.world,
-                    phases.pairs + " start/end pairs, " + r.frames.world + " world frames");
+            // frames.world counts world passes at END, so a START that counted too would break this.
+            r.check("pairs-match-world-passes", phases.pairs == r.frames.world,
+                    phases.pairs + " start/end pairs, " + r.frames.world + " world passes");
             boolean everySession = phases.pairsPerSession.size() == 2;
             for (int pairs : phases.pairsPerSession) {
                 everySession &= pairs > 0;

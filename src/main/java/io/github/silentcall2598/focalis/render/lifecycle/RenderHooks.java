@@ -12,9 +12,10 @@ import javax.annotation.Nullable;
  */
 public final class RenderHooks {
 
+    private static final HookAvailability WORLD_START = new HookAvailability();
+
     @Nullable
     private static volatile RenderLifecycle lifecycle;
-    private static boolean worldStartSeen;
 
     private RenderHooks() {
     }
@@ -28,16 +29,31 @@ public final class RenderHooks {
         lifecycle = target;
     }
 
+    /** Whether WORLD START from the Mixin hook works this session. Unknown until the first world pass ends. */
+    public static HookAvailability worldStart() {
+        return WORLD_START;
+    }
+
     // The start of EntityRenderer.renderWorldPass. WORLD END still comes from Forge, see ForgeRenderEventBridge.
     public static void worldPassStart(float partialTicks) {
         RenderLifecycle target = lifecycle;
         if (target == null) {
             return;
         }
-        if (!worldStartSeen) {
-            worldStartSeen = true;
+        if (WORLD_START.hookFired()) {
             FocalisLog.LOGGER.info("WORLD START hook in EntityRenderer.renderWorldPass is active");
         }
         target.dispatch(RenderStage.WORLD, RenderPhase.START, partialTicks);
+    }
+
+    // Forge fires WORLD END inside the same world pass, after the start hook. If that hook still hasn't fired, the
+    // Mixin didn't apply. WORLD END itself keeps working either way.
+    static void worldPassEnd() {
+        if (lifecycle != null && WORLD_START.hookExpected()) {
+            FocalisLog.LOGGER.warn("The WORLD START hook in EntityRenderer.renderWorldPass never fired, so precise"
+                    + " WORLD START is unavailable this session. The Focalis Mixin probably didn't apply. Mixin"
+                    + " messages about mixins.focalis.json earlier in the log say why. Features that only need"
+                    + " WORLD END keep working.");
+        }
     }
 }

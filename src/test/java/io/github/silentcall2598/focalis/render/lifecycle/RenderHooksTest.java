@@ -18,6 +18,8 @@ class RenderHooksTest {
     @Test
     void doesNothingUntilInstalledThenReportsWorldStartOnly() {
         RenderHooks.worldPassStart(0.5F);
+        RenderHooks.worldPassEnd();
+        assertEquals(HookAvailability.State.UNKNOWN, RenderHooks.worldStart().state());
 
         RenderLifecycle lifecycle = new RenderLifecycle();
         RenderHooks.install(lifecycle);
@@ -26,9 +28,11 @@ class RenderHooksTest {
                 calls.add(stage + "/" + phase + "/" + partialTicks));
 
         RenderHooks.worldPassStart(0.25F);
+        RenderHooks.worldPassEnd();
         RenderHooks.worldPassStart(0.75F);
 
         assertTrue(lifecycle.isDispatched(RenderStage.WORLD));
+        assertTrue(RenderHooks.worldStart().isAvailable());
         assertEquals(Arrays.asList("WORLD/START/0.25", "WORLD/START/0.75"), calls);
         assertThrows(IllegalStateException.class, () -> RenderHooks.install(new RenderLifecycle()));
     }

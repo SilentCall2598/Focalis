@@ -38,6 +38,7 @@ public final class ForgeRenderEventBridge {
     // drawn outside the event can still come later.
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onRenderWorldLast(RenderWorldLastEvent event) {
+        RenderHooks.worldPassEnd();
         lifecycle.dispatch(RenderStage.WORLD, RenderPhase.END, event.getPartialTicks());
     }
 }

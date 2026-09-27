@@ -35,9 +35,8 @@ skies, video settings, and compatibility tooling for large modpacks.
 
 - Minecraft 1.12.2
 - Forge 14.23.5.2860 recommended. Focalis currently accepts 14.23.5.2847 or newer.
-- [MixinBooter](https://github.com/CleanroomMC/MixinBooter) 10.7 or newer, installed separately. Focalis is tested
-  with 10.7. Keep MixinBooter's release file name (`!mixinbooter-<version>.jar`), since Forge loads coremods in
-  file name order and Focalis's coremod needs MixinBooter to be loaded first.
+- [MixinBooter](https://github.com/CleanroomMC/MixinBooter) 10.7 or a later 10.x release, installed separately.
+  Only 10.7 is tested. Keep its release file name (`!mixinbooter-<version>.jar`) so Forge loads it before Focalis.
 - Java 8
 - Client only. Servers don't need Focalis installed.
 

@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 import io.github.silentcall2598.focalis.Focalis;
 import io.github.silentcall2598.focalis.feature.FeatureState;
 import io.github.silentcall2598.focalis.feature.FeatureStatus;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
@@ -159,8 +160,8 @@ public final class QaProbe {
         LOGGER.warn("Development QA mode is on, running scenario '{}'. It is not meant for normal play.",
                 settings.scenario.id);
         lifecycle.register(RenderStage.FRAME, OWNER, this::onFrame);
-        // WORLD START only feeds the phase bookkeeping. World frames, GL checks, state changes and the injected
-        // failure all belong to the end of the world pass.
+        // WORLD START only feeds the phase bookkeeping. Counting world passes, GL checks, state changes and the
+        // injected failure all belong to the end of the world pass.
         lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, partialTicks) -> {
             if (finished || brokenReason != null) {
                 return;
@@ -760,7 +761,8 @@ public final class QaProbe {
                 report.probeErrors.isEmpty() ? "no probe errors" : report.probeErrors.get(0));
         // Every scenario renders the world, so the Mixin hook has to have fired.
         QaReport.WorldPhases phases = report.worldPhases;
-        report.check("world-start-hook", phases.starts > 0, phases.starts + " WORLD START from the Mixin hook");
+        report.check("world-start-hook", phases.starts > 0 && RenderHooks.worldStart().isAvailable(),
+                phases.starts + " WORLD START from the Mixin hook, hook " + phases.startHook);
         report.check("world-phases-paired", phases.pairs > 0 && phases.pairs == phases.starts
                         && phases.pairs == phases.ends && !worldPhases.waitingForEnd(),
                 phases.starts + " starts, " + phases.ends + " ends, " + phases.pairs + " pairs, "
@@ -800,6 +802,7 @@ public final class QaProbe {
         for (FeatureStatus status : features.get()) {
             report.features.add(new QaReport.FeatureEntry(status.featureId(), status.state().name(), status.detail()));
         }
+        report.worldPhases.startHook = RenderHooks.worldStart().state().name();
         QaReport.Frames frames = report.frames;
         frames.world = worldFrames;
         frames.averageFrameMs = frameIntervals == 0 ? 0 : frameNanos / 1e6 / frameIntervals;
