@@ -91,6 +91,7 @@ public final class QaProbe {
     private final List<QaStep> steps;
     private final Monitor monitor = new Monitor();
     private final WorldPhaseTracker worldPhases;
+    private final RenderStageTracker renderStages;
 
     private int ticks;
     private int stepIndex;
@@ -146,6 +147,7 @@ public final class QaProbe {
         this.report = new QaReport(settings.scenario);
         this.steps = settings.scenario.steps();
         this.worldPhases = new WorldPhaseTracker(report.worldPhases);
+        this.renderStages = new RenderStageTracker(report.renderStages);
         report.environment.focalisVersion = Focalis.VERSION;
         report.environment.fullscreenAllowed = settings.fullscreenAllowed;
         report.environment.startedAt = Instant.now().toString();
@@ -170,7 +172,11 @@ public final class QaProbe {
                 beforeFocalisWorld();
             }
             worldPhases.dispatchStarted(phase, report.frames.total);
+            renderStages.world(phase, report.frames.total);
         });
+        for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
+            lifecycle.register(stage, OWNER, this::onStage);
+        }
         MinecraftForge.EVENT_BUS.register(this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::writeOnExit, "Focalis QA report"));
         write(false);
@@ -243,7 +249,13 @@ public final class QaProbe {
 
     private void onFrame(RenderStage stage, RenderPhase phase, float partialTicks) {
         if (phase != RenderPhase.START) {
+            if (!finished && brokenReason == null) {
+                renderStages.frameEnded(report.frames.total);
+            }
             return;
+        }
+        if (!finished && brokenReason == null) {
+            renderStages.frameStarted();
         }
         long now = System.nanoTime();
         if (lastFrameNanos != 0) {
@@ -254,6 +266,12 @@ public final class QaProbe {
         }
         lastFrameNanos = now;
         report.frames.total++;
+    }
+
+    private void onStage(RenderStage stage, RenderPhase phase, float partialTicks) {
+        if (!finished && brokenReason == null) {
+            renderStages.stage(stage, phase, report.frames.total);
+        }
     }
 
     private void beforeFocalisWorld() {
@@ -662,6 +680,15 @@ public final class QaProbe {
         }
     }
 
+    // Creative flight, so the player stays put above cloud height.
+    void fly() {
+        EntityPlayerSP player = mc().player;
+        if (player != null && player.capabilities.allowFlying) {
+            player.capabilities.isFlying = true;
+            player.sendPlayerAbilities();
+        }
+    }
+
     void requestResize(int width, int height) {
         report.request = new QaReport.Request(++requestId, "resize", width, height);
         write(false);
@@ -770,6 +797,7 @@ public final class QaProbe {
                         + " ends without a start");
         report.check("post-pass-only-at-world-end", phases.passesOutsideEnd == 0 && phases.repeatedPasses == 0,
                 phases.passesOutsideEnd + " outside WORLD END, " + phases.repeatedPasses + " repeated in one END");
+        checkRenderStages();
         if (!settings.scenario.expectsFeatureFailure()) {
             List<String> failed = new ArrayList<>();
             for (QaReport.FeatureEntry feature : report.features) {
@@ -785,6 +813,20 @@ public final class QaProbe {
             passed &= check.passed;
         }
         report.result = passed ? "pass" : "fail";
+    }
+
+    // Every scenario needs balanced, well placed stages. Which stages have to show up is up to each scenario.
+    private void checkRenderStages() {
+        QaReport.RenderStages stages = report.renderStages;
+        boolean balanced = !renderStages.stageOpen();
+        for (QaReport.StageCounts counts : stages.stages.values()) {
+            balanced &= counts.starts == counts.ends && counts.pairs == counts.ends;
+        }
+        report.check("render-stages-balanced", balanced && stages.problemCount() == 0,
+                stages.unmatchedStarts + " unmatched starts, " + stages.endsWithoutStart + " ends without a start, "
+                        + stages.badNesting + " out of order, " + stages.repeatedStarts + " repeated starts, "
+                        + stages.outsideWorld + " outside a world pass, " + stages.outsideFrame + " outside a frame, "
+                        + stages.handBeforeWorldEnd + " HAND before WORLD END");
     }
 
     @Nullable
