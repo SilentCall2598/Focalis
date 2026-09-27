@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * The QA scenarios. Each one drives the client through its steps and then judges the run. The checks every scenario
@@ -274,6 +275,50 @@ public enum QaScenario {
             r.check("pairs-every-session", everySession, "pairs per session " + phases.pairsPerSession);
             checkEveryFrameRendered(r);
             r.check("screenshots", r.screenshots.size() == 3, r.screenshots.size() + " of 3 saved");
+        }
+    },
+
+    RENDER_STAGES("render-stages",
+            "Test pack on, in rain next to an entity, first below and then above cloud height. Every precise stage has"
+                    + " to fire with balanced pairs and vanilla's count per world pass.") {
+        @Override
+        List<QaStep> steps() {
+            List<QaStep> steps = enterWorld();
+            steps.add(QaStep.action("command /weather rain", probe -> probe.command("/weather rain")));
+            steps.add(QaStep.action("command /summon", probe -> probe.command("/summon pig ~2 ~ ~2 {NoAI:1b}")));
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("stages-below-clouds"));
+            steps.add(QaStep.action("fly", QaProbe::fly));
+            steps.add(QaStep.action("command /tp", probe -> probe.command("/tp @p ~ 140 ~")));
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("stages-above-clouds"));
+            steps.add(QaStep.waitTicks(20));
+            return steps;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkShadersActive(r);
+            // Vanilla's calls per world pass. More means a hook fires twice, fewer means one didn't apply.
+            Map<String, Integer> perPass = new TreeMap<>();
+            perPass.put("SKY", 1);
+            perPass.put("TERRAIN", 3);
+            perPass.put("ENTITIES", 2);
+            perPass.put("PARTICLES", 2);
+            perPass.put("TRANSLUCENT", 1);
+            perPass.put("WEATHER", 1);
+            perPass.put("CLOUDS", 1);
+            perPass.put("HAND", 1);
+            Map<String, Integer> seen = new TreeMap<>();
+            for (String stage : perPass.keySet()) {
+                QaReport.StageCounts counts = r.renderStages.stages.get(stage);
+                seen.put(stage, counts == null || counts.pairs == 0 ? 0 : counts.maxPerWorldPass);
+            }
+            r.check("every-stage-seen", !seen.containsValue(0), "most per world pass " + seen);
+            r.check("stage-count-per-world-pass", seen.equals(perPass),
+                    "most per world pass " + seen + ", vanilla " + perPass);
+            checkEveryFrameRendered(r);
+            r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }
     };
 

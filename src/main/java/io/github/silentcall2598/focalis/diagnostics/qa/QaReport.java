@@ -35,6 +35,7 @@ final class QaReport {
     final Frames frames = new Frames();
     int worldSessions;
     final WorldPhases worldPhases = new WorldPhases();
+    final RenderStages renderStages = new RenderStages();
     final PostPass postPass = new PostPass();
     final List<FeatureEntry> features = new ArrayList<>();
     final GlErrors glErrors = new GlErrors();
@@ -151,6 +152,44 @@ final class QaReport {
             this.frame = frame;
             this.starts = starts;
             this.ends = ends;
+            this.problem = problem;
+        }
+    }
+
+    // The precise stages the Mixins wrap inside each world pass, keyed by stage name.
+    static final class RenderStages {
+        final Map<String, StageCounts> stages = new TreeMap<>();
+        // START still open when its frame or world pass ended.
+        int unmatchedStarts;
+        int endsWithoutStart;
+        // END for a stage that wasn't the innermost open one.
+        int badNesting;
+        // START for a stage that was already open, which points at a duplicate hook.
+        int repeatedStarts;
+        int outsideWorld;
+        int outsideFrame;
+        final List<StageProblem> problems = new ArrayList<>();
+
+        int problemCount() {
+            return unmatchedStarts + endsWithoutStart + badNesting + repeatedStarts + outsideWorld + outsideFrame;
+        }
+    }
+
+    static final class StageCounts {
+        int starts;
+        int ends;
+        int pairs;
+        int maxPerWorldPass;
+    }
+
+    static final class StageProblem {
+        final int frame;
+        final String stage;
+        final String problem;
+
+        StageProblem(int frame, String stage, String problem) {
+            this.frame = frame;
+            this.stage = stage;
             this.problem = problem;
         }
     }

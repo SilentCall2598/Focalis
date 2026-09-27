@@ -3,26 +3,33 @@
 package io.github.silentcall2598.focalis.render.lifecycle;
 
 /**
- * Logical render stages that Focalis hooks as needed, and only hooked stages get events. They don't follow one fixed
- * order in 1.12.2, since entities render in two passes, weather draws before translucent blocks and clouds draw early
- * or late depending on camera height.
+ * Logical render stages that Focalis hooks as needed, and only hooked stages get events. A stage can happen several
+ * times in one world pass or not at all, and the stages inside a world pass don't follow one fixed order. Listeners
+ * can only rely on START and END being balanced.
  */
 public enum RenderStage {
     /** One whole client frame, including the world, hand, HUD and screens. */
     FRAME,
     /** One whole world pass, from the start of EntityRenderer.renderWorldPass to right before the hand. */
     WORLD,
-    /** Sky, sun, moon and stars. */
+    /** Sky, sun, moon and stars. Skipped below 4 chunks of render distance. */
     SKY,
-    /** Opaque and cutout chunk geometry. */
+    /** Solid and cutout chunk layers, one pair per layer. */
     TERRAIN,
-    /** Entities, tile entities and particles. */
+    /**
+     * RenderGlobal.renderEntities, with entities and tile entities. It runs twice per world pass, for Forge render
+     * pass 0 and again after translucent terrain for pass 1.
+     */
     ENTITIES,
-    /** Translucent chunk geometry and the translucent entity pass. */
+    /** Lit particles and normal particles, one pair each. */
+    PARTICLES,
+    /** The translucent chunk layer. */
     TRANSLUCENT,
-    /** Rain and snow. */
+    /** Rain and snow. It runs every world pass, also in clear weather. */
     WEATHER,
-    /** First-person hand and held items. */
+    /** Clouds when they are on. Before terrain below cloud height, after translucent terrain above it. */
+    CLOUDS,
+    /** First-person hand and held items. It comes after WORLD END. */
     HAND,
     /** In-game HUD and screens. */
     GUI

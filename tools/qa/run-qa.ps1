@@ -45,6 +45,7 @@ $Scenarios = [ordered]@{
     'post-process-bad-pack'          = @{ Shaders = $true; Pack = 'focalis-broken' }
     'world-reload'                   = @{ Shaders = $true; Pack = 'focalis-depth-view' }
     'world-lifecycle'                = @{ Shaders = $true; Pack = 'focalis-depth-view' }
+    'render-stages'                  = @{ Shaders = $true; Pack = 'focalis-depth-view' }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.
@@ -418,6 +419,8 @@ function Invoke-Scenario([string]$Name) {
                     worldEnds        = $phases.ends
                     startEndPairs    = $phases.pairs
                     phaseProblems    = $phases.repeatedStarts + $phases.endsWithoutStart + $phases.passesOutsideEnd + $phases.repeatedPasses
+                    stagePairs       = ($probe.renderStages.stages.PSObject.Properties | ForEach-Object { $_.Value.pairs } | Measure-Object -Sum).Sum
+                    stageProblems    = $probe.renderStages.unmatchedStarts + $probe.renderStages.endsWithoutStart + $probe.renderStages.badNesting + $probe.renderStages.repeatedStarts + $probe.renderStages.outsideWorld + $probe.renderStages.outsideFrame
                     renderedFrames   = $probe.postPass.renderedFrames
                     skips            = $probe.postPass.skips
                     captures         = @($probe.postPass.captures).Count
@@ -512,14 +515,14 @@ if ($Obfuscated) {
     $summary.Add("Release jar SHA-256: $(if ($report.artifact) { $report.artifact.sha256 } else { 'unknown, a scenario found no jar or the jars differed' })")
 }
 $summary.Add('')
-$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Rendered | Mismatches | GL errors | Captures | Seconds |')
-$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Stage pairs | Stage problems | Rendered | Mismatches | GL errors | Captures | Seconds |')
+$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($result in $results) {
     $n = $result.numbers
     if ($n) {
-        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.renderedFrames) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.stagePairs) | $($n.stageProblems) | $($n.renderedFrames) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
     } else {
-        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | - | - | $($result.durationSeconds) |")
     }
 }
 foreach ($result in $results) {

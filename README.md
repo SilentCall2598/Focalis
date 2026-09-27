@@ -20,8 +20,9 @@ skies, video settings, and compatibility tooling for large modpacks.
 - On the first rendered frame, logs the OpenGL driver, version, limits, video memory and the capabilities
   future systems depend on.
 - Adds a Focalis line with feature states to crash reports.
-- Marks the start of each world pass with a Mixin in `EntityRenderer.renderWorldPass`, so future rendering systems
-  can hook in there. It only reports the boundary and doesn't change what is drawn.
+- Exposes precise world render stage boundaries to internal rendering systems: the world pass, sky, terrain,
+  entities, particles, translucent terrain, weather, clouds and the hand. Mixins in `EntityRenderer` only report
+  these boundaries and don't change what is drawn.
 - Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
 - Provides an experimental, off-by-default `shaders` feature. It is the first step of shader support and
   only runs Focalis's own test program (`shaders/focalis_post.vsh` and `.fsh`) as a single post-process pass

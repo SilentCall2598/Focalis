@@ -5,6 +5,9 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 import io.github.silentcall2598.focalis.core.FocalisLog;
 
 import javax.annotation.Nullable;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Where Focalis's Mixins report render boundaries that Forge has no event for. The Mixins only call in here, and
@@ -12,7 +15,13 @@ import javax.annotation.Nullable;
  */
 public final class RenderHooks {
 
+    /** Stages the Mixins wrap around vanilla calls inside the world pass. */
+    public static final Set<RenderStage> PRECISE_STAGES = EnumSet.of(RenderStage.SKY, RenderStage.TERRAIN,
+            RenderStage.ENTITIES, RenderStage.PARTICLES, RenderStage.TRANSLUCENT, RenderStage.WEATHER,
+            RenderStage.CLOUDS, RenderStage.HAND);
+
     private static final HookAvailability WORLD_START = new HookAvailability();
+    private static final FirstPassStages FIRST_PASS = new FirstPassStages();
 
     @Nullable
     private static volatile RenderLifecycle lifecycle;
@@ -26,6 +35,9 @@ public final class RenderHooks {
             throw new IllegalStateException("Render hooks are already installed");
         }
         target.markDispatched(RenderStage.WORLD);
+        for (RenderStage stage : PRECISE_STAGES) {
+            target.markDispatched(stage);
+        }
         lifecycle = target;
     }
 
@@ -43,6 +55,9 @@ public final class RenderHooks {
         if (WORLD_START.hookFired()) {
             FocalisLog.LOGGER.info("WORLD START hook in EntityRenderer.renderWorldPass is active");
         }
+        if (FIRST_PASS.worldPassStarted()) {
+            reportFirstPass();
+        }
         target.dispatch(RenderStage.WORLD, RenderPhase.START, partialTicks);
     }
 
@@ -54,6 +69,33 @@ public final class RenderHooks {
                     + " WORLD START is unavailable this session. The Focalis Mixin probably didn't apply. Mixin"
                     + " messages about mixins.focalis.json earlier in the log say why. Features that only need"
                     + " WORLD END keep working.");
+        }
+    }
+
+    // Called by the Mixins right before and after a wrapped vanilla render call.
+    public static void stageStart(RenderStage stage, float partialTicks) {
+        RenderLifecycle target = lifecycle;
+        if (target == null) {
+            return;
+        }
+        FIRST_PASS.stageStarted(stage);
+        target.dispatch(stage, RenderPhase.START, partialTicks);
+    }
+
+    public static void stageEnd(RenderStage stage, float partialTicks) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatch(stage, RenderPhase.END, partialTicks);
+        }
+    }
+
+    private static void reportFirstPass() {
+        FocalisLog.LOGGER.info("Render stages seen in the first world pass: {}", FIRST_PASS.seen());
+        List<RenderStage> missing = FIRST_PASS.missing();
+        if (!missing.isEmpty()) {
+            FocalisLog.LOGGER.warn("Vanilla renders {} in every world pass, but those stage hooks didn't fire."
+                    + " Another mod probably changed those calls in EntityRenderer.renderWorldPass. Rendering is"
+                    + " unaffected, only those stage events are missing.", missing);
         }
     }
 }
