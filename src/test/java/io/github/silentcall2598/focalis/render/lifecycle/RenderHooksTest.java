@@ -24,8 +24,8 @@ class RenderHooksTest {
         RenderLifecycle lifecycle = new RenderLifecycle();
         RenderHooks.install(lifecycle);
         List<String> calls = new ArrayList<>();
-        lifecycle.register(RenderStage.WORLD, "test", (stage, phase, partialTicks) ->
-                calls.add(stage + "/" + phase + "/" + partialTicks));
+        lifecycle.register(RenderStage.WORLD, "test", (stage, phase, kind, ticks) ->
+                calls.add(stage + "/" + phase + "/" + ticks));
 
         RenderHooks.worldPassStart(0.25F);
         RenderHooks.worldPassEnd();

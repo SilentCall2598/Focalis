@@ -36,14 +36,15 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `post-process-bad-pack` | A pack that doesn't compile. Rendering stays vanilla, nothing is created and the feature stays active. |
 | `world-reload` | Leaves and rejoins twice. The pass keeps running and the capture isn't recreated. |
 | `world-lifecycle` | Test pack on, with a pause screen and a rejoin. Start/end pairs match the world passes in both sessions and the pass runs once in every WORLD END. |
-| `render-stages` | Test pack on, in rain next to an entity, below and then above cloud height. Every precise stage fires, with vanilla's count per world pass. |
+| `render-stages` | Test pack on, in rain next to an entity, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
 state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
 also fails when the WORLD START hook never fires, when a WORLD START doesn't get exactly one WORLD END before the
 next one, or when the post pass renders anywhere but inside a WORLD END or more than once in one. The precise
-stages like SKY, TERRAIN and HAND have to be balanced and close in order, world pass stages have to happen while
-a world pass is open, and HAND has to happen inside the frame after its world pass ended.
+stages like SKY, TERRAIN and HAND have to be balanced and close in order with the same draw kind they started
+with, world pass stages have to happen while a world pass is open, HAND has to happen inside the frame after its
+world pass ended, and the two entity kinds have to match Forge's own render pass.
 
 ## Output
 

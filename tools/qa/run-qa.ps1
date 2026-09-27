@@ -420,7 +420,7 @@ function Invoke-Scenario([string]$Name) {
                     startEndPairs    = $phases.pairs
                     phaseProblems    = $phases.repeatedStarts + $phases.endsWithoutStart + $phases.passesOutsideEnd + $phases.repeatedPasses
                     stagePairs       = ($probe.renderStages.stages.PSObject.Properties | ForEach-Object { $_.Value.pairs } | Measure-Object -Sum).Sum
-                    stageProblems    = $probe.renderStages.unmatchedStarts + $probe.renderStages.endsWithoutStart + $probe.renderStages.badNesting + $probe.renderStages.repeatedStarts + $probe.renderStages.outsideWorld + $probe.renderStages.outsideFrame + $probe.renderStages.handBeforeWorldEnd
+                    stageProblems    = $probe.renderStages.unmatchedStarts + $probe.renderStages.endsWithoutStart + $probe.renderStages.badNesting + $probe.renderStages.repeatedStarts + $probe.renderStages.outsideWorld + $probe.renderStages.outsideFrame + $probe.renderStages.handBeforeWorldEnd + $probe.renderStages.kindMismatches + $probe.renderStages.entityPassMismatches
                     renderedFrames   = $probe.postPass.renderedFrames
                     skips            = $probe.postPass.skips
                     captures         = @($probe.postPass.captures).Count

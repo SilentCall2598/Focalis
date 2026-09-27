@@ -2,23 +2,30 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.diagnostics.qa;
 
+import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.Arrays;
+import java.util.Map;
 
 /**
- * Checks the precise render stages. Every START needs its END, stages close in the reverse order they opened, stages
- * of the world pass only happen while WORLD is open, and HAND happens in the frame after its world pass ended. The
- * highest count per world pass is kept, so a hook that fires twice stands out. Client thread only.
+ * Checks the precise render stages. Every START needs an END with the same stage and draw kind, stages close in the
+ * reverse order they opened, stages of the world pass only happen while WORLD is open, and HAND happens in the frame
+ * after its world pass ended. The highest count per world pass is kept for each stage and kind, so a hook that fires
+ * twice stands out. Client thread only.
  */
 final class RenderStageTracker {
 
+    private static final RenderStage[] STAGES = RenderStage.values();
+    private static final RenderDrawKind[] KINDS = RenderDrawKind.values();
+
     private final QaReport.RenderStages report;
-    private final Deque<RenderStage> open = new ArrayDeque<>();
-    // Starts of each stage in the current world pass, hand included, indexed by ordinal.
-    private final int[] thisPass = new int[RenderStage.values().length];
+    // Open stages as stage and kind codes, innermost last.
+    private int[] open = new int[16];
+    private int openCount;
+    // Starts of each stage and kind in the current world pass, hand included.
+    private final int[] thisPass = new int[STAGES.length * KINDS.length];
     private boolean frameOpen;
     private boolean worldOpen;
     private boolean passCounting;
@@ -26,6 +33,18 @@ final class RenderStageTracker {
 
     RenderStageTracker(QaReport.RenderStages report) {
         this.report = report;
+    }
+
+    private static int code(RenderStage stage, RenderDrawKind kind) {
+        return stage.ordinal() * KINDS.length + kind.ordinal();
+    }
+
+    private static RenderStage stageOf(int code) {
+        return STAGES[code / KINDS.length];
+    }
+
+    private static RenderDrawKind kindOf(int code) {
+        return KINDS[code % KINDS.length];
     }
 
     void frameStarted() {
@@ -53,66 +72,112 @@ final class RenderStageTracker {
         }
     }
 
-    void stage(RenderStage stage, RenderPhase phase, int frame) {
-        QaReport.StageCounts counts = counts(stage);
+    void stage(RenderStage stage, RenderPhase phase, RenderDrawKind kind, int frame) {
         if (phase == RenderPhase.START) {
-            counts.starts++;
-            started(stage, frame);
+            counts(stage).starts++;
+            kindCounts(stage, kind).starts++;
+            started(stage, kind, frame);
         } else {
-            counts.ends++;
-            ended(stage, counts, frame);
+            counts(stage).ends++;
+            kindCounts(stage, kind).ends++;
+            ended(stage, kind, frame);
         }
     }
 
-    private void started(RenderStage stage, int frame) {
+    // Forge's render pass while an ENTITIES stage starts. Pass 0 and 1 have to match the two entity kinds.
+    void entityPass(RenderDrawKind kind, int forgePass, int frame) {
+        boolean matches = kind == RenderDrawKind.ENTITY_PASS_0 ? forgePass == 0
+                : kind == RenderDrawKind.ENTITY_PASS_1 && forgePass == 1;
+        if (!matches) {
+            report.entityPassMismatches++;
+            problem(frame, RenderStage.ENTITIES, kind, "Forge render pass is " + forgePass);
+        }
+    }
+
+    private void started(RenderStage stage, RenderDrawKind kind, int frame) {
         if (!frameOpen) {
             report.outsideFrame++;
-            problem(frame, stage, "START outside a frame");
+            problem(frame, stage, kind, "START outside a frame");
         } else if (stage == RenderStage.HAND) {
             if (worldPassesInFrame == 0) {
                 report.outsideFrame++;
-                problem(frame, stage, "HAND before any world pass in this frame");
+                problem(frame, stage, kind, "HAND before any world pass in this frame");
             } else if (worldOpen) {
                 report.handBeforeWorldEnd++;
-                problem(frame, stage, "HAND while the world pass is still open");
+                problem(frame, stage, kind, "HAND while the world pass is still open");
             }
         } else if (!worldOpen) {
             report.outsideWorld++;
-            problem(frame, stage, "START while no world pass is open");
+            problem(frame, stage, kind, "START while no world pass is open");
         }
-        if (open.contains(stage)) {
+        int code = code(stage, kind);
+        if (find(code) >= 0) {
             report.repeatedStarts++;
-            problem(frame, stage, "START while the same stage is already open");
+            problem(frame, stage, kind, "START while the same stage and kind is already open");
         }
-        open.push(stage);
+        if (openCount == open.length) {
+            open = Arrays.copyOf(open, open.length * 2);
+        }
+        open[openCount++] = code;
         if (passCounting) {
-            thisPass[stage.ordinal()]++;
+            thisPass[code]++;
         }
     }
 
-    private void ended(RenderStage stage, QaReport.StageCounts counts, int frame) {
-        if (!open.contains(stage)) {
-            report.endsWithoutStart++;
-            problem(frame, stage, "END without a START");
+    private void ended(RenderStage stage, RenderDrawKind kind, int frame) {
+        int exact = find(code(stage, kind));
+        if (exact >= 0) {
+            if (exact != openCount - 1) {
+                report.badNesting++;
+                problem(frame, stage, kind, "END while " + describe(open[openCount - 1]) + " is still open inside it");
+                dropAbove(exact);
+            }
+            openCount--;
+            counts(stage).pairs++;
+            kindCounts(stage, kind).pairs++;
             return;
         }
-        if (open.peek() != stage) {
-            report.badNesting++;
-            problem(frame, stage, "END while " + open.peek() + " is still open inside it");
-            while (open.peek() != stage) {
-                open.pop();
-                report.unmatchedStarts++;
+        int sameStage = findStage(stage);
+        if (sameStage >= 0) {
+            report.kindMismatches++;
+            problem(frame, stage, kind, "END for a " + describe(open[sameStage]) + " START");
+            dropAbove(sameStage);
+            openCount--;
+            return;
+        }
+        report.endsWithoutStart++;
+        problem(frame, stage, kind, "END without a START");
+    }
+
+    private int find(int code) {
+        for (int i = openCount - 1; i >= 0; i--) {
+            if (open[i] == code) {
+                return i;
             }
         }
-        open.pop();
-        counts.pairs++;
+        return -1;
+    }
+
+    private int findStage(RenderStage stage) {
+        for (int i = openCount - 1; i >= 0; i--) {
+            if (stageOf(open[i]) == stage) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Whatever is still open inside the closed entry never gets a proper END.
+    private void dropAbove(int index) {
+        report.unmatchedStarts += openCount - 1 - index;
+        openCount = index + 1;
     }
 
     private void closeLeftovers(int frame, String when) {
-        while (!open.isEmpty()) {
-            RenderStage stage = open.pop();
+        while (openCount > 0) {
+            int code = open[--openCount];
             report.unmatchedStarts++;
-            problem(frame, stage, when);
+            problem(frame, stageOf(code), kindOf(code), when);
         }
     }
 
@@ -120,31 +185,51 @@ final class RenderStageTracker {
         if (!passCounting) {
             return;
         }
-        for (RenderStage stage : RenderStage.values()) {
-            int count = thisPass[stage.ordinal()];
-            if (count > 0) {
-                QaReport.StageCounts counts = counts(stage);
-                counts.maxPerWorldPass = Math.max(counts.maxPerWorldPass, count);
+        for (RenderStage stage : STAGES) {
+            int stageTotal = 0;
+            for (RenderDrawKind kind : KINDS) {
+                int count = thisPass[code(stage, kind)];
+                if (count > 0) {
+                    QaReport.StageCounts counts = kindCounts(stage, kind);
+                    counts.maxPerWorldPass = Math.max(counts.maxPerWorldPass, count);
+                    stageTotal += count;
+                }
             }
-            thisPass[stage.ordinal()] = 0;
+            if (stageTotal > 0) {
+                QaReport.StageCounts counts = counts(stage);
+                counts.maxPerWorldPass = Math.max(counts.maxPerWorldPass, stageTotal);
+            }
         }
+        Arrays.fill(thisPass, 0);
         passCounting = false;
     }
 
     boolean stageOpen() {
-        return !open.isEmpty();
+        return openCount > 0;
+    }
+
+    private static String describe(int code) {
+        return stageOf(code) + "/" + kindOf(code);
     }
 
     private QaReport.StageCounts counts(RenderStage stage) {
-        QaReport.StageCounts counts = report.stages.get(stage.name());
+        return counts(report.stages, stage.name());
+    }
+
+    private QaReport.StageCounts kindCounts(RenderStage stage, RenderDrawKind kind) {
+        return counts(report.kinds, stage + "/" + kind);
+    }
+
+    private static QaReport.StageCounts counts(Map<String, QaReport.StageCounts> map, String key) {
+        QaReport.StageCounts counts = map.get(key);
         if (counts == null) {
             counts = new QaReport.StageCounts();
-            report.stages.put(stage.name(), counts);
+            map.put(key, counts);
         }
         return counts;
     }
 
-    private void problem(int frame, RenderStage stage, String problem) {
-        QaReport.addCapped(report.problems, new QaReport.StageProblem(frame, stage.name(), problem));
+    private void problem(int frame, RenderStage stage, RenderDrawKind kind, String problem) {
+        QaReport.addCapped(report.problems, new QaReport.StageProblem(frame, stage.name(), kind.name(), problem));
     }
 }

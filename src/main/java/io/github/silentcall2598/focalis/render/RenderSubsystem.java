@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.render;
 
 import io.github.silentcall2598.focalis.core.FocalisLog;
 import io.github.silentcall2598.focalis.render.lifecycle.ForgeRenderEventBridge;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
@@ -45,7 +46,7 @@ public final class RenderSubsystem {
         return glContext;
     }
 
-    private void onFrame(RenderStage stage, RenderPhase phase, float partialTicks) {
+    private void onFrame(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         if (phase != RenderPhase.START || contextCaptureAttempted) {
             return;
         }

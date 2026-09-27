@@ -299,24 +299,25 @@ public enum QaScenario {
         @Override
         void evaluate(QaReport r) {
             checkShadersActive(r);
-            // Vanilla's calls per world pass. More means a hook fires twice, fewer means one didn't apply.
-            Map<String, Integer> perPass = new TreeMap<>();
-            perPass.put("SKY", 1);
-            perPass.put("TERRAIN", 3);
-            perPass.put("ENTITIES", 2);
-            perPass.put("PARTICLES", 2);
-            perPass.put("TRANSLUCENT", 1);
-            perPass.put("WEATHER", 1);
-            perPass.put("CLOUDS", 1);
-            perPass.put("HAND", 1);
-            Map<String, Integer> seen = new TreeMap<>();
-            for (String stage : perPass.keySet()) {
-                QaReport.StageCounts counts = r.renderStages.stages.get(stage);
-                seen.put(stage, counts == null || counts.pairs == 0 ? 0 : counts.maxPerWorldPass);
+            // Vanilla draws each of these exactly once per world pass here. Anything else means a hook fires twice,
+            // didn't apply, or reports the wrong kind.
+            List<String> expected = Arrays.asList("SKY/DEFAULT", "TERRAIN/TERRAIN_SOLID",
+                    "TERRAIN/TERRAIN_CUTOUT_MIPPED", "TERRAIN/TERRAIN_CUTOUT", "TRANSLUCENT/TERRAIN_TRANSLUCENT",
+                    "ENTITIES/ENTITY_PASS_0", "ENTITIES/ENTITY_PASS_1", "PARTICLES/PARTICLES_LIT",
+                    "PARTICLES/PARTICLES_NORMAL", "WEATHER/DEFAULT", "CLOUDS/DEFAULT", "HAND/DEFAULT");
+            Map<String, Integer> pairs = new TreeMap<>();
+            boolean everyPass = true;
+            for (String kind : expected) {
+                QaReport.StageCounts counts = r.renderStages.kinds.get(kind);
+                int seen = counts == null ? 0 : counts.pairs;
+                pairs.put(kind, seen);
+                everyPass &= counts != null && seen == r.frames.world && counts.maxPerWorldPass == 1;
             }
-            r.check("every-stage-seen", !seen.containsValue(0), "most per world pass " + seen);
-            r.check("stage-count-per-world-pass", seen.equals(perPass),
-                    "most per world pass " + seen + ", vanilla " + perPass);
+            r.check("draw-kinds-every-world-pass", everyPass,
+                    "pairs " + pairs + " over " + r.frames.world + " world passes");
+            List<String> unexpected = new ArrayList<>(r.renderStages.kinds.keySet());
+            unexpected.removeAll(expected);
+            r.check("no-unexpected-draw-kinds", unexpected.isEmpty(), "unexpected " + unexpected);
             checkEveryFrameRendered(r);
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }

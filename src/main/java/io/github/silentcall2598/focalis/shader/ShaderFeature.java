@@ -96,7 +96,7 @@ public final class ShaderFeature extends Feature {
             return;
         }
         logger.info("Running the experimental post pass from shaderpack '{}'", packName);
-        context.addRenderListener(RenderStage.WORLD, (stage, phase, partialTicks) -> {
+        context.addRenderListener(RenderStage.WORLD, (stage, phase, drawKind, partialTicks) -> {
             // The pass needs the finished world image, so it only runs at the end of the world pass.
             if (phase == RenderPhase.END) {
                 onWorldEnd(program);

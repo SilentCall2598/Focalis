@@ -112,7 +112,7 @@ class FeatureManagerTest {
         manager.register(new TestFeature("crashes_while_rendering", true) {
             @Override
             protected void setup(FeatureContext context) {
-                context.addRenderListener(RenderStage.FRAME, (stage, phase, partialTicks) -> {
+                context.addRenderListener(RenderStage.FRAME, (stage, phase, kind, ticks) -> {
                     throw new IllegalStateException("render failed");
                 });
             }
@@ -191,7 +191,7 @@ class FeatureManagerTest {
             @Override
             protected void setup(FeatureContext context) {
                 saved[0] = context;
-                context.addRenderListener(RenderStage.FRAME, (stage, phase, partialTicks) -> {
+                context.addRenderListener(RenderStage.FRAME, (stage, phase, kind, ticks) -> {
                     throw new IllegalStateException("render failed");
                 });
             }
@@ -200,7 +200,7 @@ class FeatureManagerTest {
         lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
 
         assertThrows(IllegalStateException.class, () -> saved[0].addRenderListener(RenderStage.FRAME,
-                (stage, phase, partialTicks) -> calls.add("late listener")));
+                (stage, phase, kind, ticks) -> calls.add("late listener")));
         lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
 
         assertEquals(Arrays.asList("keeps_context:cleanup"), calls);
@@ -234,7 +234,7 @@ class FeatureManagerTest {
         @Override
         protected void setup(FeatureContext context) {
             calls.add(id() + ":setup");
-            context.addRenderListener(RenderStage.FRAME, (stage, phase, partialTicks) -> calls.add(id() + ":" + stage));
+            context.addRenderListener(RenderStage.FRAME, (stage, phase, kind, ticks) -> calls.add(id() + ":" + stage));
         }
 
         @Override
