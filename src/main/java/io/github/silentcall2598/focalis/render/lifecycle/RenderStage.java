@@ -18,7 +18,7 @@ public enum RenderStage {
     TERRAIN,
     /**
      * RenderGlobal.renderEntities, with entities and tile entities. It runs twice per world pass, for Forge render
-     * pass 0 and again after translucent terrain for pass 1, and the draw kind tells them apart.
+     * pass 0 and again after translucent terrain for pass 1. The draw kind comes from Forge's render pass.
      */
     ENTITIES,
     /** Lit particles and normal particles, one pair each with its own draw kind. */

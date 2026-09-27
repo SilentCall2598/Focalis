@@ -84,16 +84,6 @@ final class RenderStageTracker {
         }
     }
 
-    // Forge's render pass while an ENTITIES stage starts. Pass 0 and 1 have to match the two entity kinds.
-    void entityPass(RenderDrawKind kind, int forgePass, int frame) {
-        boolean matches = kind == RenderDrawKind.ENTITY_PASS_0 ? forgePass == 0
-                : kind == RenderDrawKind.ENTITY_PASS_1 && forgePass == 1;
-        if (!matches) {
-            report.entityPassMismatches++;
-            problem(frame, RenderStage.ENTITIES, kind, "Forge render pass is " + forgePass);
-        }
-    }
-
     private void started(RenderStage stage, RenderDrawKind kind, int frame) {
         if (!frameOpen) {
             report.outsideFrame++;

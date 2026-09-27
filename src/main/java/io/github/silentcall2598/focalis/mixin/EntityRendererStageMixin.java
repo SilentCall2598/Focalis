@@ -13,6 +13,7 @@ import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraftforge.client.MinecraftForgeClient;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -68,33 +69,22 @@ public abstract class EntityRendererStageMixin {
         return RenderDrawKind.DEFAULT;
     }
 
-    // Forge sets entity render pass 0 right before the first call and pass 1 right before the second, which comes
-    // after translucent terrain. Nothing else in renderWorldPass calls renderEntities.
+    // Forge sets its entity render pass before each call, so the kind comes from Forge rather than call order. An
+    // unexpected pass stays unclassified and shows up in the first pass check.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderEntities("
-                    + "Lnet/minecraft/entity/Entity;Lnet/minecraft/client/renderer/culling/ICamera;F)V", ordinal = 0),
-            require = 0, expect = 1)
-    private void focalis$entitiesPass0(RenderGlobal renderGlobal, Entity entity, ICamera camera, float partialTicks,
+                    + "Lnet/minecraft/entity/Entity;Lnet/minecraft/client/renderer/culling/ICamera;F)V"),
+            require = 0, expect = 2)
+    private void focalis$entities(RenderGlobal renderGlobal, Entity entity, ICamera camera, float partialTicks,
             Operation<Void> original) {
-        RenderHooks.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0, partialTicks);
+        int forgePass = MinecraftForgeClient.getRenderPass();
+        RenderDrawKind kind = forgePass == 0 ? RenderDrawKind.ENTITY_PASS_0
+                : forgePass == 1 ? RenderDrawKind.ENTITY_PASS_1 : RenderDrawKind.DEFAULT;
+        RenderHooks.stageStart(RenderStage.ENTITIES, kind, partialTicks);
         try {
             original.call(renderGlobal, entity, camera, partialTicks);
         } finally {
-            RenderHooks.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0, partialTicks);
-        }
-    }
-
-    @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/client/renderer/RenderGlobal;renderEntities("
-                    + "Lnet/minecraft/entity/Entity;Lnet/minecraft/client/renderer/culling/ICamera;F)V", ordinal = 1),
-            require = 0, expect = 1)
-    private void focalis$entitiesPass1(RenderGlobal renderGlobal, Entity entity, ICamera camera, float partialTicks,
-            Operation<Void> original) {
-        RenderHooks.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1, partialTicks);
-        try {
-            original.call(renderGlobal, entity, camera, partialTicks);
-        } finally {
-            RenderHooks.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1, partialTicks);
+            RenderHooks.stageEnd(RenderStage.ENTITIES, kind, partialTicks);
         }
     }
 

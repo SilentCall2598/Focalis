@@ -174,13 +174,11 @@ final class QaReport {
         int handBeforeWorldEnd;
         // END with another draw kind than the START it closes.
         int kindMismatches;
-        // ENTITIES draw kinds that don't match Forge's own render pass at that moment.
-        int entityPassMismatches;
         final List<StageProblem> problems = new ArrayList<>();
 
         int problemCount() {
             return unmatchedStarts + endsWithoutStart + badNesting + repeatedStarts + outsideWorld + outsideFrame
-                    + handBeforeWorldEnd + kindMismatches + entityPassMismatches;
+                    + handBeforeWorldEnd + kindMismatches;
         }
     }
 

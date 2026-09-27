@@ -28,7 +28,6 @@ import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.world.GameType;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
-import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -271,13 +270,8 @@ public final class QaProbe {
     }
 
     private void onStage(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
-        if (finished || brokenReason != null) {
-            return;
-        }
-        renderStages.stage(stage, phase, drawKind, report.frames.total);
-        // The entity kinds come from call site order, so they're checked against Forge's own render pass here.
-        if (stage == RenderStage.ENTITIES && phase == RenderPhase.START) {
-            renderStages.entityPass(drawKind, MinecraftForgeClient.getRenderPass(), report.frames.total);
+        if (!finished && brokenReason == null) {
+            renderStages.stage(stage, phase, drawKind, report.frames.total);
         }
     }
 
@@ -837,8 +831,7 @@ public final class QaProbe {
                         + stages.badNesting + " out of order, " + stages.repeatedStarts + " repeated starts, "
                         + stages.outsideWorld + " outside a world pass, " + stages.outsideFrame + " outside a frame, "
                         + stages.handBeforeWorldEnd + " HAND before WORLD END, " + stages.kindMismatches
-                        + " END with another draw kind, " + stages.entityPassMismatches
-                        + " entity kinds not matching Forge's render pass");
+                        + " END with another draw kind");
     }
 
     @Nullable

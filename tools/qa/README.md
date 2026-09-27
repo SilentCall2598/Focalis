@@ -43,8 +43,8 @@ state, on unexpected feature failures, and on unexpected warnings, errors or exc
 also fails when the WORLD START hook never fires, when a WORLD START doesn't get exactly one WORLD END before the
 next one, or when the post pass renders anywhere but inside a WORLD END or more than once in one. The precise
 stages like SKY, TERRAIN and HAND have to be balanced and close in order with the same draw kind they started
-with, world pass stages have to happen while a world pass is open, HAND has to happen inside the frame after its
-world pass ended, and the two entity kinds have to match Forge's own render pass.
+with, world pass stages have to happen while a world pass is open, and HAND has to happen inside the frame after
+its world pass ended.
 
 ## Output
 

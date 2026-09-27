@@ -114,15 +114,6 @@ class RenderStageTrackerTest {
     }
 
     @Test
-    void entityKindsHaveToMatchForgesRenderPass() {
-        tracker.entityPass(RenderDrawKind.ENTITY_PASS_0, 0, 1);
-        tracker.entityPass(RenderDrawKind.ENTITY_PASS_1, 1, 1);
-        tracker.entityPass(RenderDrawKind.ENTITY_PASS_1, 0, 1);
-
-        assertEquals(1, report.entityPassMismatches);
-    }
-
-    @Test
     void closingOutOfOrderIsReported() {
         tracker.frameStarted();
         tracker.world(RenderPhase.START, 1);

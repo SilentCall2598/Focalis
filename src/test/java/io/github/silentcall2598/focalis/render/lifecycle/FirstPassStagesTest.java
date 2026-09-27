@@ -5,6 +5,7 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -81,6 +82,16 @@ class FirstPassStagesTest {
         requiredVanillaCallsExcept(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1);
 
         assertEquals(Collections.singletonList("ENTITIES/ENTITY_PASS_1 0 instead of 1"), stages.mismatches());
+    }
+
+    @Test
+    void unclassifiedEntityPassIsDetected() {
+        stages.worldPassStarted();
+        requiredVanillaCallsExcept(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_1);
+        fire(RenderStage.ENTITIES, RenderDrawKind.DEFAULT);
+
+        assertEquals(Arrays.asList("ENTITIES/DEFAULT 1 instead of 0",
+                "ENTITIES/ENTITY_PASS_1 0 instead of 1"), stages.mismatches());
     }
 
     @Test
