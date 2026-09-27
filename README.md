@@ -5,9 +5,10 @@ modular, compatibility-first alternative to OptiFine for large Forge modpacks.
 
 ## Status
 
-Focalis is in early development. The current version is a foundation only: it loads as a client-side Forge
+Focalis is in early development. The current version is mostly a foundation: it loads as a client-side Forge
 mod, reports diagnostic information, and provides the internal structure future rendering systems will build
-on. **It does not change what Minecraft renders.**
+on. **With default settings it does not change what Minecraft renders.** The only exception is the
+experimental `shaders` feature, which is off by default and described below.
 
 Planned systems, none of which exist yet: OptiFine/Iris-compatible shader support, a high-performance
 renderer, rendering optimizations, dynamic lights, connected textures, emissive textures, CIT, CEM, custom
@@ -20,6 +21,13 @@ skies, video settings, and compatibility tooling for large modpacks.
   future systems depend on.
 - Adds a Focalis line with feature states to crash reports.
 - Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
+- Provides an experimental, off-by-default `shaders` feature. It is the first step of shader support and
+  only runs Focalis's own test program (`shaders/focalis_post.vsh` and `.fsh`) as a single post-process pass
+  over the world image at the end of the world pass, before the hand and HUD are drawn. Regular OptiFine or Iris
+  shaderpacks are not supported, and a pack without that program is refused. If the pack or its program fails to
+  load or compile, the problem is logged and rendering stays vanilla. It stays unavailable when OptiFine is
+  installed.
+  The development test pack lives in `src/test/resources/shaderpacks/focalis-depth-view`.
 
 ## Requirements
 
@@ -37,6 +45,8 @@ Settings live in `config/focalis.cfg`, created on first launch. Changes take eff
 | `diagnostics.logGlExtensions` | `false` | Also log every OpenGL extension the driver reports. |
 | `features.frame_stats.enabled` | `false` | Periodically log frame timing and render stage counts. |
 | `features.frame_stats.reportIntervalSeconds` | `10` | Seconds between frame statistics reports. |
+| `features.shaders.enabled` | `false` | Experimental. Run the Focalis test post-process program from the selected pack. |
+| `features.shaders.pack` | empty | Name of a folder or zip directly inside the `shaderpacks` folder. |
 
 ## Building
 
@@ -66,7 +76,7 @@ All code lives under `io.github.silentcall2598.focalis`:
 | `render` | Rendering subsystem |
 | `render.lifecycle` | Frame stage model and the hooks that dispatch it |
 | `render.state` | OpenGL context information |
-| `shader` | Shader support. So far shaderpack loading (`shader.pack`) and program compiling (`shader.program`), nothing renders yet |
+| `shader` | Shader support. So far shaderpack loading (`shader.pack`), program compiling (`shader.program`) and the experimental post pass (`shader.post`) |
 | `diagnostics` | Environment and OpenGL reports, crash report section, diagnostic features |
 
 ## License

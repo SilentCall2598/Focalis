@@ -24,4 +24,8 @@ public final class ConfigSection {
     public int getInt(String key, int defaultValue, int min, int max, String comment) {
         return configuration.getInt(key, category, defaultValue, min, max, comment);
     }
+
+    public String getString(String key, String defaultValue, String comment) {
+        return configuration.getString(key, category, defaultValue, comment);
+    }
 }

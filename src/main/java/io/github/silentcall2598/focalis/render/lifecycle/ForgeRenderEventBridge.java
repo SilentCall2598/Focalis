@@ -4,10 +4,12 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
-// Only observes Forge events. It never cancels them or touches GL state, so it can't change what Minecraft draws.
+// Only observes Forge events. It never cancels them or touches GL state itself, so any change to what Minecraft
+// draws comes from a listener.
 public final class ForgeRenderEventBridge {
 
     private final RenderLifecycle lifecycle;
@@ -31,7 +33,9 @@ public final class ForgeRenderEventBridge {
 
     // Fires at the end of the world pass, right before the first-person hand. Forge has no event for the start of
     // the world pass, so WORLD only gets END.
-    @SubscribeEvent
+    // LOWEST only puts this after higher-priority listeners of the same event. Other LOWEST listeners and anything
+    // drawn outside the event can still come later.
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onRenderWorldLast(RenderWorldLastEvent event) {
         lifecycle.dispatch(RenderStage.WORLD, RenderPhase.END, event.getPartialTicks());
     }

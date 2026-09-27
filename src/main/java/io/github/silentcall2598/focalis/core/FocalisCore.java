@@ -11,6 +11,7 @@ import io.github.silentcall2598.focalis.diagnostics.OpenGlReport;
 import io.github.silentcall2598.focalis.feature.FeatureManager;
 import io.github.silentcall2598.focalis.render.RenderSubsystem;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
+import io.github.silentcall2598.focalis.shader.ShaderFeature;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import java.io.File;
@@ -25,6 +26,7 @@ public final class FocalisCore {
         render = new RenderSubsystem(this::onGlContextReady);
         features = new FeatureManager(render.lifecycle());
         features.register(new FrameStatsFeature());
+        features.register(new ShaderFeature(render::glContext));
     }
 
     public void preInit(File configFile) {

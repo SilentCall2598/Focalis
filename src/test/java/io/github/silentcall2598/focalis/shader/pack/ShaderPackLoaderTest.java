@@ -38,14 +38,14 @@ class ShaderPackLoaderTest {
         Path folder = Paths.get(getClass().getResource("/shaderpacks/focalis-depth-view").toURI());
         ShaderPack pack = ShaderPackLoader.load(folder);
 
-        ProgramSource fin = pack.root().find("final");
-        assertNotNull(fin);
-        assertEquals(Arrays.asList(ProgramStage.VERTEX, ProgramStage.FRAGMENT), stages(fin));
-        assertNull(fin.problem());
+        ProgramSource post = pack.root().find("focalis_post");
+        assertNotNull(post);
+        assertEquals(Arrays.asList(ProgramStage.VERTEX, ProgramStage.FRAGMENT), stages(post));
+        assertNull(post.problem());
         assertTrue(pack.issues().isEmpty(), pack.issues().toString());
 
-        ResolvedSource fragment = pack.resolve(fin, ProgramStage.FRAGMENT);
-        int includedLine = lineContaining(fragment, "float linearDepth");
+        ResolvedSource fragment = pack.resolve(post, ProgramStage.FRAGMENT);
+        int includedLine = lineContaining(fragment, "float depthShade");
         assertEquals("lib/depth.glsl", String.valueOf(fragment.origin(includedLine).file()));
     }
 
