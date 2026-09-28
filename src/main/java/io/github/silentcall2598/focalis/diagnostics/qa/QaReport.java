@@ -36,6 +36,7 @@ final class QaReport {
     int worldSessions;
     final WorldPhases worldPhases = new WorldPhases();
     final RenderStages renderStages = new RenderStages();
+    final ShaderRoutes shaderRoutes = new ShaderRoutes();
     final PostPass postPass = new PostPass();
     final List<FeatureEntry> features = new ArrayList<>();
     final GlErrors glErrors = new GlErrors();
@@ -201,6 +202,16 @@ final class QaReport {
             this.kind = kind;
             this.problem = problem;
         }
+    }
+
+    // Shader program roles the precise stage starts route to, keyed by role name.
+    static final class ShaderRoutes {
+        final Map<String, RoleCounts> roles = new TreeMap<>();
+    }
+
+    static final class RoleCounts {
+        int count;
+        int maxPerWorldPass;
     }
 
     static final class PostPass {

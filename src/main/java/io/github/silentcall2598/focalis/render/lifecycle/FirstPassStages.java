@@ -38,6 +38,10 @@ final class FirstPassStages {
         return stage.ordinal() * KINDS + kind.ordinal();
     }
 
+    static int expected(RenderStage stage, RenderDrawKind kind) {
+        return EXPECTED[index(stage, kind)];
+    }
+
     // True when the first world pass, hand included, has just finished and should be reported.
     boolean worldPassStarted() {
         if (passesStarted >= 2) {

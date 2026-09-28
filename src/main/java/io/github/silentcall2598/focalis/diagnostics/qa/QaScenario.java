@@ -318,6 +318,7 @@ public enum QaScenario {
             List<String> unexpected = new ArrayList<>(r.renderStages.kinds.keySet());
             unexpected.removeAll(expected);
             r.check("no-unexpected-draw-kinds", unexpected.isEmpty(), "unexpected " + unexpected);
+            checkShaderRoles(r);
             checkEveryFrameRendered(r);
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }
@@ -509,6 +510,30 @@ public enum QaScenario {
                 return true;
             }
         };
+    }
+
+    // What the shader router makes of one world pass here. Each role at most this often per pass and exactly this
+    // often on average means every single pass had exactly this many.
+    private static void checkShaderRoles(QaReport r) {
+        Map<String, Integer> perPass = new TreeMap<>();
+        for (String role : Arrays.asList("SKY", "TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT",
+                "TERRAIN_TRANSLUCENT", "PARTICLES_LIT", "PARTICLES_NORMAL", "WEATHER", "CLOUDS", "HAND")) {
+            perPass.put(role, 1);
+        }
+        perPass.put("ENTITIES", 2);
+        Map<String, Integer> counts = new TreeMap<>();
+        boolean everyPass = true;
+        for (Map.Entry<String, Integer> role : perPass.entrySet()) {
+            QaReport.RoleCounts seen = r.shaderRoutes.roles.get(role.getKey());
+            counts.put(role.getKey(), seen == null ? 0 : seen.count);
+            everyPass &= seen != null && seen.count == role.getValue() * r.frames.world
+                    && seen.maxPerWorldPass == role.getValue();
+        }
+        r.check("shader-roles-every-world-pass", everyPass,
+                "roles " + counts + " over " + r.frames.world + " world passes, per pass " + perPass);
+        List<String> other = new ArrayList<>(r.shaderRoutes.roles.keySet());
+        other.removeAll(perPass.keySet());
+        r.check("no-unclassified-shader-roles", other.isEmpty(), "other roles " + other);
     }
 
     private static void checkShadersActive(QaReport r) {

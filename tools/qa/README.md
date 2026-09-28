@@ -36,7 +36,7 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `post-process-bad-pack` | A pack that doesn't compile. Rendering stays vanilla, nothing is created and the feature stays active. |
 | `world-reload` | Leaves and rejoins twice. The pass keeps running and the capture isn't recreated. |
 | `world-lifecycle` | Test pack on, with a pause screen and a rejoin. Start/end pairs match the world passes in both sessions and the pass runs once in every WORLD END. |
-| `render-stages` | Test pack on, in rain next to an entity, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds. |
+| `render-stages` | Test pack on, in rain next to an entity, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds, and each routes to the expected shader program role with nothing unclassified. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
 state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
