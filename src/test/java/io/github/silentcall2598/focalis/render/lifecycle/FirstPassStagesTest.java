@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.render.lifecycle;
 
+import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
+import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +12,7 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FirstPassStagesTest {
@@ -46,6 +49,23 @@ class FirstPassStagesTest {
 
     private void requiredVanillaCalls() {
         requiredVanillaCallsExcept(null, null);
+    }
+
+    // Whatever the first pass check requires has to be something the shader router understands.
+    @Test
+    void everyRequiredContextHasAShaderRole() {
+        int required = 0;
+        for (RenderStage stage : RenderStage.values()) {
+            for (RenderDrawKind kind : RenderDrawKind.values()) {
+                if (FirstPassStages.expected(stage, kind) > 0) {
+                    required++;
+                    ShaderProgramRole role = ShaderProgramRouter.route(stage, kind);
+                    assertNotEquals(ShaderProgramRole.UNCLASSIFIED, role, stage + "/" + kind);
+                    assertNotEquals(ShaderProgramRole.NONE, role, stage + "/" + kind);
+                }
+            }
+        }
+        assertEquals(9, required);
     }
 
     @Test

@@ -93,6 +93,7 @@ public final class QaProbe {
     private final Monitor monitor = new Monitor();
     private final WorldPhaseTracker worldPhases;
     private final RenderStageTracker renderStages;
+    private final ShaderRouteTracker shaderRoutes;
 
     private int ticks;
     private int stepIndex;
@@ -149,6 +150,7 @@ public final class QaProbe {
         this.steps = settings.scenario.steps();
         this.worldPhases = new WorldPhaseTracker(report.worldPhases);
         this.renderStages = new RenderStageTracker(report.renderStages);
+        this.shaderRoutes = new ShaderRouteTracker(report.shaderRoutes);
         report.environment.focalisVersion = Focalis.VERSION;
         report.environment.fullscreenAllowed = settings.fullscreenAllowed;
         report.environment.startedAt = Instant.now().toString();
@@ -174,6 +176,9 @@ public final class QaProbe {
             }
             worldPhases.dispatchStarted(phase, report.frames.total);
             renderStages.world(phase, report.frames.total);
+            if (phase == RenderPhase.START) {
+                shaderRoutes.worldStarted();
+            }
         });
         for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
             lifecycle.register(stage, OWNER, this::onStage);
@@ -252,6 +257,7 @@ public final class QaProbe {
         if (phase != RenderPhase.START) {
             if (!finished && brokenReason == null) {
                 renderStages.frameEnded(report.frames.total);
+                shaderRoutes.frameEnded();
             }
             return;
         }
@@ -272,6 +278,9 @@ public final class QaProbe {
     private void onStage(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         if (!finished && brokenReason == null) {
             renderStages.stage(stage, phase, drawKind, report.frames.total);
+            if (phase == RenderPhase.START) {
+                shaderRoutes.stageStarted(stage, drawKind);
+            }
         }
     }
 
