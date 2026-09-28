@@ -23,7 +23,8 @@ skies, video settings, and compatibility tooling for large modpacks.
 - Exposes precise world render stage boundaries to internal rendering systems: the world pass, sky, terrain,
   entities, particles, translucent terrain, weather, clouds and the hand, with the terrain layer, entity pass or
   particle kind being drawn. Mixins in `EntityRenderer` only report these boundaries and don't change what is drawn.
-  That context can be translated into Focalis shader program roles, which nothing uses yet.
+  That context can be translated into Focalis shader program roles and matched to the programs of 1.12.2 era
+  shaderpacks, which nothing uses yet.
 - Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
 - Provides an experimental, off-by-default `shaders` feature. It is the first step of shader support and
   only runs Focalis's own test program (`shaders/focalis_post.vsh` and `.fsh`) as a single post-process pass
