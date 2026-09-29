@@ -18,6 +18,9 @@ import java.util.Objects;
 public final class ShaderProgramResolver {
 
     // The legacy fallback order. A program falls back when the pack doesn't have it at all.
+    private static final List<String> SKY_BASIC = chain("gbuffers_skybasic", "gbuffers_basic");
+    private static final List<String> SKY_TEXTURED = chain("gbuffers_skytextured", "gbuffers_textured",
+            "gbuffers_basic");
     private static final List<String> TEXTURED = chain("gbuffers_textured", "gbuffers_basic");
     private static final List<String> TEXTURED_LIT = chain("gbuffers_textured_lit", "gbuffers_textured",
             "gbuffers_basic");
@@ -66,6 +69,10 @@ public final class ShaderProgramResolver {
             return NO_CHAIN;
         }
         switch (role) {
+            case SKY_BASIC:
+                return SKY_BASIC;
+            case SKY_TEXTURED:
+                return SKY_TEXTURED;
             case TERRAIN_SOLID:
             case TERRAIN_CUTOUT_MIPPED:
             case TERRAIN_CUTOUT:
@@ -84,9 +91,6 @@ public final class ShaderProgramResolver {
                 return CLOUDS;
             case HAND:
                 return HAND;
-            case SKY:
-                // The sky call draws both what gbuffers_skybasic and what gbuffers_skytextured are for, so it needs
-                // finer hooks before one of them can be picked.
             default:
                 return NO_CHAIN;
         }

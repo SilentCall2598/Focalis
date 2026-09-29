@@ -7,12 +7,15 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.particle.ParticleManager;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.world.WorldProvider;
 import net.minecraftforge.client.MinecraftForgeClient;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -23,15 +26,27 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererStageMixin {
 
+    // The sun and moon inside it are reported by RenderGlobalSkyMixin.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderSky(FI)V"), require = 0, expect = 1)
     private void focalis$sky(RenderGlobal renderGlobal, float partialTicks, int pass, Operation<Void> original) {
-        RenderHooks.stageStart(RenderStage.SKY, partialTicks);
+        RenderDrawKind kind = focalis$skyKind();
+        RenderHooks.stageStart(RenderStage.SKY, kind, partialTicks);
         try {
             original.call(renderGlobal, partialTicks, pass);
         } finally {
-            RenderHooks.stageEnd(RenderStage.SKY, partialTicks);
+            RenderHooks.stageEnd(RenderStage.SKY, kind, partialTicks);
         }
+    }
+
+    private static RenderDrawKind focalis$skyKind() {
+        WorldClient world = Minecraft.getMinecraft().world;
+        WorldProvider provider = world == null ? null : world.provider;
+        if (provider == null) {
+            return RenderDrawKind.DEFAULT;
+        }
+        return RenderHooks.skyKind(provider.getSkyRenderer() != null, provider.getDimensionType().getId() == 1,
+                provider.isSurfaceWorld());
     }
 
     // All four block layers go through this one call, and the layer argument says which one it is.

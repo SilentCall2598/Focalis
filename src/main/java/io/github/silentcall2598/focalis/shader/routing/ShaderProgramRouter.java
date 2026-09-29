@@ -25,7 +25,11 @@ public final class ShaderProgramRouter {
             case GUI:
                 return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.NONE);
             case SKY:
-                return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.SKY);
+                if (kind == RenderDrawKind.SKY_BASIC) {
+                    return ShaderProgramRole.SKY_BASIC;
+                }
+                // A DEFAULT sky is one Focalis can't classify, like a Forge sky renderer or the End.
+                return only(kind, RenderDrawKind.SKY_TEXTURED, ShaderProgramRole.SKY_TEXTURED);
             case TERRAIN:
                 if (kind == RenderDrawKind.TERRAIN_SOLID) {
                     return ShaderProgramRole.TERRAIN_SOLID;

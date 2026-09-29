@@ -147,20 +147,42 @@ class ShaderProgramResolverTest {
     }
 
     @Test
+    void basicSkyFallsBackToBasic() throws Exception {
+        assertResolved(pack("gbuffers_skybasic", "gbuffers_basic").root(), ShaderProgramRole.SKY_BASIC,
+                "gbuffers_skybasic", 0);
+        assertResolved(pack("gbuffers_textured", "gbuffers_basic").root(), ShaderProgramRole.SKY_BASIC,
+                "gbuffers_basic", 1);
+    }
+
+    @Test
+    void texturedSkyFallsBackThroughTextured() throws Exception {
+        assertResolved(pack("gbuffers_skytextured", "gbuffers_textured", "gbuffers_basic").root(),
+                ShaderProgramRole.SKY_TEXTURED, "gbuffers_skytextured", 0);
+        assertResolved(pack("gbuffers_textured", "gbuffers_basic").root(), ShaderProgramRole.SKY_TEXTURED,
+                "gbuffers_textured", 1);
+        assertResolved(pack("gbuffers_basic").root(), ShaderProgramRole.SKY_TEXTURED, "gbuffers_basic", 2);
+    }
+
+    // Each sky program only draws its own part of the sky.
+    @Test
+    void skyProgramsDontStandInForEachOther() throws Exception {
+        assertMissing(pack("gbuffers_skytextured").root(), ShaderProgramRole.SKY_BASIC);
+        assertMissing(pack("gbuffers_skybasic").root(), ShaderProgramRole.SKY_TEXTURED);
+    }
+
+    @Test
     void rolesWithoutAPackProgramAreNotResolved() throws Exception {
         ProgramDirectory root = pack("gbuffers_skybasic", "gbuffers_skytextured", "gbuffers_textured",
                 "gbuffers_basic").root();
 
         assertEquals(ResolutionState.NOT_APPLICABLE,
                 ShaderProgramResolver.resolve(root, ShaderProgramRole.NONE).state());
-        assertEquals(ResolutionState.NEEDS_MORE_CONTEXT,
-                ShaderProgramResolver.resolve(root, ShaderProgramRole.UNCLASSIFIED).state());
-        // Even with both sky programs there, the sky call can't say which one it needs.
-        ProgramResolution sky = ShaderProgramResolver.resolve(root, ShaderProgramRole.SKY);
-        assertEquals(ResolutionState.NEEDS_MORE_CONTEXT, sky.state());
-        assertNull(sky.program());
-        assertEquals(-1, sky.fallbackDepth());
-        assertTrue(sky.candidates().isEmpty());
+        // Like a sky Focalis doesn't recognize, even with both sky programs there.
+        ProgramResolution unclassified = ShaderProgramResolver.resolve(root, ShaderProgramRole.UNCLASSIFIED);
+        assertEquals(ResolutionState.NEEDS_MORE_CONTEXT, unclassified.state());
+        assertNull(unclassified.program());
+        assertEquals(-1, unclassified.fallbackDepth());
+        assertTrue(unclassified.candidates().isEmpty());
     }
 
     @Test
@@ -203,8 +225,8 @@ class ShaderProgramResolverTest {
         assertResolved(root, ShaderProgramRole.PARTICLES_LIT, "gbuffers_textured_lit", 0);
         assertResolved(root, ShaderProgramRole.PARTICLES_NORMAL, "gbuffers_textured", 0);
         assertResolved(root, ShaderProgramRole.CLOUDS, "gbuffers_textured", 1);
-        assertEquals(ResolutionState.NEEDS_MORE_CONTEXT,
-                ShaderProgramResolver.resolve(root, ShaderProgramRole.SKY).state());
+        assertResolved(root, ShaderProgramRole.SKY_BASIC, "gbuffers_basic", 1);
+        assertResolved(root, ShaderProgramRole.SKY_TEXTURED, "gbuffers_textured", 1);
     }
 
     @Test
