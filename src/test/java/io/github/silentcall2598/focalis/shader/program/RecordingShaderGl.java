@@ -3,8 +3,10 @@
 package io.github.silentcall2598.focalis.shader.program;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -15,6 +17,9 @@ final class RecordingShaderGl implements ShaderGl {
     final Set<Integer> livePrograms = new HashSet<>();
     final Map<Integer, Set<Integer>> attached = new HashMap<>();
     int calls;
+    int createdPrograms;
+    int deletedPrograms;
+    int linkCalls;
     boolean deletedWhileAttached;
 
     @Nullable
@@ -22,8 +27,14 @@ final class RecordingShaderGl implements ShaderGl {
     String compileLog = "";
     boolean failLink;
     String linkLog = "";
+    // A RuntimeException or an Error, thrown from this link call on.
     @Nullable
-    RuntimeException linkThrows;
+    Throwable linkThrows;
+    int linkThrowsFromCall = 1;
+    // Programs in the order deleteProgram was called for them, including calls that threw.
+    final List<Integer> deleteOrder = new ArrayList<>();
+    // Thrown by the deleteProgram call with this number, counting from 1. That program stays alive.
+    final Map<Integer, Throwable> deleteThrowsOnCall = new HashMap<>();
 
     private final Map<Integer, String> sources = new HashMap<>();
     private int nextId = 1;
@@ -71,6 +82,7 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public int createProgram() {
         calls++;
+        createdPrograms++;
         int id = nextId++;
         livePrograms.add(id);
         attached.put(id, new HashSet<Integer>());
@@ -92,8 +104,9 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public void linkProgram(int program) {
         calls++;
-        if (linkThrows != null) {
-            throw linkThrows;
+        linkCalls++;
+        if (linkThrows != null && linkCalls >= linkThrowsFromCall) {
+            throwUnchecked(linkThrows);
         }
     }
 
@@ -112,8 +125,21 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public void deleteProgram(int program) {
         calls++;
+        deletedPrograms++;
+        deleteOrder.add(program);
+        Throwable failure = deleteThrowsOnCall.get(deletedPrograms);
+        if (failure != null) {
+            throwUnchecked(failure);
+        }
         livePrograms.remove(program);
         attached.remove(program);
+    }
+
+    private static void throwUnchecked(Throwable failure) {
+        if (failure instanceof Error) {
+            throw (Error) failure;
+        }
+        throw (RuntimeException) failure;
     }
 
     private boolean failsToCompile(int shader) {
