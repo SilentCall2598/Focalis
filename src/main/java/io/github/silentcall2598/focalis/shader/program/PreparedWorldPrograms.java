@@ -39,6 +39,8 @@ public final class PreparedWorldPrograms {
      * Resolves every role in {@code directory} and prepares the programs they select. Only that folder is used, so
      * picking the folder for a dimension is up to the caller. A program that fails to prepare is recorded on the
      * roles that selected it and doesn't stop the others.
+     *
+     * @throws IllegalArgumentException if {@code directory} isn't one of {@code pack}'s own folders
      */
     public static PreparedWorldPrograms prepare(ShaderPack pack, ProgramDirectory directory, ShaderMacros environment,
             ShaderMacros options) {
@@ -46,6 +48,11 @@ public final class PreparedWorldPrograms {
         Objects.requireNonNull(directory, "directory");
         Objects.requireNonNull(environment, "environment");
         Objects.requireNonNull(options, "options");
+        if (!ownsDirectory(pack, directory)) {
+            String folder = directory.name().isEmpty() ? "shaders" : "shaders/" + directory.name();
+            throw new IllegalArgumentException("Program folder '" + folder + "' doesn't belong to shaderpack '"
+                    + pack.name() + "'");
+        }
         // ProgramSource has no equals, and each one is a distinct program the pack owns.
         Map<ProgramSource, Outcome> outcomes = new IdentityHashMap<>();
         Map<ShaderProgramRole, Entry> entries = new EnumMap<>(ShaderProgramRole.class);
@@ -68,6 +75,20 @@ public final class PreparedWorldPrograms {
             entries.put(role, new Entry(role, resolution, outcome.program, outcome.problem));
         }
         return new PreparedWorldPrograms(Collections.unmodifiableMap(entries), Collections.unmodifiableList(unique));
+    }
+
+    // Programs are prepared from the pack's own file texts, so a folder of another pack with the same paths would
+    // quietly get the wrong source. Folder names can match across packs, so only the exact object counts.
+    private static boolean ownsDirectory(ShaderPack pack, ProgramDirectory directory) {
+        if (directory == pack.root()) {
+            return true;
+        }
+        for (ProgramDirectory dimension : pack.dimensionDirectories().values()) {
+            if (dimension == directory) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The entry for a role. Every role has one, even the ones that don't draw anything. */

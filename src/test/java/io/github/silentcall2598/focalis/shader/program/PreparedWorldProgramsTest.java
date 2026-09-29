@@ -251,6 +251,20 @@ class PreparedWorldProgramsTest {
         assertEquals(Arrays.asList("world-1/gbuffers_textured"), names(dimension.uniquePrograms()));
     }
 
+    // Same folder and program names in both packs, so only the exact folder object can tell them apart.
+    @Test
+    void folderOfAnotherPackIsRejected() throws Exception {
+        ShaderPack own = pack("gbuffers_basic", "world-1/gbuffers_basic");
+        ShaderPack other = pack("gbuffers_basic", "world-1/gbuffers_basic");
+
+        IllegalArgumentException root = assertThrows(IllegalArgumentException.class, () -> prepare(own, other.root()));
+        assertTrue(root.getMessage().contains("'shaders'"), root.getMessage());
+        IllegalArgumentException dimension = assertThrows(IllegalArgumentException.class,
+                () -> prepare(own, other.dimensionDirectories().get("world-1")));
+        assertTrue(dimension.getMessage().contains("'shaders/world-1'"), dimension.getMessage());
+        assertEquals(1, prepare(own, own.dimensionDirectories().get("world-1")).uniquePrograms().size());
+    }
+
     @Test
     void suppliedMacrosReachEveryStage() throws Exception {
         ShaderPack pack = pack("gbuffers_basic");
