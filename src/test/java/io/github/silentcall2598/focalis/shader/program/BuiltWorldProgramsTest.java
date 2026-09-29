@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static io.github.silentcall2598.focalis.shader.program.TestPrograms.FRAGMENT;
@@ -326,6 +327,84 @@ class BuiltWorldProgramsTest {
         assertEquals(2, gl.createdPrograms);
         assertTrue(gl.livePrograms.isEmpty());
         assertTrue(gl.liveShaders.isEmpty());
+    }
+
+    private static List<Integer> idsNewestFirst(BuiltWorldPrograms built) {
+        List<Integer> ids = new ArrayList<>();
+        for (BuiltWorldPrograms.Build build : built.builds()) {
+            ids.add(0, build.program().id());
+        }
+        return ids;
+    }
+
+    @Test
+    void failedDeleteStillDeletesTheRest() throws Exception {
+        BuiltWorldPrograms built = build(prepared("gbuffers_basic", "gbuffers_textured", "gbuffers_terrain"));
+        List<Integer> newestFirst = idsNewestFirst(built);
+        IllegalStateException gone = new IllegalStateException("driver gone");
+        gl.deleteThrowsOnCall.put(1, gone);
+
+        assertSame(gone, assertThrows(IllegalStateException.class, built::delete));
+
+        assertEquals(newestFirst, gl.deleteOrder);
+        assertTrue(built.isDeleted());
+        for (BuiltWorldPrograms.Build build : built.builds()) {
+            assertTrue(build.program().isDeleted(), build.prepared().name());
+            assertTrue(build.succeeded());
+        }
+        assertFalse(built.forRole(ShaderProgramRole.TERRAIN_SOLID).ready());
+        // Only the newest program, whose delete threw, is still alive in the stub.
+        assertEquals(Collections.singleton(newestFirst.get(0)), gl.livePrograms);
+
+        int calls = gl.calls;
+        built.delete();
+        assertEquals(calls, gl.calls);
+        assertEquals(3, gl.deletedPrograms);
+    }
+
+    @Test
+    void laterDeleteFailuresAreSuppressedOntoTheFirst() throws Exception {
+        BuiltWorldPrograms built = build(prepared("gbuffers_basic", "gbuffers_textured", "gbuffers_terrain"));
+        IllegalStateException first = new IllegalStateException("first");
+        NoClassDefFoundError third = new NoClassDefFoundError("third");
+        gl.deleteThrowsOnCall.put(1, first);
+        gl.deleteThrowsOnCall.put(3, third);
+
+        assertSame(first, assertThrows(IllegalStateException.class, built::delete));
+
+        assertEquals(Arrays.asList(third), Arrays.asList(first.getSuppressed()));
+        assertEquals(3, gl.deletedPrograms);
+    }
+
+    @Test
+    void linkageErrorFromDeleteIsRethrownAsIs() throws Exception {
+        BuiltWorldPrograms built = build(prepared("gbuffers_basic", "gbuffers_textured"));
+        NoClassDefFoundError missing = new NoClassDefFoundError("org/lwjgl/opengl/GL20");
+        IllegalStateException later = new IllegalStateException("later");
+        gl.deleteThrowsOnCall.put(1, missing);
+        gl.deleteThrowsOnCall.put(2, later);
+
+        assertSame(missing, assertThrows(NoClassDefFoundError.class, built::delete));
+
+        assertEquals(Arrays.asList(later), Arrays.asList(missing.getSuppressed()));
+        assertTrue(built.isDeleted());
+    }
+
+    // The linker deletes the program that failed first, then the set cleans up the ones built before it.
+    @Test
+    void cleanupFailureDuringConstructionIsSuppressedOntoTheBuildFailure() throws Exception {
+        PreparedWorldPrograms prepared = prepared("gbuffers_basic", "gbuffers_textured", "gbuffers_terrain");
+        IllegalStateException lost = new IllegalStateException("context lost");
+        IllegalStateException cleanup = new IllegalStateException("cleanup");
+        gl.linkThrows = lost;
+        gl.linkThrowsFromCall = 3;
+        gl.deleteThrowsOnCall.put(2, cleanup);
+
+        assertSame(lost, assertThrows(IllegalStateException.class, () -> build(prepared)));
+
+        assertEquals(Arrays.asList(cleanup), Arrays.asList(lost.getSuppressed()));
+        assertEquals(3, gl.deletedPrograms);
+        assertEquals(1, gl.livePrograms.size());
     }
 
     @Test

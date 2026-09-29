@@ -59,22 +59,31 @@ public final class BuiltWorldPrograms {
             return new BuiltWorldPrograms(Collections.unmodifiableList(builds), Collections.unmodifiableMap(entries));
         } catch (RuntimeException | LinkageError e) {
             // ProgramBuilder already cleaned up the program that threw. The ones before it are still owned here.
-            deleteAfterFailure(builds, e);
+            deleteNewestFirst(builds, e);
             throw e;
         }
     }
 
-    private static void deleteAfterFailure(List<Build> builds, Throwable failure) {
+    // Every program gets its delete attempt even when an earlier one throws. Returns the first failure, or the one
+    // passed in, with any later failures suppressed onto it.
+    @Nullable
+    private static Throwable deleteNewestFirst(List<Build> builds, @Nullable Throwable failure) {
         for (int i = builds.size() - 1; i >= 0; i--) {
             ShaderProgram program = builds.get(i).program;
-            if (program != null) {
-                try {
-                    program.delete();
-                } catch (RuntimeException | LinkageError e) {
+            if (program == null) {
+                continue;
+            }
+            try {
+                program.delete();
+            } catch (RuntimeException | LinkageError e) {
+                if (failure == null) {
+                    failure = e;
+                } else if (failure != e) {
                     failure.addSuppressed(e);
                 }
             }
         }
+        return failure;
     }
 
     /** One result for every unique prepared program, in the same order, failures included. Read only. */
@@ -98,18 +107,21 @@ public final class BuiltWorldPrograms {
 
     /**
      * Deletes every program this set built, each one once, newest first. Must run on the client thread with the
-     * same OpenGL context current. Calling it again does nothing. Builds and entries stay readable afterwards.
+     * same OpenGL context current. If a delete throws, the rest are still attempted and the first failure is
+     * rethrown afterwards. Either way the set counts as deleted and calling it again does nothing. Builds and
+     * entries stay readable afterwards.
      */
     public void delete() {
         if (deleted) {
             return;
         }
+        Throwable failure = deleteNewestFirst(builds, null);
         deleted = true;
-        for (int i = builds.size() - 1; i >= 0; i--) {
-            ShaderProgram program = builds.get(i).program;
-            if (program != null) {
-                program.delete();
-            }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        }
+        if (failure instanceof LinkageError) {
+            throw (LinkageError) failure;
         }
     }
 
