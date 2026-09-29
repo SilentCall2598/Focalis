@@ -25,7 +25,8 @@ skies, video settings, and compatibility tooling for large modpacks.
   particle kind being drawn. In the normal surface sky, the sun and moon are told apart from the rest of the sky.
   Mixins in `EntityRenderer` and `RenderGlobal` only report these boundaries and don't change what is drawn.
   That context can be translated into Focalis shader program roles and matched to the programs of 1.12.2 era
-  shaderpacks, and the matched programs of one shader folder can be prepared as source. Nothing uses that yet.
+  shaderpacks, and the matched programs of one shader folder can be prepared and built. Nothing binds them to
+  rendering yet.
 - Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
 - Provides an experimental, off-by-default `shaders` feature. It is the first step of shader support and
   only runs Focalis's own test program (`shaders/focalis_post.vsh` and `.fsh`) as a single post-process pass

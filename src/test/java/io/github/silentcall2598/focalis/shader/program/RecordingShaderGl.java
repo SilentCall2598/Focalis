@@ -15,6 +15,9 @@ final class RecordingShaderGl implements ShaderGl {
     final Set<Integer> livePrograms = new HashSet<>();
     final Map<Integer, Set<Integer>> attached = new HashMap<>();
     int calls;
+    int createdPrograms;
+    int deletedPrograms;
+    int linkCalls;
     boolean deletedWhileAttached;
 
     @Nullable
@@ -22,8 +25,10 @@ final class RecordingShaderGl implements ShaderGl {
     String compileLog = "";
     boolean failLink;
     String linkLog = "";
+    // A RuntimeException or an Error, thrown from this link call on.
     @Nullable
-    RuntimeException linkThrows;
+    Throwable linkThrows;
+    int linkThrowsFromCall = 1;
 
     private final Map<Integer, String> sources = new HashMap<>();
     private int nextId = 1;
@@ -71,6 +76,7 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public int createProgram() {
         calls++;
+        createdPrograms++;
         int id = nextId++;
         livePrograms.add(id);
         attached.put(id, new HashSet<Integer>());
@@ -92,8 +98,12 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public void linkProgram(int program) {
         calls++;
-        if (linkThrows != null) {
-            throw linkThrows;
+        linkCalls++;
+        if (linkThrows != null && linkCalls >= linkThrowsFromCall) {
+            if (linkThrows instanceof Error) {
+                throw (Error) linkThrows;
+            }
+            throw (RuntimeException) linkThrows;
         }
     }
 
@@ -112,6 +122,7 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public void deleteProgram(int program) {
         calls++;
+        deletedPrograms++;
         livePrograms.remove(program);
         attached.remove(program);
     }
