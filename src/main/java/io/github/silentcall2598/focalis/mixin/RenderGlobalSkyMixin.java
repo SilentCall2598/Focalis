@@ -11,15 +11,20 @@ import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.Tessellator;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Slice;
 
-// Marks the sun and moon inside the surface sky, which EntityRendererStageMixin reports as a whole. In renderSky the
-// sunrise fan is draw 0 and the black geometry below the horizon is draw 3, and those stay part of the basic sky.
+// Marks the sun and moon inside the surface sky, which EntityRendererStageMixin reports as a whole. Each one is the
+// first draw after its texture is bound, so a draw another mod adds earlier in renderSky can't shift them. The sunrise
+// fan and the black geometry below the horizon stay part of the basic sky.
 @Mixin(RenderGlobal.class)
 public abstract class RenderGlobalSkyMixin {
 
     // The trailing partialTicks is renderSky's own argument, so it matches the outer SKY boundary.
-    @WrapOperation(method = "renderSky(FI)V", at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/client/renderer/Tessellator;draw()V", ordinal = 1), require = 0, expect = 1)
+    @WrapOperation(method = "renderSky(FI)V",
+            slice = @Slice(from = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/RenderGlobal;"
+                    + "SUN_TEXTURES:Lnet/minecraft/util/ResourceLocation;")),
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/Tessellator;draw()V", ordinal = 0),
+            require = 0, expect = 1)
     private void focalis$sun(Tessellator tessellator, Operation<Void> original, float partialTicks) {
         RenderHooks.stageStart(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED, partialTicks);
         try {
@@ -29,8 +34,11 @@ public abstract class RenderGlobalSkyMixin {
         }
     }
 
-    @WrapOperation(method = "renderSky(FI)V", at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/client/renderer/Tessellator;draw()V", ordinal = 2), require = 0, expect = 1)
+    @WrapOperation(method = "renderSky(FI)V",
+            slice = @Slice(from = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/RenderGlobal;"
+                    + "MOON_PHASES_TEXTURES:Lnet/minecraft/util/ResourceLocation;")),
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/Tessellator;draw()V", ordinal = 0),
+            require = 0, expect = 1)
     private void focalis$moon(Tessellator tessellator, Operation<Void> original, float partialTicks) {
         RenderHooks.stageStart(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED, partialTicks);
         try {
