@@ -40,10 +40,18 @@ class RenderStageTrackerTest {
         pair(stage, RenderDrawKind.DEFAULT);
     }
 
+    // The whole surface sky with the sun and moon inside it.
+    private void surfaceSky() {
+        start(RenderStage.SKY, RenderDrawKind.SKY_BASIC);
+        pair(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED);
+        pair(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED);
+        end(RenderStage.SKY, RenderDrawKind.SKY_BASIC);
+    }
+
     // What vanilla does in one world pass below cloud height.
     private void vanillaPass() {
         tracker.world(RenderPhase.START, 1);
-        pair(RenderStage.SKY);
+        surfaceSky();
         pair(RenderStage.CLOUDS);
         pair(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
         pair(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT_MIPPED);
@@ -70,6 +78,46 @@ class RenderStageTrackerTest {
         assertEquals(1, report.kinds.get("TERRAIN/TERRAIN_CUTOUT").maxPerWorldPass);
         assertEquals(1, report.kinds.get("ENTITIES/ENTITY_PASS_1").pairs);
         assertEquals(1, report.stages.get("HAND").maxPerWorldPass);
+        assertEquals(1, report.kinds.get("SKY/SKY_BASIC").maxPerWorldPass);
+        assertEquals(2, report.kinds.get("SKY/SKY_TEXTURED").maxPerWorldPass);
+        assertFalse(tracker.stageOpen());
+    }
+
+    @Test
+    void sunAndMoonNestInsideTheSky() {
+        tracker.frameStarted();
+        tracker.world(RenderPhase.START, 1);
+        surfaceSky();
+
+        assertEquals(0, report.problemCount());
+        assertEquals(1, report.kinds.get("SKY/SKY_BASIC").pairs);
+        assertEquals(2, report.kinds.get("SKY/SKY_TEXTURED").pairs);
+        assertEquals(3, report.stages.get("SKY").pairs);
+        assertFalse(tracker.stageOpen());
+    }
+
+    @Test
+    void skyClosedWithTheSunKindIsRejected() {
+        tracker.frameStarted();
+        tracker.world(RenderPhase.START, 1);
+        start(RenderStage.SKY, RenderDrawKind.SKY_BASIC);
+        end(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED);
+
+        assertEquals(1, report.kindMismatches);
+        assertEquals(0, report.stages.get("SKY").pairs);
+        assertFalse(tracker.stageOpen());
+    }
+
+    @Test
+    void skyClosedAroundAnOpenSunIsRejected() {
+        tracker.frameStarted();
+        tracker.world(RenderPhase.START, 1);
+        start(RenderStage.SKY, RenderDrawKind.SKY_BASIC);
+        start(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED);
+        end(RenderStage.SKY, RenderDrawKind.SKY_BASIC);
+
+        assertEquals(1, report.badNesting);
+        assertEquals(1, report.unmatchedStarts);
         assertFalse(tracker.stageOpen());
     }
 

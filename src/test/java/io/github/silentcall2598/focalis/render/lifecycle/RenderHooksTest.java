@@ -38,6 +38,18 @@ class RenderHooksTest {
     }
 
     @Test
+    void onlyThePlainSurfaceSkyIsBasic() {
+        assertEquals(RenderDrawKind.SKY_BASIC, RenderHooks.skyKind(false, false, true));
+        // A custom renderer wins even in a surface dimension.
+        assertEquals(RenderDrawKind.DEFAULT, RenderHooks.skyKind(true, false, true));
+        assertEquals(RenderDrawKind.DEFAULT, RenderHooks.skyKind(true, false, false));
+        // renderSky checks for the End before it checks for a surface world.
+        assertEquals(RenderDrawKind.DEFAULT, RenderHooks.skyKind(false, true, true));
+        assertEquals(RenderDrawKind.DEFAULT, RenderHooks.skyKind(false, true, false));
+        assertEquals(RenderDrawKind.DEFAULT, RenderHooks.skyKind(false, false, false));
+    }
+
+    @Test
     void preciseStagesCannotBeChanged() {
         assertThrows(UnsupportedOperationException.class, () -> RenderHooks.PRECISE_STAGES.add(RenderStage.GUI));
         assertThrows(UnsupportedOperationException.class, () -> RenderHooks.PRECISE_STAGES.remove(RenderStage.SKY));

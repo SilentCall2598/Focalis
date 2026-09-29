@@ -299,24 +299,29 @@ public enum QaScenario {
         @Override
         void evaluate(QaReport r) {
             checkShadersActive(r);
-            // Vanilla draws each of these exactly once per world pass here. Anything else means a hook fires twice,
-            // didn't apply, or reports the wrong kind.
-            List<String> expected = Arrays.asList("SKY/DEFAULT", "TERRAIN/TERRAIN_SOLID",
+            // Vanilla draws each of these exactly once per world pass here, except the sun and moon inside the sky.
+            // Anything else means a hook fires twice, didn't apply, or reports the wrong kind.
+            Map<String, Integer> perPass = new TreeMap<>();
+            for (String kind : Arrays.asList("SKY/SKY_BASIC", "TERRAIN/TERRAIN_SOLID",
                     "TERRAIN/TERRAIN_CUTOUT_MIPPED", "TERRAIN/TERRAIN_CUTOUT", "TRANSLUCENT/TERRAIN_TRANSLUCENT",
                     "ENTITIES/ENTITY_PASS_0", "ENTITIES/ENTITY_PASS_1", "PARTICLES/PARTICLES_LIT",
-                    "PARTICLES/PARTICLES_NORMAL", "WEATHER/DEFAULT", "CLOUDS/DEFAULT", "HAND/DEFAULT");
+                    "PARTICLES/PARTICLES_NORMAL", "WEATHER/DEFAULT", "CLOUDS/DEFAULT", "HAND/DEFAULT")) {
+                perPass.put(kind, 1);
+            }
+            perPass.put("SKY/SKY_TEXTURED", 2);
             Map<String, Integer> pairs = new TreeMap<>();
             boolean everyPass = true;
-            for (String kind : expected) {
-                QaReport.StageCounts counts = r.renderStages.kinds.get(kind);
+            for (Map.Entry<String, Integer> kind : perPass.entrySet()) {
+                QaReport.StageCounts counts = r.renderStages.kinds.get(kind.getKey());
                 int seen = counts == null ? 0 : counts.pairs;
-                pairs.put(kind, seen);
-                everyPass &= counts != null && seen == r.frames.world && counts.maxPerWorldPass == 1;
+                pairs.put(kind.getKey(), seen);
+                everyPass &= counts != null && seen == kind.getValue() * r.frames.world
+                        && counts.maxPerWorldPass == kind.getValue();
             }
             r.check("draw-kinds-every-world-pass", everyPass,
-                    "pairs " + pairs + " over " + r.frames.world + " world passes");
+                    "pairs " + pairs + " over " + r.frames.world + " world passes, per pass " + perPass);
             List<String> unexpected = new ArrayList<>(r.renderStages.kinds.keySet());
-            unexpected.removeAll(expected);
+            unexpected.removeAll(perPass.keySet());
             r.check("no-unexpected-draw-kinds", unexpected.isEmpty(), "unexpected " + unexpected);
             checkShaderRoles(r);
             checkEveryFrameRendered(r);
@@ -516,10 +521,11 @@ public enum QaScenario {
     // often on average means every single pass had exactly this many.
     private static void checkShaderRoles(QaReport r) {
         Map<String, Integer> perPass = new TreeMap<>();
-        for (String role : Arrays.asList("SKY", "TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT",
+        for (String role : Arrays.asList("SKY_BASIC", "TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT",
                 "TERRAIN_TRANSLUCENT", "PARTICLES_LIT", "PARTICLES_NORMAL", "WEATHER", "CLOUDS", "HAND")) {
             perPass.put(role, 1);
         }
+        perPass.put("SKY_TEXTURED", 2);
         perPass.put("ENTITIES", 2);
         Map<String, Integer> counts = new TreeMap<>();
         boolean everyPass = true;

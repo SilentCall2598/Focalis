@@ -2,10 +2,17 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.render.lifecycle;
 
-/** What exactly a stage is drawing. The START and END of one stage always carry the same kind. */
+/**
+ * What exactly a stage is drawing. The START and END of one stage always carry the same kind. A stage can open again
+ * inside itself with another kind, like the sun inside the sky.
+ */
 public enum RenderDrawKind {
     /** The stage has no finer classification. */
     DEFAULT,
+    /** The whole vanilla surface sky. Its sun and moon draws nest inside it as {@link #SKY_TEXTURED}. */
+    SKY_BASIC,
+    /** The sun or moon draw of the vanilla surface sky. */
+    SKY_TEXTURED,
     TERRAIN_SOLID,
     TERRAIN_CUTOUT_MIPPED,
     TERRAIN_CUTOUT,

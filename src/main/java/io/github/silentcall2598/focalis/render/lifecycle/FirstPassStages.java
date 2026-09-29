@@ -13,13 +13,16 @@ final class FirstPassStages {
 
     private static final int KINDS = RenderDrawKind.values().length;
 
-    // Vanilla draws each of these exactly once per world pass, and no other kinds of these stages. SKY, CLOUDS and
-    // HAND depend on settings, so they aren't checked.
+    // Vanilla draws each of these exactly once per world pass, and no other kinds of these stages. CLOUDS and HAND
+    // depend on settings, so they aren't checked. SKY is only checked once the vanilla surface sky shows up.
     private static final Set<RenderStage> REQUIRED = EnumSet.of(RenderStage.TERRAIN, RenderStage.TRANSLUCENT,
             RenderStage.ENTITIES, RenderStage.PARTICLES, RenderStage.WEATHER);
     private static final int[] EXPECTED = new int[RenderStage.values().length * KINDS];
 
     static {
+        EXPECTED[index(RenderStage.SKY, RenderDrawKind.SKY_BASIC)] = 1;
+        // The sun and the moon.
+        EXPECTED[index(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED)] = 2;
         EXPECTED[index(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID)] = 1;
         EXPECTED[index(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT_MIPPED)] = 1;
         EXPECTED[index(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT)] = 1;
@@ -74,7 +77,10 @@ final class FirstPassStages {
     // Required stages and kinds whose count isn't vanilla's, like ENTITIES/ENTITY_PASS_1 0 instead of 1.
     List<String> mismatches() {
         List<String> wrong = new ArrayList<>();
-        for (RenderStage stage : REQUIRED) {
+        for (RenderStage stage : RenderStage.values()) {
+            if (!checked(stage)) {
+                continue;
+            }
             for (RenderDrawKind kind : RenderDrawKind.values()) {
                 int i = index(stage, kind);
                 if (counts[i] != EXPECTED[i]) {
@@ -83,5 +89,12 @@ final class FirstPassStages {
             }
         }
         return wrong;
+    }
+
+    // Custom sky renderers, the End and other dimensions don't draw the vanilla surface sky, so a missing sky is fine.
+    // Once it's there, its sun and moon have to be there too.
+    private boolean checked(RenderStage stage) {
+        return REQUIRED.contains(stage) || stage == RenderStage.SKY
+                && counts[index(RenderStage.SKY, RenderDrawKind.SKY_BASIC)] > 0;
     }
 }

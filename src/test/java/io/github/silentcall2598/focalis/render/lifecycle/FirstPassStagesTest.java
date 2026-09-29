@@ -51,6 +51,13 @@ class FirstPassStagesTest {
         requiredVanillaCallsExcept(null, null);
     }
 
+    private void surfaceSky(int texturedDraws) {
+        fire(RenderStage.SKY, RenderDrawKind.SKY_BASIC);
+        for (int i = 0; i < texturedDraws; i++) {
+            fire(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED);
+        }
+    }
+
     // Whatever the first pass check requires has to be something the shader router understands.
     @Test
     void everyRequiredContextHasAShaderRole() {
@@ -65,7 +72,7 @@ class FirstPassStagesTest {
                 }
             }
         }
-        assertEquals(9, required);
+        assertEquals(11, required);
     }
 
     @Test
@@ -79,13 +86,43 @@ class FirstPassStagesTest {
     @Test
     void exactVanillaDistributionMatches() {
         stages.worldPassStarted();
+        surfaceSky(2);
         requiredVanillaCalls();
-        fire(RenderStage.SKY, RenderDrawKind.DEFAULT);
         fire(RenderStage.CLOUDS, RenderDrawKind.DEFAULT);
         fire(RenderStage.HAND, RenderDrawKind.DEFAULT);
 
         assertTrue(stages.mismatches().isEmpty());
         assertTrue(stages.seen().contains("TERRAIN/TERRAIN_CUTOUT=1"));
+        assertTrue(stages.seen().contains("SKY/SKY_TEXTURED=2"));
+    }
+
+    @Test
+    void missingMoonIsDetected() {
+        stages.worldPassStarted();
+        surfaceSky(1);
+        requiredVanillaCalls();
+
+        assertEquals(Collections.singletonList("SKY/SKY_TEXTURED 1 instead of 2"), stages.mismatches());
+    }
+
+    @Test
+    void surfaceSkyWithoutSunAndMoonIsDetected() {
+        stages.worldPassStarted();
+        surfaceSky(0);
+        requiredVanillaCalls();
+
+        assertEquals(Collections.singletonList("SKY/SKY_TEXTURED 0 instead of 2"), stages.mismatches());
+    }
+
+    // A custom sky renderer or the End reports DEFAULT and has no sun and moon hooks.
+    @Test
+    void otherSkiesAreNotChecked() {
+        stages.worldPassStarted();
+        fire(RenderStage.SKY, RenderDrawKind.DEFAULT);
+        requiredVanillaCalls();
+
+        assertTrue(stages.mismatches().isEmpty());
+        assertTrue(stages.seen().contains("SKY/DEFAULT=1"));
     }
 
     @Test

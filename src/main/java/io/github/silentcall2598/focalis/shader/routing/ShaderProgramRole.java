@@ -11,7 +11,10 @@ public enum ShaderProgramRole {
     NONE,
     /** Something is drawn here, but its context isn't understood well enough to give it a role. */
     UNCLASSIFIED,
-    SKY,
+    /** The surface sky around the sun and moon, with its sunrise glow and stars. */
+    SKY_BASIC,
+    /** The sun and moon. */
+    SKY_TEXTURED,
     TERRAIN_SOLID,
     TERRAIN_CUTOUT_MIPPED,
     TERRAIN_CUTOUT,

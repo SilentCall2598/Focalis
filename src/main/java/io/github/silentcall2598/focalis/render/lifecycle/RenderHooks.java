@@ -98,13 +98,23 @@ public final class RenderHooks {
         stageEnd(stage, RenderDrawKind.DEFAULT, partialTicks);
     }
 
+    // Same checks and order as the start of RenderGlobal.renderSky. Only the vanilla surface sky has its sun and moon
+    // hooked, so a Forge sky renderer or the End stays DEFAULT even in a surface dimension.
+    public static RenderDrawKind skyKind(boolean customRenderer, boolean end, boolean surface) {
+        if (customRenderer || end || !surface) {
+            return RenderDrawKind.DEFAULT;
+        }
+        return RenderDrawKind.SKY_BASIC;
+    }
+
     private static void reportFirstPass() {
         FocalisLog.LOGGER.info("Render stages seen in the first world pass: {}", FIRST_PASS.seen());
         List<String> wrong = FIRST_PASS.mismatches();
         if (!wrong.isEmpty()) {
             FocalisLog.LOGGER.warn("Render stage hooks in the first world pass don't match vanilla's calls: {}."
-                    + " Another mod probably changed those calls in EntityRenderer.renderWorldPass. Rendering is"
-                    + " unaffected, only those stage events are missing, extra or misclassified.", wrong);
+                    + " Another mod probably changed those calls in EntityRenderer.renderWorldPass or"
+                    + " RenderGlobal.renderSky. Rendering is unaffected, only those stage events are missing, extra or"
+                    + " misclassified.", wrong);
         }
     }
 }

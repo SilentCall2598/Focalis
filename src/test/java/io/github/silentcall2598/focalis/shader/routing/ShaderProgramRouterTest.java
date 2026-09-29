@@ -22,7 +22,8 @@ class ShaderProgramRouterTest {
 
     @Test
     void everySupportedContextHasItsRole() {
-        assertEquals(ShaderProgramRole.SKY, route(RenderStage.SKY, RenderDrawKind.DEFAULT));
+        assertEquals(ShaderProgramRole.SKY_BASIC, route(RenderStage.SKY, RenderDrawKind.SKY_BASIC));
+        assertEquals(ShaderProgramRole.SKY_TEXTURED, route(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED));
         assertEquals(ShaderProgramRole.TERRAIN_SOLID, route(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID));
         assertEquals(ShaderProgramRole.TERRAIN_CUTOUT_MIPPED,
                 route(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT_MIPPED));
@@ -52,6 +53,19 @@ class ShaderProgramRouterTest {
         assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.SKY, RenderDrawKind.TERRAIN_SOLID));
         assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.CLOUDS, RenderDrawKind.ENTITY_PASS_0));
         assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.HAND, RenderDrawKind.TERRAIN_CUTOUT));
+        assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.TERRAIN, RenderDrawKind.SKY_BASIC));
+        assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.CLOUDS, RenderDrawKind.SKY_TEXTURED));
+    }
+
+    // A custom sky renderer, the End or anything else Focalis doesn't recognize still draws, so it isn't NONE.
+    @Test
+    void unrecognizedSkyIsUnclassified() {
+        assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.SKY, RenderDrawKind.DEFAULT));
+        for (RenderDrawKind kind : RenderDrawKind.values()) {
+            if (kind != RenderDrawKind.SKY_BASIC && kind != RenderDrawKind.SKY_TEXTURED) {
+                assertEquals(ShaderProgramRole.UNCLASSIFIED, route(RenderStage.SKY, kind), kind.toString());
+            }
+        }
     }
 
     @Test

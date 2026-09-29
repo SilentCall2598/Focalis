@@ -22,7 +22,8 @@ skies, video settings, and compatibility tooling for large modpacks.
 - Adds a Focalis line with feature states to crash reports.
 - Exposes precise world render stage boundaries to internal rendering systems: the world pass, sky, terrain,
   entities, particles, translucent terrain, weather, clouds and the hand, with the terrain layer, entity pass or
-  particle kind being drawn. Mixins in `EntityRenderer` only report these boundaries and don't change what is drawn.
+  particle kind being drawn. In the normal surface sky, the sun and moon are told apart from the rest of the sky.
+  Mixins in `EntityRenderer` and `RenderGlobal` only report these boundaries and don't change what is drawn.
   That context can be translated into Focalis shader program roles and matched to the programs of 1.12.2 era
   shaderpacks, which nothing uses yet.
 - Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
