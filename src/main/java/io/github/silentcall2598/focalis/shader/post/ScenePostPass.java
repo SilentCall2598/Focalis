@@ -137,7 +137,7 @@ public final class ScenePostPass {
 
     private SceneCapture replaceCapture(Framebuffer target) throws PostPassException {
         deleteCapture();
-        SceneCapture created = SceneCapture.create(target, state, SCENE_COLOR_UNIT, SCENE_DEPTH_UNIT);
+        SceneCapture created = SceneCapture.create(target);
         capture = created;
         logger.info("Scene capture is {}x{} with {} depth", created.width(), created.height(),
                 created.depthFormat());
