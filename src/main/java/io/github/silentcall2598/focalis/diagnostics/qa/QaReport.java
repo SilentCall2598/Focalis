@@ -42,6 +42,7 @@ final class QaReport {
     final GlErrors glErrors = new GlErrors();
     final Boundary boundary = new Boundary();
     final Resources resources = new Resources();
+    final WorldTarget worldTarget = new WorldTarget();
     @Nullable
     Map<String, Integer> perturbations;
     @Nullable
@@ -300,6 +301,21 @@ final class QaReport {
         // GL only hands out names that are free, so a name the new capture got again proves the old object is gone.
         int reusedNames;
         final List<String> failures = new ArrayList<>();
+    }
+
+    // What the world target did, if its feature ran.
+    static final class WorldTarget {
+        int redirectedPasses;
+        final Map<String, Integer> skips = new TreeMap<>();
+        final List<Capture> targets = new ArrayList<>();
+        // The draw framebuffer when translucent terrain starts, which is after vanilla rebinds its framebuffer
+        // for entity outlines. It has to be the target in a redirected pass and Minecraft's otherwise.
+        int drawSamples;
+        int drawMismatches;
+        final List<String> drawMismatchSamples = new ArrayList<>();
+        final Resources replaced = new Resources();
+        @Nullable
+        String stopped;
     }
 
     static final class HighTextureUnit {

@@ -25,6 +25,9 @@ final class RecordingRenderTargetGl implements RenderTargetGl {
     final Map<Integer, Map<Integer, Integer>> attachments = new HashMap<>();
     int boundTexture;
     int drawFramebuffer;
+    // Never touched by RenderTarget itself. RecordingWorldTargetGl shares it, as both see the same GL state.
+    int readFramebuffer;
+    boolean deletedWhileBound;
     int status = GL30.GL_FRAMEBUFFER_COMPLETE;
     boolean createTextureReturnsZero;
     int calls;
@@ -56,6 +59,7 @@ final class RecordingRenderTargetGl implements RenderTargetGl {
         deletes.merge(texture, 1, Integer::sum);
         liveTextures.remove(texture);
         if (boundTexture == texture) {
+            deletedWhileBound = true;
             boundTexture = 0;
         }
     }
@@ -99,7 +103,12 @@ final class RecordingRenderTargetGl implements RenderTargetGl {
         deletes.merge(framebuffer, 1, Integer::sum);
         liveFramebuffers.remove(framebuffer);
         if (drawFramebuffer == framebuffer) {
+            deletedWhileBound = true;
             drawFramebuffer = 0;
+        }
+        if (readFramebuffer == framebuffer) {
+            deletedWhileBound = true;
+            readFramebuffer = 0;
         }
     }
 
@@ -127,7 +136,8 @@ final class RecordingRenderTargetGl implements RenderTargetGl {
         return status;
     }
 
-    private void step(String method) {
+    // Shared with RecordingWorldTargetGl, so its calls count and fail the same way.
+    void step(String method) {
         calls++;
         int call = counts.merge(method, 1, Integer::sum);
         Throwable failure = failures.get(method + "#" + call);

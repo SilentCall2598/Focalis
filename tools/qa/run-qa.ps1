@@ -26,6 +26,8 @@ param(
     [switch]$AllowFullscreen,
     # Uses runObfClient, the reobfuscated release jar, instead of runClient.
     [switch]$Obfuscated,
+    # Turns on the experimental world target in every scenario, not just the ones that need it.
+    [switch]$WorldTarget,
     [int]$TimeoutSeconds = 420,
     # A running client that stops updating probe.json this long is treated as hung and gets a thread dump.
     [int]$StallSeconds = 90
@@ -46,6 +48,7 @@ $Scenarios = [ordered]@{
     'world-reload'                   = @{ Shaders = $true; Pack = 'focalis-depth-view' }
     'world-lifecycle'                = @{ Shaders = $true; Pack = 'focalis-depth-view' }
     'render-stages'                  = @{ Shaders = $true; Pack = 'focalis-depth-view' }
+    'world-target-failure'           = @{ Shaders = $false; Pack = ''; WorldTarget = $true }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.
@@ -54,6 +57,8 @@ $ScenarioAllowed = @{
     'post-process-failure'  = @('Focalis QA injected failure', "Render listener of 'shaders' failed",
         "Feature 'shaders' is disabled for this session")
     'post-process-bad-pack' = @('The post pass stopped for this session')
+    'world-target-failure'  = @('Focalis QA injected failure', "Render listener of 'world_target' failed",
+        "Feature 'world_target' is disabled for this session")
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -237,6 +242,8 @@ function Initialize-GameDir([string]$Name) {
             'mainHand:right', 'lang:en_us', 'fancyGraphics:true') -join "`n")
 
     $enabled = $(if ($config.Shaders) { 'true' } else { 'false' })
+    $worldTargetEnabled = $(if ($WorldTarget -or ($config.ContainsKey('WorldTarget') -and $config.WorldTarget)) {
+            'true' } else { 'false' })
     Write-Utf8 (Join-Path $GameDir 'config\focalis.cfg') @"
 # Configuration file
 
@@ -255,6 +262,10 @@ features {
     shaders {
         B:enabled=$enabled
         S:pack=$($config.Pack)
+    }
+
+    world_target {
+        B:enabled=$worldTargetEnabled
     }
 }
 "@
@@ -425,6 +436,7 @@ function Invoke-Scenario([string]$Name) {
                     skips            = $probe.postPass.skips
                     captures         = @($probe.postPass.captures).Count
                     stateMismatches  = $probe.boundary.mismatchFrames
+                    worldTargetPasses = $probe.worldTarget.redirectedPasses
                     glErrorsInFocalis = $probe.glErrors.duringFocalis
                     averageFrameMs   = [Math]::Round($probe.frames.averageFrameMs, 2)
                     averageFocalisWorldEndMs = [Math]::Round($probe.frames.averageFocalisWorldEndMs, 3)
@@ -491,6 +503,7 @@ $report = [ordered]@{
     finishedAt  = (Get-Date).ToUniversalTime().ToString('o')
     result      = $(if ($allPassed) { 'pass' } else { 'fail' })
     task        = $(if ($Obfuscated) { 'runObfClient' } else { 'runClient' })
+    worldTarget = [bool]$WorldTarget
     source      = $source
 }
 # Only runObfClient tests a release jar.
@@ -508,6 +521,10 @@ $summary = New-Object System.Collections.Generic.List[string]
 $summary.Add('# Focalis QA summary')
 $summary.Add('')
 $summary.Add("Result: **$($report.result)** ($($report.task), $($results.Count) scenarios, $startedAt)")
+if ($WorldTarget) {
+    $summary.Add('')
+    $summary.Add('World target on in every scenario.')
+}
 $summary.Add('')
 $dirtyText = $(if ($null -eq $source.dirty) { 'unknown' } elseif ($source.dirty) { 'uncommitted changes' } else { 'clean' })
 $summary.Add("Source: $(if ($source.head) { $source.head } else { 'unknown' }) on $(if ($source.branch) { $source.branch } else { 'no branch' }), $dirtyText")
@@ -515,14 +532,14 @@ if ($Obfuscated) {
     $summary.Add("Release jar SHA-256: $(if ($report.artifact) { $report.artifact.sha256 } else { 'unknown, a scenario found no jar or the jars differed' })")
 }
 $summary.Add('')
-$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Stage pairs | Stage problems | Rendered | Mismatches | GL errors | Captures | Seconds |')
-$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Stage pairs | Stage problems | Rendered | Redirected | Mismatches | GL errors | Captures | Seconds |')
+$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($result in $results) {
     $n = $result.numbers
     if ($n) {
-        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.stagePairs) | $($n.stageProblems) | $($n.renderedFrames) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.stagePairs) | $($n.stageProblems) | $($n.renderedFrames) | $($n.worldTargetPasses) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
     } else {
-        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | - | - | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | - | - | - | $($result.durationSeconds) |")
     }
 }
 foreach ($result in $results) {
