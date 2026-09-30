@@ -21,6 +21,13 @@ public enum RenderStage {
      * pass 0 and again after translucent terrain for pass 1. The draw kind comes from Forge's render pass.
      */
     ENTITIES,
+    /**
+     * Vanilla's glowing entity outlines inside the pass 0 ENTITIES stage. It covers vanilla's whole outline block, from
+     * clearing the outline framebuffer and drawing the outlined entities into it, through the outline shader, until
+     * Minecraft's framebuffer is bound again. Vanilla binds its own shader programs in there. It only happens while
+     * something glows, and for one more pass after that to clear the outlines.
+     */
+    ENTITY_OUTLINES,
     /** Lit particles and normal particles, one pair each with its own draw kind. */
     PARTICLES,
     /** The translucent chunk layer, draw kind TERRAIN_TRANSLUCENT. */

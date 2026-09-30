@@ -32,11 +32,15 @@ import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
+import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
+import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.world.GameType;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
@@ -171,11 +175,14 @@ public final class QaProbe {
     private final int[] rolePrograms = new int[ShaderProgramRole.values().length];
     private final Set<Integer> focalisPrograms = new HashSet<>();
     private boolean programsLive;
-    // One entry per open precise stage, innermost last. The program before the features' START, and whether a
-    // world program scope opened there.
+    // One entry per open precise stage, innermost last. The stage, the program before the features' START, and
+    // whether a world program scope opened there.
+    private final RenderStage[] stageOpen = new RenderStage[MAX_STAGE_DEPTH];
     private final int[] stageProgramBefore = new int[MAX_STAGE_DEPTH];
     private final boolean[] stageScopeOpened = new boolean[MAX_STAGE_DEPTH];
     private int stageDepth;
+    // Whether the entity outlines already ended inside the ENTITIES stage that is open now.
+    private boolean outlinesEnded;
     private int openScopes;
     private boolean scopeJustStarted;
     private boolean programFailureArmed;
@@ -260,6 +267,7 @@ public final class QaProbe {
         }
         ticks++;
         if (ticks == 1) {
+            sampleChests();
             report.environment.initialWidth = mc().displayWidth;
             report.environment.initialHeight = mc().displayHeight;
             report.status = "running";
@@ -339,23 +347,27 @@ public final class QaProbe {
                     sampleWorldDrawFramebuffer();
                 }
                 if (programsLive) {
-                    beforeFocalisStageStart();
+                    beforeFocalisStageStart(stage);
                 }
             }
         }
     }
 
-    private void beforeFocalisStageStart() {
+    private void beforeFocalisStageStart(RenderStage stage) {
         if (stageDepth == MAX_STAGE_DEPTH) {
             broken("before a stage start", new IllegalStateException("Precise stages nest deeper than "
                     + MAX_STAGE_DEPTH));
             return;
         }
         try {
+            stageOpen[stageDepth] = stage;
             stageProgramBefore[stageDepth] = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             stageScopeOpened[stageDepth] = false;
             stageDepth++;
             scopeJustStarted = false;
+            if (stage == RenderStage.ENTITIES) {
+                outlinesEnded = false;
+            }
         } catch (RuntimeException e) {
             broken("before a stage start", e);
         }
@@ -400,6 +412,10 @@ public final class QaProbe {
             }
             return;
         }
+        if (stage == RenderStage.ENTITY_OUTLINES) {
+            checkOutlinesStart(where, current);
+            return;
+        }
         if (!opened) {
             if (focalisPrograms.contains(current)) {
                 programs.unboundLeaks++;
@@ -438,12 +454,93 @@ public final class QaProbe {
         }
     }
 
+    // Vanilla draws the outlined entities expecting no program and then runs its own shaders, so the program from
+    // before the outermost Focalis scope has to be back here.
+    private void checkOutlinesStart(String where, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int expected = stageProgramBefore[stageDepth - 1];
+        for (int i = 0; i < stageDepth - 1; i++) {
+            if (stageScopeOpened[i]) {
+                expected = stageProgramBefore[i];
+                break;
+            }
+        }
+        programs.outlineStarts++;
+        if (current != expected || focalisPrograms.contains(current)) {
+            programs.outlineProblems++;
+            QaReport.addCapped(programs.problems, where + " started with program " + current + " instead of "
+                    + expected + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    // Still inside ENTITIES, so its program has to be back once vanilla is done with the outlines.
+    private void checkOutlinesEnd(String where, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int parent = stageDepth - 1;
+        outlinesEnded = true;
+        if (parent < 0 || stageOpen[parent] != RenderStage.ENTITIES || !stageScopeOpened[parent]) {
+            return;
+        }
+        int entities = rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
+        int expected = entities != 0 ? entities : stageProgramBefore[parent];
+        programs.outlineResumes++;
+        if (current != expected) {
+            programs.outlineResumeProblems++;
+            QaReport.addCapped(programs.problems, where + " ended with program " + current + " instead of "
+                    + expected + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    // Called by the chest renderer right before a chest draws.
+    private void sampleBlockEntity() {
+        if (!programsLive || finished || brokenReason != null || stageDepth == 0) {
+            return;
+        }
+        int top = stageDepth - 1;
+        int entities = rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
+        if (stageOpen[top] != RenderStage.ENTITIES || !stageScopeOpened[top] || entities == 0) {
+            return;
+        }
+        try {
+            QaReport.WorldPrograms programs = report.worldPrograms;
+            int current = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            programs.blockEntitySamples++;
+            if (outlinesEnded) {
+                programs.blockEntitySamplesAfterOutlines++;
+            }
+            if (current != entities) {
+                programs.blockEntityMismatches++;
+                QaReport.addCapped(programs.problems, "a chest drew with program " + current + " instead of "
+                        + entities + (outlinesEnded ? " after the entity outlines" : "") + " in world pass "
+                        + (worldFrames + 1));
+            }
+        } catch (RuntimeException e) {
+            broken("while a chest draws", e);
+        }
+    }
+
+    // Wraps the chest renderer so the probe sees the program a real block entity draw gets, which comes after
+    // vanilla's entity outlines inside the same ENTITIES stage.
+    private void sampleChests() {
+        TileEntitySpecialRenderer<TileEntityChest> chests =
+                TileEntityRendererDispatcher.instance.getRenderer(TileEntityChest.class);
+        if (chests == null) {
+            QaReport.addCapped(report.probeErrors, "no chest renderer to sample block entities with");
+            return;
+        }
+        ClientRegistry.bindTileEntitySpecialRenderer(TileEntityChest.class,
+                new SamplingRenderer<>(chests, this::sampleBlockEntity));
+    }
+
     private void afterStageEnd(RenderStage stage, RenderDrawKind drawKind, int current) {
         QaReport.WorldPrograms programs = report.worldPrograms;
         int top = --stageDepth;
         int before = stageProgramBefore[top];
         if (stageScopeOpened[top]) {
             openScopes--;
+        }
+        if (stage == RenderStage.ENTITY_OUTLINES) {
+            checkOutlinesEnd(stage + "/" + drawKind, current);
         }
         programs.restores++;
         if (current != before) {
@@ -1177,6 +1274,14 @@ public final class QaProbe {
             report.check("world-programs-hand-untouched", programs.handChecks > 0 && programs.handProblems == 0,
                     programs.handProblems + " of " + programs.handChecks + " HAND starts had a scope or program"
                             + problems);
+            // Only has something to check when something glows or a chest is in view.
+            report.check("world-programs-outlines-left-to-vanilla", programs.outlineProblems == 0
+                            && programs.outlineResumeProblems == 0 && programs.blockEntityMismatches == 0,
+                    programs.outlineProblems + " of " + programs.outlineStarts + " outline starts kept a Focalis"
+                            + " program, " + programs.outlineResumeProblems + " of " + programs.outlineResumes
+                            + " outline ends didn't bind the entities program again, "
+                            + programs.blockEntityMismatches + " of " + programs.blockEntitySamples
+                            + " chests drew with another program" + problems);
         } else if (FeatureState.DISABLED.name().equals(state)) {
             report.check("world-programs-idle", programs.builds == 0 && programs.scopes == 0,
                     programs.builds + " builds, " + programs.scopes + " scopes");

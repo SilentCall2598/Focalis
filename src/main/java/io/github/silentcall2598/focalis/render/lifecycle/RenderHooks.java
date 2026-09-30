@@ -18,8 +18,8 @@ public final class RenderHooks {
 
     /** Stages the Mixins wrap around vanilla calls inside the world pass. Read only. */
     public static final Set<RenderStage> PRECISE_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.SKY,
-            RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.PARTICLES, RenderStage.TRANSLUCENT,
-            RenderStage.WEATHER, RenderStage.CLOUDS, RenderStage.HAND));
+            RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.ENTITY_OUTLINES, RenderStage.PARTICLES,
+            RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS, RenderStage.HAND));
 
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();

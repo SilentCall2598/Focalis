@@ -339,6 +339,16 @@ final class QaReport {
         // HAND comes after the world pass, so no scope may be open and no Focalis program current there.
         int handChecks;
         int handProblems;
+        // Vanilla's entity outlines bind their own programs. When they start, the program from before the
+        // outermost Focalis scope has to be back, and when they end the entities program has to be bound again.
+        int outlineStarts;
+        int outlineProblems;
+        int outlineResumes;
+        int outlineResumeProblems;
+        // Chests drawn inside a bound ENTITIES scope, some of them after the outlines, have to draw with its program.
+        int blockEntitySamples;
+        int blockEntitySamplesAfterOutlines;
+        int blockEntityMismatches;
         // Stages without a scope that still had a Focalis program current.
         int unboundLeaks;
         final List<String> problems = new ArrayList<>();

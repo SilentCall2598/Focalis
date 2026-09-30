@@ -308,7 +308,9 @@ public enum QaScenario {
                     "pairs " + pairs + " over " + r.frames.world + " world passes, per pass " + perPass);
             List<String> unexpected = new ArrayList<>(r.renderStages.kinds.keySet());
             unexpected.removeAll(perPass.keySet());
+            unexpected.remove(OUTLINES);
             r.check("no-unexpected-draw-kinds", unexpected.isEmpty(), "unexpected " + unexpected);
+            checkOutlinesSeen(r);
             checkShaderRoles(r);
             checkEveryFrameRendered(r);
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
@@ -382,6 +384,21 @@ public enum QaScenario {
                     programs.nestedSkyRestores + " sky programs put back over " + r.frames.world + " world passes");
             r.check("hand-checked-every-pass", programs.handChecks == r.frames.world,
                     programs.handChecks + " HAND starts over " + r.frames.world + " world passes");
+            checkOutlinesSeen(r);
+            QaReport.StageCounts outlines = r.renderStages.kinds.get(OUTLINES);
+            int outlinePairs = outlines == null ? 0 : outlines.pairs;
+            r.check("outlines-left-to-vanilla", programs.outlineStarts == outlinePairs && outlinePairs > 0
+                            && programs.outlineProblems == 0,
+                    programs.outlineProblems + " of " + programs.outlineStarts + " outline starts kept a Focalis"
+                            + " program");
+            r.check("entities-program-after-outlines", programs.outlineResumes == outlinePairs
+                            && programs.outlineResumeProblems == 0,
+                    programs.outlineResumeProblems + " of " + programs.outlineResumes + " outline ends didn't bind"
+                            + " the entities program again");
+            r.check("chests-drawn-with-entities-program", programs.blockEntitySamplesAfterOutlines > 0
+                            && programs.blockEntityMismatches == 0,
+                    programs.blockEntityMismatches + " of " + programs.blockEntitySamples + " chest draws had another"
+                            + " program, " + programs.blockEntitySamplesAfterOutlines + " of them after the outlines");
             checkTestPackPrograms(r);
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }
@@ -461,6 +478,7 @@ public enum QaScenario {
 
     static final String SHADERS = ShaderFeature.ID;
     static final String WORLD_PROGRAMS = WorldProgramsFeature.ID;
+    private static final String OUTLINES = "ENTITY_OUTLINES/DEFAULT";
 
     private static final List<String> SETUP_COMMANDS = Arrays.asList("/gamerule sendCommandFeedback false",
             "/gamerule doDaylightCycle false", "/gamerule doWeatherCycle false", "/gamerule doMobSpawning false",
@@ -661,6 +679,11 @@ public enum QaScenario {
         // Glowing makes vanilla draw entity outlines, which rebinds its framebuffer in the middle of the pass.
         steps.add(QaStep.action("command /summon glowing", probe -> probe.command(
                 "/summon pig ~-4 ~ ~ {NoAI:1b,Glowing:1b}")));
+        // Block entities draw after the outlines inside the same ENTITIES stage.
+        steps.add(QaStep.action("command /setblock chest", probe -> probe.command(
+                "/setblock ~-3 ~ ~1 minecraft:chest")));
+        steps.add(QaStep.action("command /setblock sign", probe -> probe.command(
+                "/setblock ~-3 ~ ~-1 minecraft:standing_sign 12 replace {Text2:\"{\\\"text\\\":\\\"Focalis\\\"}\"}")));
         steps.add(QaStep.waitTicks(40));
         steps.add(screenshot(screenshots + "-below-clouds"));
         steps.add(QaStep.action("fly", QaProbe::fly));
@@ -735,7 +758,22 @@ public enum QaScenario {
                 "roles " + counts + " over " + r.frames.world + " world passes, per pass " + perPass);
         List<String> other = new ArrayList<>(r.shaderRoutes.roles.keySet());
         other.removeAll(perPass.keySet());
-        r.check("no-unclassified-shader-roles", other.isEmpty(), "other roles " + other);
+        // The entity outlines are the only precise stage without a role, since vanilla draws them with its shaders.
+        other.remove("NONE");
+        QaReport.RoleCounts none = r.shaderRoutes.roles.get("NONE");
+        QaReport.StageCounts outlines = r.renderStages.kinds.get(OUTLINES);
+        int noRole = none == null ? 0 : none.count;
+        int outlineStarts = outlines == null ? 0 : outlines.starts;
+        r.check("no-unclassified-shader-roles", other.isEmpty() && noRole == outlineStarts,
+                "other roles " + other + ", " + noRole + " without a role for " + outlineStarts + " outline starts");
+    }
+
+    // Vanilla only draws outlines while the glowing pig is in view, so they don't happen in every world pass.
+    private static void checkOutlinesSeen(QaReport r) {
+        QaReport.StageCounts outlines = r.renderStages.kinds.get(OUTLINES);
+        r.check("entity-outlines-seen", outlines != null && outlines.pairs > 0 && outlines.maxPerWorldPass == 1,
+                outlines == null ? "never" : outlines.pairs + " pairs, at most " + outlines.maxPerWorldPass
+                        + " per world pass");
     }
 
     private static void checkShadersActive(QaReport r) {

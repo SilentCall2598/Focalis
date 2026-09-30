@@ -22,8 +22,8 @@ skies, video settings, and compatibility tooling for large modpacks.
 - Adds a Focalis line with feature states to crash reports.
 - Exposes precise world render stage boundaries to internal rendering systems: the world pass, sky, terrain,
   entities, particles, translucent terrain, weather, clouds and the hand, with the terrain layer, entity pass or
-  particle kind being drawn. In the normal surface sky, the sun and moon are told apart from the rest of the sky.
-  Mixins in `EntityRenderer` and `RenderGlobal` only report these boundaries and don't change what is drawn.
+  particle kind being drawn. In the normal surface sky, the sun and moon are told apart from the rest of the sky,
+  and inside the entities, vanilla's glowing entity outlines are marked too. Mixins in `EntityRenderer` and `RenderGlobal` only report these boundaries and don't change what is drawn.
   That context can be translated into Focalis shader program roles and matched to the programs of 1.12.2 era
   shaderpacks, and the matched programs of one shader folder can be prepared and built. Only the experimental
   `world_programs` feature binds them.
@@ -41,9 +41,10 @@ skies, video settings, and compatibility tooling for large modpacks.
   OptiFine is installed.
 - Provides an experimental, off-by-default `world_programs` feature for testing. It binds the matching program
   from the selected pack's main `shaders` folder while vanilla draws the sky, terrain, entities, particles,
-  weather and clouds. The hand isn't bound. No uniforms, textures, dimension folders or composite passes are set
-  up, so regular shaderpacks won't render correctly. Programs that fail to load or build are logged and those
-  parts draw the vanilla way. It stays unavailable when OptiFine is installed. The development test pack lives in
+  weather and clouds. The hand isn't bound, and vanilla's glowing entity outlines keep their own shaders. No
+  uniforms, textures, dimension folders or composite passes are set up, so regular shaderpacks won't render
+  correctly. Programs that fail to load or build are logged and those parts draw the vanilla way. It stays
+  unavailable when OptiFine is installed. The development test pack lives in
   `src/test/resources/shaderpacks/focalis-world-routes`.
 
 ## Requirements

@@ -85,15 +85,28 @@ public final class LiveWorldPrograms {
         }
     }
 
-    // A scope still open here never got its END. It's closed so its program doesn't stay bound, and this throws
-    // because Focalis lost track of the stages.
+    /** Steps aside while vanilla binds its own programs inside the world pass, like for entity outlines. */
+    public void vanillaProgramsStart(RenderStage stage, RenderDrawKind drawKind) {
+        if (worldOpen) {
+            binding.suspend(stage, drawKind);
+        }
+    }
+
+    public void vanillaProgramsEnd(RenderStage stage, RenderDrawKind drawKind) {
+        if (worldOpen) {
+            binding.resume(stage, drawKind);
+        }
+    }
+
+    // A scope still open here never got its END, or a suspension its resume. Both are closed so no program stays
+    // bound, and this throws because Focalis lost track of the stages.
     private void checkClosed(String when) {
-        if (binding.isEmpty()) {
+        if (binding.isEmpty() && !binding.isSuspended()) {
             return;
         }
         binding.abort();
-        throw new IllegalStateException("A world program scope was still open " + when + ". The program it"
-                + " replaced was put back.");
+        throw new IllegalStateException("A world program scope was still open or suspended " + when + ". The"
+                + " program it replaced was put back.");
     }
 
     /**

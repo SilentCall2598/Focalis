@@ -305,6 +305,45 @@ class WorldProgramBindingTest {
     }
 
     @Test
+    void entityOutlinesStepAsideInsideEntities() throws Exception {
+        load("gbuffers_entities");
+        int entities = id(ShaderProgramRole.ENTITIES);
+        binding.start(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+
+        binding.suspend(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        assertEquals(EXTERNAL, gl.current);
+        // Vanilla's outline shader leaves no program bound.
+        gl.current = 0;
+        binding.resume(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        assertEquals(entities, gl.current);
+        binding.end(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+
+        assertEquals(EXTERNAL, gl.current);
+        assertUses(entities, EXTERNAL, entities, EXTERNAL);
+        assertTrue(binding.isEmpty());
+    }
+
+    @Test
+    void onlyVanillaProgramStagesSuspend() throws Exception {
+        load("gbuffers_entities");
+        int entities = id(ShaderProgramRole.ENTITIES);
+        binding.start(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> binding.suspend(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0));
+        assertThrows(IllegalArgumentException.class,
+                () -> binding.resume(RenderStage.SKY, RenderDrawKind.SKY_BASIC));
+        assertThrows(IllegalArgumentException.class,
+                () -> binding.start(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT));
+
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        assertEquals(EXTERNAL, gl.current);
+        assertUses(entities, EXTERNAL);
+        assertEquals(EnumSet.of(RenderStage.ENTITY_OUTLINES), WorldProgramBinding.VANILLA_PROGRAM_STAGES);
+    }
+
+    @Test
     void onlyStagesInsideTheWorldPassAreBound() {
         assertEquals(EnumSet.of(RenderStage.SKY, RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.PARTICLES,
                 RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS), WorldProgramBinding.STAGES);

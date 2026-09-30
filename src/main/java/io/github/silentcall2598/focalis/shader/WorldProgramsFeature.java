@@ -106,6 +106,9 @@ public final class WorldProgramsFeature extends Feature {
         for (RenderStage stage : WorldProgramBinding.STAGES) {
             context.addRenderListener(stage, this::onStage);
         }
+        for (RenderStage stage : WorldProgramBinding.VANILLA_PROGRAM_STAGES) {
+            context.addRenderListener(stage, this::onVanillaPrograms);
+        }
     }
 
     // Roles that share a pack program share its problem, so each program is only logged once.
@@ -211,6 +214,20 @@ public final class WorldProgramsFeature extends Feature {
             current.stageEnd(stage, drawKind);
         } else if (current.stageStart(stage, drawKind)) {
             monitor.scopeStarted(stage, drawKind);
+        }
+    }
+
+    // Vanilla's entity outlines bind their own shaders and draw the outlined entities expecting no program.
+    private void onVanillaPrograms(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind,
+            float partialTicks) {
+        LiveWorldPrograms current = live;
+        if (current == null) {
+            return;
+        }
+        if (phase == RenderPhase.START) {
+            current.vanillaProgramsStart(stage, drawKind);
+        } else {
+            current.vanillaProgramsEnd(stage, drawKind);
         }
     }
 

@@ -105,12 +105,85 @@ class LiveWorldProgramsTest {
     }
 
     @Test
+    void entityOutlinesHandTheProgramToVanillaAndBack() throws Exception {
+        LiveWorldPrograms live = build("gbuffers_entities");
+        int entities = id(live, ShaderProgramRole.ENTITIES);
+
+        live.worldStart();
+        live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        assertEquals(EXTERNAL, gl.current);
+        gl.current = 0;
+        live.vanillaProgramsEnd(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        assertEquals(entities, gl.current);
+        live.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.worldEnd();
+
+        assertEquals(Arrays.asList(entities, EXTERNAL, entities, EXTERNAL), gl.uses);
+        assertTrue(scopes.isEmpty());
+    }
+
+    @Test
+    void worldEndDuringOutlinesDropsTheSuspensionAndThrows() throws Exception {
+        LiveWorldPrograms live = build("gbuffers_entities");
+        int entities = id(live, ShaderProgramRole.ENTITIES);
+        live.worldStart();
+        live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        gl.current = 0;
+
+        assertThrows(IllegalStateException.class, live::worldEnd);
+
+        assertTrue(scopes.isEmpty());
+        assertFalse(scopes.isSuspended());
+        // The external program already went back when the scope stepped aside.
+        assertEquals(Arrays.asList(entities, EXTERNAL), gl.uses);
+        assertEquals(0, gl.current);
+    }
+
+    @Test
+    void suspensionWithoutAnOpenScopeStillHasToEndBeforeTheWorldPass() throws Exception {
+        LiveWorldPrograms live = build("gbuffers_entities");
+        live.worldStart();
+        // Like a mod drawing entities from inside the world pass without an ENTITIES stage around it.
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        live.vanillaProgramsEnd(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        live.worldEnd();
+        live.worldStart();
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+
+        assertThrows(IllegalStateException.class, live::frameEnd);
+
+        assertFalse(scopes.isSuspended());
+        assertEquals(Collections.emptyList(), gl.uses);
+    }
+
+    @Test
+    void cleanupDuringOutlinesDeletesWithoutBindingAnything() throws Exception {
+        LiveWorldPrograms live = build("gbuffers_entities");
+        int entities = id(live, ShaderProgramRole.ENTITIES);
+        live.worldStart();
+        live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+
+        live.delete();
+
+        assertEquals(Arrays.asList(entities, EXTERNAL), gl.uses);
+        assertEquals(Collections.singletonList(entities), shaderGl.deleteOrder);
+        assertTrue(scopes.isEmpty());
+        assertFalse(scopes.isSuspended());
+    }
+
+    @Test
     void stagesOutsideTheWorldPassAreLeftAlone() throws Exception {
         LiveWorldPrograms live = build("gbuffers_entities");
 
         // Before the first world pass, and after it ended, like a mod drawing entities for a GUI.
         assertFalse(live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0));
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        live.vanillaProgramsEnd(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
         live.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        assertFalse(scopes.isSuspended());
         live.worldStart();
         live.worldEnd();
         assertFalse(live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0));
