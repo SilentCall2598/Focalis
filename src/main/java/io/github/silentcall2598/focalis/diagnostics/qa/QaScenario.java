@@ -279,13 +279,17 @@ public enum QaScenario {
     },
 
     RENDER_STAGES("render-stages",
-            "Test pack on, in rain next to an entity, first below and then above cloud height. Every precise stage has"
-                    + " to fire with balanced pairs and vanilla's count per world pass.") {
+            "Test pack on, in rain next to an entity and in view of a glowing one, first below and then above cloud"
+                    + " height. Every precise stage has to fire with balanced pairs and vanilla's count per world"
+                    + " pass.") {
         @Override
         List<QaStep> steps() {
             List<QaStep> steps = enterWorld();
             steps.add(QaStep.action("command /weather rain", probe -> probe.command("/weather rain")));
             steps.add(QaStep.action("command /summon", probe -> probe.command("/summon pig ~2 ~ ~2 {NoAI:1b}")));
+            // Glowing makes vanilla draw entity outlines, which rebinds its framebuffer in the middle of the pass.
+            steps.add(QaStep.action("command /summon glowing", probe -> probe.command(
+                    "/summon pig ~-4 ~ ~ {NoAI:1b,Glowing:1b}")));
             steps.add(QaStep.waitTicks(40));
             steps.add(screenshot("stages-below-clouds"));
             steps.add(QaStep.action("fly", QaProbe::fly));
@@ -325,6 +329,47 @@ public enum QaScenario {
             r.check("no-unexpected-draw-kinds", unexpected.isEmpty(), "unexpected " + unexpected);
             checkShaderRoles(r);
             checkEveryFrameRendered(r);
+            r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
+        }
+    },
+
+    WORLD_TARGET_FAILURE("world-target-failure",
+            "World target on. Throws inside the copy back at the end of a world pass. The feature has to fail"
+                    + " cleanly, put Minecraft's framebuffer back and stop redirecting.") {
+        @Override
+        List<QaStep> steps() {
+            List<QaStep> steps = enterWorld();
+            steps.add(screenshot("world-target-before-failure"));
+            steps.add(QaStep.action("arm-world-target-failure", QaProbe::armWorldTargetFailure));
+            steps.add(QaStep.until("failure-happened", 200, QaProbe::failureObserved));
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("world-target-after-failure"));
+            steps.add(QaStep.waitTicks(40));
+            return steps;
+        }
+
+        @Override
+        boolean expectsFeatureFailure() {
+            return true;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            QaReport.InjectedFailure failure = r.injectedFailure;
+            QaReport.WorldTarget world = r.worldTarget;
+            r.check("feature-failed", failure != null && failure.featureFailed && failure.featureDetail != null
+                            && failure.featureDetail.contains(QaProbe.INJECTED_FAILURE),
+                    failure == null ? "no failure injected" : String.valueOf(failure.featureDetail));
+            r.check("framebuffers-restored-on-failure", failure != null && failure.stateRestored,
+                    "boundary on the failing world pass");
+            r.check("target-released", failure != null && failure.resourcesReleased,
+                    "framebuffer and both textures deleted");
+            r.check("redirect-stopped", failure != null && failure.frame > 0 && failure.renderedAfterFailure == 0
+                            && world.redirectedPasses == failure.frame,
+                    world.redirectedPasses + " passes redirected, failure in pass "
+                            + (failure == null ? "?" : failure.frame));
+            r.check("vanilla-after-failure", world.drawSamples > 0 && world.drawMismatches == 0,
+                    world.drawMismatches + " of " + world.drawSamples + " sampled world passes drew elsewhere");
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }
     };

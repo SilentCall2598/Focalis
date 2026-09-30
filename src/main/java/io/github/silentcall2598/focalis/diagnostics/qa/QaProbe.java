@@ -13,6 +13,8 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
+import io.github.silentcall2598.focalis.render.target.WorldTargetFeature;
+import io.github.silentcall2598.focalis.render.target.WorldTargetMonitor;
 import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import io.github.silentcall2598.focalis.shader.post.ScenePostPass;
 import net.minecraft.client.Minecraft;
@@ -140,7 +142,19 @@ public final class QaProbe {
     private final int[] sentinels = new int[2];
 
     private boolean failureArmed;
+    private boolean worldTargetFailureArmed;
+    private boolean worldTargetFailureInjected;
     private boolean failureChecked;
+
+    // Framebuffer bindings at WORLD START, before the features ran. A redirected world pass has to end with them.
+    private int worldStartRead;
+    private int worldStartDraw;
+    private boolean passRedirected;
+    private boolean worldTargetCreatedThisPass;
+    @Nullable
+    private QaReport.Capture previousWorldTarget;
+    @Nullable
+    private QaReport.Capture currentWorldTarget;
 
     public QaProbe(QaSettings settings, Supplier<List<FeatureStatus>> features, Supplier<GlContextInfo> glContext) {
         this.settings = settings;
@@ -160,6 +174,10 @@ public final class QaProbe {
         return monitor;
     }
 
+    public WorldTargetMonitor worldTargetMonitor() {
+        return monitor;
+    }
+
     /** Registers the listeners that have to run before the features' own. Call it before features register. */
     public void installBefore(RenderLifecycle lifecycle) {
         LOGGER.warn("Development QA mode is on, running scenario '{}'. It is not meant for normal play.",
@@ -173,6 +191,8 @@ public final class QaProbe {
             }
             if (phase == RenderPhase.END) {
                 beforeFocalisWorld();
+            } else {
+                beforeFocalisWorldStart();
             }
             worldPhases.dispatchStarted(phase, report.frames.total);
             renderStages.world(phase, report.frames.total);
@@ -194,6 +214,8 @@ public final class QaProbe {
             worldPhases.dispatchFinished();
             if (phase == RenderPhase.END) {
                 afterFocalisWorld();
+            } else {
+                afterFocalisWorldStart();
             }
         });
     }
@@ -280,7 +302,50 @@ public final class QaProbe {
             renderStages.stage(stage, phase, drawKind, report.frames.total);
             if (phase == RenderPhase.START) {
                 shaderRoutes.stageStarted(stage, drawKind);
+                if (stage == RenderStage.TRANSLUCENT) {
+                    sampleWorldDrawFramebuffer();
+                }
             }
+        }
+    }
+
+    private void beforeFocalisWorldStart() {
+        if (finished || brokenReason != null) {
+            return;
+        }
+        try {
+            passRedirected = false;
+            worldTargetCreatedThisPass = false;
+            worldStartRead = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+            worldStartDraw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        } catch (RuntimeException e) {
+            broken("before world-start work", e);
+        }
+    }
+
+    // Right after the replacement, since vanilla can load textures during the world pass and get the freed names.
+    private void afterFocalisWorldStart() {
+        if (finished || brokenReason != null || !worldTargetCreatedThisPass) {
+            return;
+        }
+        try {
+            checkReleased(previousWorldTarget, report.worldTarget.replaced);
+        } catch (RuntimeException e) {
+            broken("after world-start work", e);
+        }
+    }
+
+    private void sampleWorldDrawFramebuffer() {
+        QaReport.WorldTarget world = report.worldTarget;
+        QaReport.Capture target = currentWorldTarget;
+        int expected = passRedirected && target != null ? target.framebuffer
+                : mc().getFramebuffer().framebufferObject;
+        int draw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        world.drawSamples++;
+        if (draw != expected) {
+            world.drawMismatches++;
+            QaReport.addCapped(world.drawMismatchSamples, "world pass " + (worldFrames + 1) + " drew into "
+                    + draw + " instead of " + expected + (passRedirected ? " (the target)" : " (Minecraft's)"));
         }
     }
 
@@ -322,7 +387,7 @@ public final class QaProbe {
             GlBoundary exit = GlBoundary.capture(TOUCHED_UNITS);
             drainErrors("during-focalis");
             report.boundary.framesChecked++;
-            List<String> differences = before.differences(exit);
+            List<String> differences = afterFocalis(before).differences(exit);
             if (!differences.isEmpty()) {
                 report.boundary.mismatchFrames++;
                 QaReport.addCapped(report.boundary.mismatches,
@@ -330,7 +395,7 @@ public final class QaProbe {
             }
             countPassActivity();
             if (captureCreatedThisFrame) {
-                checkPreviousCaptureReleased();
+                checkReleased(previousCapture, report.resources);
             }
             QaReport.InjectedFailure failure = report.injectedFailure;
             if (failure != null && failure.frame == worldFrames && !failureChecked) {
@@ -345,6 +410,12 @@ public final class QaProbe {
         } catch (RuntimeException e) {
             broken("after world-end work", e);
         }
+    }
+
+    // What a boundary taken before the features at WORLD END has to look like after them. Ending a redirected pass
+    // puts back the framebuffers the world pass started with.
+    private GlBoundary afterFocalis(GlBoundary before) {
+        return passRedirected ? before.withFramebuffers(worldStartRead, worldStartDraw) : before;
     }
 
     private String frameContext() {
@@ -436,10 +507,10 @@ public final class QaProbe {
     }
 
     private void undoPerturbation() {
-        GlBoundary original = perturbOriginal;
-        if (original == null) {
+        if (perturbOriginal == null) {
             return;
         }
+        GlBoundary original = afterFocalis(perturbOriginal);
         setCapability(original.depthTest, GlStateManager::enableDepth, GlStateManager::disableDepth);
         setCapability(original.blend, GlStateManager::enableBlend, GlStateManager::disableBlend);
         setCapability(original.alphaTest, GlStateManager::enableAlpha, GlStateManager::disableAlpha);
@@ -523,7 +594,7 @@ public final class QaProbe {
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit + TOUCHED_UNITS[1]);
         GlStateManager.bindTexture(original.bindings[1]);
         setActiveUnit(original.activeUnit);
-        checkUndone("texture unit arrangement", original);
+        checkUndone("texture unit arrangement", afterFocalis(original));
 
         results.checks++;
         results.highestUnitChecked = Math.max(results.highestUnitChecked, highUnit);
@@ -547,24 +618,23 @@ public final class QaProbe {
         }
     }
 
-    // A name the new capture got again was free when it was handed out, which already proves the old object is
-    // gone. Every other old name must no longer exist.
-    private void checkPreviousCaptureReleased() {
-        QaReport.Capture old = previousCapture;
-        QaReport.Capture now = currentCapture;
-        if (old == null || now == null) {
+    // A name that one of the current Focalis objects got again was free when it was handed out, which already proves
+    // the old object is gone. The world target and the scene capture can take each other's freed names in the same
+    // frame. Every other old name must no longer exist.
+    private void checkReleased(@Nullable QaReport.Capture old, QaReport.Resources resources) {
+        if (old == null) {
             return;
         }
-        QaReport.Resources resources = report.resources;
+        QaReport.Capture[] current = {currentCapture, currentWorldTarget};
         resources.namesChecked++;
-        if (old.framebuffer == now.framebuffer) {
+        if (holdsFramebuffer(current, old.framebuffer)) {
             resources.reusedNames++;
         } else if (GL30.glIsFramebuffer(old.framebuffer)) {
             QaReport.addCapped(resources.failures, "framebuffer " + old.framebuffer + " still exists");
         }
         for (int texture : new int[] {old.colorTexture, old.depthTexture}) {
             resources.namesChecked++;
-            if (texture == now.colorTexture || texture == now.depthTexture) {
+            if (holdsTexture(current, texture)) {
                 resources.reusedNames++;
             } else if (GL11.glIsTexture(texture)) {
                 QaReport.addCapped(resources.failures, "texture " + texture + " still exists");
@@ -572,12 +642,37 @@ public final class QaProbe {
         }
     }
 
+    private static boolean holdsFramebuffer(QaReport.Capture[] objects, int framebuffer) {
+        for (QaReport.Capture object : objects) {
+            if (object != null && object.framebuffer == framebuffer) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean holdsTexture(QaReport.Capture[] objects, int texture) {
+        for (QaReport.Capture object : objects) {
+            if (object != null && (object.colorTexture == texture || object.depthTexture == texture)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void recordFailure(QaReport.InjectedFailure failure, boolean stateRestored) {
         failureChecked = true;
         failure.stateRestored = stateRestored;
-        FeatureStatus shaders = featureStatus(QaScenario.SHADERS);
-        failure.featureFailed = shaders != null && shaders.state() == FeatureState.FAILED;
-        failure.featureDetail = shaders == null ? null : shaders.detail();
+        boolean worldTarget = worldTargetFailureInjected;
+        FeatureStatus feature = featureStatus(worldTarget ? WorldTargetFeature.ID : QaScenario.SHADERS);
+        failure.featureFailed = feature != null && feature.state() == FeatureState.FAILED;
+        failure.featureDetail = feature == null ? null : feature.detail();
+        if (worldTarget) {
+            QaReport.Capture target = currentWorldTarget;
+            failure.resourcesReleased = target != null && !GL30.glIsFramebuffer(target.framebuffer)
+                    && !GL11.glIsTexture(target.colorTexture) && !GL11.glIsTexture(target.depthTexture);
+            return;
+        }
         QaReport.Capture capture = currentCapture;
         failure.resourcesReleased = capture != null && !GL30.glIsFramebuffer(capture.framebuffer)
                 && !GL11.glIsTexture(capture.colorTexture) && !GL11.glIsTexture(capture.depthTexture)
@@ -750,6 +845,12 @@ public final class QaProbe {
         failureArmed = true;
     }
 
+    void armWorldTargetFailure() {
+        report.injectedFailure = new QaReport.InjectedFailure();
+        worldTargetFailureArmed = true;
+        worldTargetFailureInjected = true;
+    }
+
     boolean failureObserved() {
         return failureChecked;
     }
@@ -808,6 +909,7 @@ public final class QaProbe {
         report.check("post-pass-only-at-world-end", phases.passesOutsideEnd == 0 && phases.repeatedPasses == 0,
                 phases.passesOutsideEnd + " outside WORLD END, " + phases.repeatedPasses + " repeated in one END");
         checkRenderStages();
+        checkWorldTarget();
         if (!settings.scenario.expectsFeatureFailure()) {
             List<String> failed = new ArrayList<>();
             for (QaReport.FeatureEntry feature : report.features) {
@@ -841,6 +943,26 @@ public final class QaProbe {
                         + stages.outsideWorld + " outside a world pass, " + stages.outsideFrame + " outside a frame, "
                         + stages.handBeforeWorldEnd + " HAND before WORLD END, " + stages.kindMismatches
                         + " END with another draw kind");
+    }
+
+    // Any scenario can run with the world target on or off. A failed target is judged by its own scenario.
+    private void checkWorldTarget() {
+        QaReport.WorldTarget world = report.worldTarget;
+        String state = report.featureState(WorldTargetFeature.ID);
+        String draws = world.drawMismatches + " of " + world.drawSamples + " sampled world passes drew elsewhere"
+                + (world.drawMismatchSamples.isEmpty() ? "" : ", like " + world.drawMismatchSamples.get(0));
+        if (FeatureState.ACTIVE.name().equals(state)) {
+            report.check("world-target-every-pass", world.stopped == null && world.redirectedPasses == worldFrames,
+                    world.redirectedPasses + " of " + worldFrames + " world passes redirected, skips " + world.skips
+                            + (world.stopped == null ? "" : ", stopped: " + world.stopped));
+            report.check("world-target-drawn-into", world.drawSamples > 0 && world.drawMismatches == 0, draws);
+            report.check("world-target-old-released", world.replaced.failures.isEmpty(),
+                    world.targets.size() + " targets, " + world.replaced.namesChecked + " old names checked, "
+                            + world.replaced.reusedNames + " handed out again, failures " + world.replaced.failures);
+        } else if (FeatureState.DISABLED.name().equals(state)) {
+            report.check("world-target-idle", world.redirectedPasses == 0 && world.targets.isEmpty()
+                    && world.drawSamples > 0 && world.drawMismatches == 0, draws);
+        }
     }
 
     @Nullable
@@ -914,7 +1036,7 @@ public final class QaProbe {
         }
     }
 
-    private final class Monitor implements PostPassMonitor {
+    private final class Monitor implements PostPassMonitor, WorldTargetMonitor {
 
         @Override
         public void programBuilt(int program) {
@@ -960,6 +1082,47 @@ public final class QaProbe {
         public void passStopped(String problem) {
             String[] lines = problem.split("\n");
             report.postPass.stopped = String.join(" | ", Arrays.asList(lines).subList(0, Math.min(3, lines.length)));
+        }
+
+        // Targets are made at WORLD START, which belongs to the world pass counted at its END.
+        @Override
+        public void targetCreated(int framebuffer, int colorTexture, int depthTexture, int width, int height,
+                String depthFormat) {
+            previousWorldTarget = currentWorldTarget;
+            currentWorldTarget = new QaReport.Capture(worldFrames + 1, framebuffer, colorTexture, depthTexture, width,
+                    height, depthFormat);
+            QaReport.addCapped(report.worldTarget.targets, currentWorldTarget);
+            worldTargetCreatedThisPass = true;
+        }
+
+        @Override
+        public void redirected() {
+            passRedirected = true;
+            report.worldTarget.redirectedPasses++;
+            QaReport.InjectedFailure failure = report.injectedFailure;
+            if (worldTargetFailureInjected && failureChecked && failure != null) {
+                failure.renderedAfterFailure++;
+            }
+        }
+
+        @Override
+        public void beforeCopy() {
+            QaReport.InjectedFailure failure = report.injectedFailure;
+            if (worldTargetFailureArmed && failure != null) {
+                worldTargetFailureArmed = false;
+                failure.frame = worldFrames;
+                throw new IllegalStateException(INJECTED_FAILURE);
+            }
+        }
+
+        @Override
+        public void skipped(String reason) {
+            report.worldTarget.skips.merge(reason, 1, Integer::sum);
+        }
+
+        @Override
+        public void stopped(String reason) {
+            report.worldTarget.stopped = reason;
         }
     }
 }

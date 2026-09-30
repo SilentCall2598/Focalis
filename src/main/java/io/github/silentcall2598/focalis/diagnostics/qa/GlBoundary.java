@@ -70,6 +70,12 @@ final class GlBoundary {
                 GL11.glIsEnabled(GL11.GL_ALPHA_TEST));
     }
 
+    /** This boundary with other framebuffer bindings, like the ones a redirected world pass has to end with. */
+    GlBoundary withFramebuffers(int read, int draw) {
+        return new GlBoundary(read, draw, viewport, program, activeUnit, units, bindings, depthTest, blend,
+                alphaTest);
+    }
+
     /** One readable line per value that differs, empty when {@code other} matches. */
     List<String> differences(GlBoundary other) {
         List<String> differences = new ArrayList<>();

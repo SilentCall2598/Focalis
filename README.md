@@ -35,6 +35,10 @@ skies, video settings, and compatibility tooling for large modpacks.
   load or compile, the problem is logged and rendering stays vanilla. It stays unavailable when OptiFine is
   installed.
   The development test pack lives in `src/test/resources/shaderpacks/focalis-depth-view`.
+- Provides an experimental, off-by-default `world_target` feature that draws the world into a Focalis-owned
+  framebuffer and copies it back to Minecraft's, which looks the same as vanilla. It is groundwork for shaderpack
+  rendering and doesn't run shaderpack world programs yet. It needs OpenGL 3.0 and stays unavailable when
+  OptiFine is installed.
 
 ## Requirements
 
@@ -56,6 +60,7 @@ Settings live in `config/focalis.cfg`, created on first launch. Changes take eff
 | `features.frame_stats.reportIntervalSeconds` | `10` | Seconds between frame statistics reports. |
 | `features.shaders.enabled` | `false` | Experimental. Run the Focalis test post-process program from the selected pack. |
 | `features.shaders.pack` | empty | Name of a folder or zip directly inside the `shaderpacks` folder. |
+| `features.world_target.enabled` | `false` | Experimental. Draw the world through a Focalis framebuffer. No visible change. |
 
 ## Building
 
@@ -87,7 +92,8 @@ All code lives under `io.github.silentcall2598.focalis`:
 | `compat` | Detection of other mods Focalis must coexist with |
 | `render` | Rendering subsystem |
 | `render.lifecycle` | Frame stage model and the hooks that dispatch it |
-| `mixin` | Mixins. They only report render boundaries to `render.lifecycle` |
+| `render.target` | Focalis-owned framebuffers and the world target |
+| `mixin` | Mixins. They report render boundaries to `render.lifecycle`, and one points binds of Minecraft's framebuffer at the world target while it's in use |
 | `render.state` | OpenGL context information |
 | `shader` | Shader support. So far shaderpack loading (`shader.pack`), program compiling (`shader.program`) and the experimental post pass (`shader.post`) |
 | `diagnostics` | Environment and OpenGL reports, crash report section, diagnostic features |

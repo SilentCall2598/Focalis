@@ -18,6 +18,7 @@ report with screenshots and logs.
 .\tools\qa\run-qa.ps1 -Scenario all
 .\tools\qa\run-qa.ps1 -Scenario post-process-resize -AllowFullscreen # include a fullscreen round trip
 .\tools\qa\run-qa.ps1 -Scenario all -Obfuscated                      # use the reobfuscated jar
+.\tools\qa\run-qa.ps1 -Scenario all -WorldTarget                     # draw the world through the world target
 .\tools\qa\run-qa.ps1 -List
 ```
 
@@ -36,7 +37,8 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `post-process-bad-pack` | A pack that doesn't compile. Rendering stays vanilla, nothing is created and the feature stays active. |
 | `world-reload` | Leaves and rejoins twice. The pass keeps running and the capture isn't recreated. |
 | `world-lifecycle` | Test pack on, with a pause screen and a rejoin. Start/end pairs match the world passes in both sessions and the pass runs once in every WORLD END. |
-| `render-stages` | Test pack on, in rain next to an entity, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds, except the sun and moon, which fire twice inside the sky. Each routes to the expected shader program role with nothing unclassified. |
+| `world-target-failure` | World target on. Throws inside its copy back. The feature must fail cleanly, put Minecraft's framebuffer back on that same world pass, delete its target and never redirect again. |
+| `render-stages` | Test pack on, in rain next to an entity and in view of a glowing one, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds, except the sun and moon, which fire twice inside the sky. Each routes to the expected shader program role with nothing unclassified. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
 state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
@@ -45,6 +47,12 @@ next one, or when the post pass renders anywhere but inside a WORLD END or more 
 stages like SKY, TERRAIN and HAND have to be balanced and close in order with the same draw kind they started
 with, world pass stages have to happen while a world pass is open, and HAND has to happen inside the frame after
 its world pass ended.
+
+`-WorldTarget` turns on the experimental world target in every scenario. Every world pass then has to draw into it,
+checked when translucent terrain starts, which is after vanilla rebinds its framebuffer for entity outlines. Each
+pass has to end with the framebuffer bindings it started with, and a replaced target has to be deleted. Without it,
+every pass has to draw into Minecraft's framebuffer. `post-process-state-restore` expects the pass to skip when
+something else is bound for drawing, which the world target corrects, so it isn't meant to run with `-WorldTarget`.
 
 ## Output
 
