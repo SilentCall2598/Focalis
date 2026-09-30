@@ -43,6 +43,7 @@ final class QaReport {
     final Boundary boundary = new Boundary();
     final Resources resources = new Resources();
     final WorldTarget worldTarget = new WorldTarget();
+    final WorldPrograms worldPrograms = new WorldPrograms();
     @Nullable
     Map<String, Integer> perturbations;
     @Nullable
@@ -316,6 +317,43 @@ final class QaReport {
         final Resources replaced = new Resources();
         @Nullable
         String stopped;
+    }
+
+    // What the world programs did, if their feature ran.
+    static final class WorldPrograms {
+        int builds;
+        // Every role with a program, taken when the programs were built.
+        final Map<String, BuiltProgram> roles = new TreeMap<>();
+        // Stage STARTs where a scope opened, and per draw kind how often its role's program really was current.
+        int scopes;
+        final Map<String, Integer> bound = new TreeMap<>();
+        int bindMismatches;
+        // Right after every stage END, the program from before its START has to be back.
+        int restores;
+        int restoreMismatches;
+        // Sun and moon scopes that put the sky's own program back when they ended.
+        int nestedSkyRestores;
+        // The draw framebuffer whenever a program was bound. The world target in a redirected pass.
+        int drawSamples;
+        int drawMismatches;
+        // HAND comes after the world pass, so no scope may be open and no Focalis program current there.
+        int handChecks;
+        int handProblems;
+        // Stages without a scope that still had a Focalis program current.
+        int unboundLeaks;
+        final List<String> problems = new ArrayList<>();
+        @Nullable
+        String stopped;
+    }
+
+    static final class BuiltProgram {
+        final String name;
+        final int id;
+
+        BuiltProgram(String name, int id) {
+            this.name = name;
+            this.id = id;
+        }
     }
 
     static final class HighTextureUnit {

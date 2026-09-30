@@ -15,8 +15,14 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.render.target.WorldTargetFeature;
 import io.github.silentcall2598.focalis.render.target.WorldTargetMonitor;
+import io.github.silentcall2598.focalis.shader.WorldProgramMonitor;
+import io.github.silentcall2598.focalis.shader.WorldProgramsFeature;
 import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import io.github.silentcall2598.focalis.shader.post.ScenePostPass;
+import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
+import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
+import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
+import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRouter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.GuiChat;
@@ -49,14 +55,17 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 
 /**
- * Development QA mode. It checks the GL state around Focalis's world-end work and the order of WORLD START and END,
- * drives one scenario from client ticks and writes probe.json for tools/qa. It only exists when
+ * Development QA mode. It checks the GL state around Focalis's world-end work, the order of WORLD START and END and
+ * the program bound around each precise stage, drives one scenario from client ticks and writes probe.json for
+ * tools/qa. It only exists when
  * {@code focalis.qa.scenario} is set, so normal play never runs any of it.
  */
 public final class QaProbe {
@@ -73,6 +82,7 @@ public final class QaProbe {
     private static final long WORLD_SEED = 20260926L;
     private static final int[] TOUCHED_UNITS = {ScenePostPass.SCENE_COLOR_UNIT, ScenePostPass.SCENE_DEPTH_UNIT};
     private static final int WRITE_INTERVAL_TICKS = 20;
+    private static final int MAX_STAGE_DEPTH = 16;
 
     // The ways the state-restore scenario changes GL state before the pass, one kind per frame in turn.
     private enum Perturbation {
@@ -93,6 +103,7 @@ public final class QaProbe {
     private final QaReport report;
     private final List<QaStep> steps;
     private final Monitor monitor = new Monitor();
+    private final ProgramMonitor programMonitor = new ProgramMonitor();
     private final WorldPhaseTracker worldPhases;
     private final RenderStageTracker renderStages;
     private final ShaderRouteTracker shaderRoutes;
@@ -156,6 +167,21 @@ public final class QaProbe {
     @Nullable
     private QaReport.Capture currentWorldTarget;
 
+    // Program ids per role once the world programs are built, 0 for roles without one.
+    private final int[] rolePrograms = new int[ShaderProgramRole.values().length];
+    private final Set<Integer> focalisPrograms = new HashSet<>();
+    private boolean programsLive;
+    // One entry per open precise stage, innermost last. The program before the features' START, and whether a
+    // world program scope opened there.
+    private final int[] stageProgramBefore = new int[MAX_STAGE_DEPTH];
+    private final boolean[] stageScopeOpened = new boolean[MAX_STAGE_DEPTH];
+    private int stageDepth;
+    private int openScopes;
+    private boolean scopeJustStarted;
+    private boolean programFailureArmed;
+    private boolean programFailureInjected;
+    private boolean programFailurePending;
+
     public QaProbe(QaSettings settings, Supplier<List<FeatureStatus>> features, Supplier<GlContextInfo> glContext) {
         this.settings = settings;
         this.features = features;
@@ -176,6 +202,10 @@ public final class QaProbe {
 
     public WorldTargetMonitor worldTargetMonitor() {
         return monitor;
+    }
+
+    public WorldProgramMonitor worldProgramMonitor() {
+        return programMonitor;
     }
 
     /** Registers the listeners that have to run before the features' own. Call it before features register. */
@@ -208,7 +238,7 @@ public final class QaProbe {
         write(false);
     }
 
-    /** Registers the listener that has to run after the features' own. */
+    /** Registers the listeners that have to run after the features' own. */
     public void installAfter(RenderLifecycle lifecycle) {
         lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, drawKind, partialTicks) -> {
             worldPhases.dispatchFinished();
@@ -218,6 +248,9 @@ public final class QaProbe {
                 afterFocalisWorldStart();
             }
         });
+        for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
+            lifecycle.register(stage, OWNER, this::afterFocalisStage);
+        }
     }
 
     @SubscribeEvent
@@ -305,8 +338,153 @@ public final class QaProbe {
                 if (stage == RenderStage.TRANSLUCENT) {
                     sampleWorldDrawFramebuffer();
                 }
+                if (programsLive) {
+                    beforeFocalisStageStart();
+                }
             }
         }
+    }
+
+    private void beforeFocalisStageStart() {
+        if (stageDepth == MAX_STAGE_DEPTH) {
+            broken("before a stage start", new IllegalStateException("Precise stages nest deeper than "
+                    + MAX_STAGE_DEPTH));
+            return;
+        }
+        try {
+            stageProgramBefore[stageDepth] = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            stageScopeOpened[stageDepth] = false;
+            stageDepth++;
+            scopeJustStarted = false;
+        } catch (RuntimeException e) {
+            broken("before a stage start", e);
+        }
+    }
+
+    // Stages balance with their START, which render-stages-balanced checks, so the entries line up.
+    private void afterFocalisStage(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind,
+            float partialTicks) {
+        if (!programsLive || finished || brokenReason != null || stageDepth == 0) {
+            return;
+        }
+        try {
+            int current = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            if (phase == RenderPhase.START) {
+                afterStageStart(stage, drawKind, current);
+            } else {
+                afterStageEnd(stage, drawKind, current);
+            }
+        } catch (RuntimeException e) {
+            broken("after a stage " + phase, e);
+        }
+    }
+
+    private void afterStageStart(RenderStage stage, RenderDrawKind drawKind, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int top = stageDepth - 1;
+        boolean opened = scopeJustStarted;
+        scopeJustStarted = false;
+        stageScopeOpened[top] = opened;
+        if (programFailurePending) {
+            programFailurePending = false;
+            recordProgramFailure(current);
+            return;
+        }
+        String where = stage + "/" + drawKind;
+        if (stage == RenderStage.HAND) {
+            programs.handChecks++;
+            if (opened || openScopes != 0 || focalisPrograms.contains(current)) {
+                programs.handProblems++;
+                QaReport.addCapped(programs.problems, "HAND started in world pass " + worldFrames + " with program "
+                        + current + " and " + openScopes + " open scopes");
+            }
+            return;
+        }
+        if (!opened) {
+            if (focalisPrograms.contains(current)) {
+                programs.unboundLeaks++;
+                QaReport.addCapped(programs.problems, where + " had Focalis program " + current
+                        + " current without a scope in world pass " + (worldFrames + 1));
+            }
+            return;
+        }
+        openScopes++;
+        programs.scopes++;
+        int role = rolePrograms[ShaderProgramRouter.route(stage, drawKind).ordinal()];
+        int expected = role != 0 ? role : stageProgramBefore[top];
+        if (current != expected) {
+            programs.bindMismatches++;
+            QaReport.addCapped(programs.problems, where + " had program " + current + " current instead of "
+                    + expected + " in world pass " + (worldFrames + 1));
+            return;
+        }
+        if (role != 0) {
+            programs.bound.merge(where, 1, Integer::sum);
+            sampleProgramDrawFramebuffer(where);
+        }
+    }
+
+    private void sampleProgramDrawFramebuffer(String where) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        QaReport.Capture target = currentWorldTarget;
+        int expected = passRedirected && target != null ? target.framebuffer
+                : mc().getFramebuffer().framebufferObject;
+        int draw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        programs.drawSamples++;
+        if (draw != expected) {
+            programs.drawMismatches++;
+            QaReport.addCapped(programs.problems, where + " drew into " + draw + " instead of " + expected
+                    + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    private void afterStageEnd(RenderStage stage, RenderDrawKind drawKind, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int top = --stageDepth;
+        int before = stageProgramBefore[top];
+        if (stageScopeOpened[top]) {
+            openScopes--;
+        }
+        programs.restores++;
+        if (current != before) {
+            programs.restoreMismatches++;
+            QaReport.addCapped(programs.problems, stage + "/" + drawKind + " ended with program " + current
+                    + " instead of " + before + " in world pass " + (worldFrames + 1));
+        } else if (stageScopeOpened[top] && drawKind == RenderDrawKind.SKY_TEXTURED && before != 0
+                && before == rolePrograms[ShaderProgramRole.SKY_BASIC.ordinal()]) {
+            programs.nestedSkyRestores++;
+        }
+    }
+
+    // The failing START already unwound every open scope, so each of them has to find the program from before the
+    // outermost one, and later ENDs expect what is current now.
+    private void recordProgramFailure(int current) {
+        QaReport.InjectedFailure failure = report.injectedFailure;
+        failureChecked = true;
+        int expected = current;
+        for (int i = 0; i < stageDepth; i++) {
+            if (stageScopeOpened[i]) {
+                expected = stageProgramBefore[i];
+                break;
+            }
+        }
+        for (int i = 0; i < stageDepth; i++) {
+            stageProgramBefore[i] = current;
+            stageScopeOpened[i] = false;
+        }
+        openScopes = 0;
+        if (failure == null) {
+            return;
+        }
+        failure.stateRestored = current == expected && !focalisPrograms.contains(current);
+        FeatureStatus feature = featureStatus(WorldProgramsFeature.ID);
+        failure.featureFailed = feature != null && feature.state() == FeatureState.FAILED;
+        failure.featureDetail = feature == null ? null : feature.detail();
+        boolean released = !focalisPrograms.isEmpty();
+        for (int program : focalisPrograms) {
+            released &= !GL20.glIsProgram(program);
+        }
+        failure.resourcesReleased = released;
     }
 
     private void beforeFocalisWorldStart() {
@@ -851,6 +1029,12 @@ public final class QaProbe {
         worldTargetFailureInjected = true;
     }
 
+    void armWorldProgramFailure() {
+        report.injectedFailure = new QaReport.InjectedFailure();
+        programFailureArmed = true;
+        programFailureInjected = true;
+    }
+
     boolean failureObserved() {
         return failureChecked;
     }
@@ -910,6 +1094,7 @@ public final class QaProbe {
                 phases.passesOutsideEnd + " outside WORLD END, " + phases.repeatedPasses + " repeated in one END");
         checkRenderStages();
         checkWorldTarget();
+        checkWorldPrograms();
         if (!settings.scenario.expectsFeatureFailure()) {
             List<String> failed = new ArrayList<>();
             for (QaReport.FeatureEntry feature : report.features) {
@@ -962,6 +1147,39 @@ public final class QaProbe {
         } else if (FeatureState.DISABLED.name().equals(state)) {
             report.check("world-target-idle", world.redirectedPasses == 0 && world.targets.isEmpty()
                     && world.drawSamples > 0 && world.drawMismatches == 0, draws);
+        }
+    }
+
+    // Any scenario can run with the world programs on or off. A failed or stopped feature is judged by its own
+    // scenario.
+    private void checkWorldPrograms() {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        String state = report.featureState(WorldProgramsFeature.ID);
+        String problems = programs.problems.isEmpty() ? "" : ", like " + programs.problems.get(0);
+        if (settings.scenario.expectsWorldProgramsStopped()) {
+            return;
+        }
+        if (FeatureState.ACTIVE.name().equals(state)) {
+            report.check("world-programs-built-once", programs.builds == 1 && programs.stopped == null
+                            && !programs.roles.isEmpty(),
+                    programs.builds + " builds, " + programs.roles.size() + " roles with a program"
+                            + (programs.stopped == null ? "" : ", stopped: " + programs.stopped));
+            report.check("world-programs-bound", programs.scopes > 0 && programs.bindMismatches == 0
+                            && programs.unboundLeaks == 0,
+                    programs.scopes + " scopes, " + programs.bindMismatches + " with the wrong program, "
+                            + programs.unboundLeaks + " Focalis programs without a scope" + problems);
+            report.check("world-programs-restored", programs.restores > 0 && programs.restoreMismatches == 0,
+                    programs.restoreMismatches + " of " + programs.restores + " stage ends didn't restore"
+                            + problems);
+            report.check("world-programs-drawn-into-world", programs.drawSamples > 0 && programs.drawMismatches == 0,
+                    programs.drawMismatches + " of " + programs.drawSamples + " bound stages drew elsewhere"
+                            + problems);
+            report.check("world-programs-hand-untouched", programs.handChecks > 0 && programs.handProblems == 0,
+                    programs.handProblems + " of " + programs.handChecks + " HAND starts had a scope or program"
+                            + problems);
+        } else if (FeatureState.DISABLED.name().equals(state)) {
+            report.check("world-programs-idle", programs.builds == 0 && programs.scopes == 0,
+                    programs.builds + " builds, " + programs.scopes + " scopes");
         }
     }
 
@@ -1123,6 +1341,47 @@ public final class QaProbe {
         @Override
         public void stopped(String reason) {
             report.worldTarget.stopped = reason;
+        }
+    }
+
+    private final class ProgramMonitor implements WorldProgramMonitor {
+
+        @Override
+        public void programsBuilt(BuiltWorldPrograms programs) {
+            QaReport.WorldPrograms world = report.worldPrograms;
+            world.builds++;
+            for (BuiltWorldPrograms.Entry entry : programs.entries().values()) {
+                ShaderProgram program = entry.program();
+                if (entry.ready() && program != null) {
+                    rolePrograms[entry.role().ordinal()] = program.id();
+                    focalisPrograms.add(program.id());
+                    world.roles.put(entry.role().name(), new QaReport.BuiltProgram(program.name(), program.id()));
+                }
+            }
+            programsLive = true;
+        }
+
+        // The failure goes into the sun or moon, so the sky's scope is open too and both have to unwind.
+        @Override
+        public void scopeStarted(RenderStage stage, RenderDrawKind drawKind) {
+            scopeJustStarted = true;
+            QaReport.InjectedFailure failure = report.injectedFailure;
+            if (failure == null || !programFailureInjected) {
+                return;
+            }
+            if (failureChecked) {
+                failure.renderedAfterFailure++;
+            } else if (programFailureArmed && drawKind == RenderDrawKind.SKY_TEXTURED) {
+                programFailureArmed = false;
+                programFailurePending = true;
+                failure.frame = worldFrames + 1;
+                throw new IllegalStateException(INJECTED_FAILURE);
+            }
+        }
+
+        @Override
+        public void stopped(String reason) {
+            report.worldPrograms.stopped = reason;
         }
     }
 }
