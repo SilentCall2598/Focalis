@@ -16,6 +16,8 @@ import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.render.target.WorldTargetFeature;
 import io.github.silentcall2598.focalis.render.target.WorldTargetMonitor;
 import io.github.silentcall2598.focalis.shader.ShaderFeature;
+import io.github.silentcall2598.focalis.shader.WorldProgramMonitor;
+import io.github.silentcall2598.focalis.shader.WorldProgramsFeature;
 import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
@@ -40,6 +42,8 @@ public final class FocalisCore {
         // Before the shader feature, since listeners run in registration order and the post pass needs the world
         // copied back to Minecraft's framebuffer first.
         features.register(new WorldTargetFeature(qa == null ? WorldTargetMonitor.NONE : qa.worldTargetMonitor()));
+        features.register(new WorldProgramsFeature(render::glContext,
+                qa == null ? WorldProgramMonitor.NONE : qa.worldProgramMonitor()));
         PostPassMonitor postPassMonitor = qa == null ? PostPassMonitor.NONE : qa.postPassMonitor();
         features.register(new ShaderFeature(render::glContext, postPassMonitor));
     }

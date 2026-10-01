@@ -28,6 +28,8 @@ param(
     [switch]$Obfuscated,
     # Turns on the experimental world target in every scenario, not just the ones that need it.
     [switch]$WorldTarget,
+    # Turns on the experimental world programs in every scenario, with the focalis-world-routes test pack.
+    [switch]$WorldPrograms,
     [int]$TimeoutSeconds = 420,
     # A running client that stops updating probe.json this long is treated as hung and gets a thread dump.
     [int]$StallSeconds = 90
@@ -49,6 +51,10 @@ $Scenarios = [ordered]@{
     'world-lifecycle'                = @{ Shaders = $true; Pack = 'focalis-depth-view' }
     'render-stages'                  = @{ Shaders = $true; Pack = 'focalis-depth-view' }
     'world-target-failure'           = @{ Shaders = $false; Pack = ''; WorldTarget = $true }
+    'world-program-binding'          = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true }
+    'world-program-failure'          = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true }
+    'world-program-bad-pack'         = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true
+        ProgramsPack = 'focalis-world-routes-broken' }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.
@@ -59,6 +65,9 @@ $ScenarioAllowed = @{
     'post-process-bad-pack' = @('The post pass stopped for this session')
     'world-target-failure'  = @('Focalis QA injected failure', "Render listener of 'world_target' failed",
         "Feature 'world_target' is disabled for this session")
+    'world-program-failure' = @('Focalis QA injected failure', "Render listener of 'world_programs' failed",
+        "Feature 'world_programs' is disabled for this session")
+    'world-program-bad-pack' = @("can't be built, so", 'The world programs stopped for this session')
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -66,6 +75,7 @@ $QaRoot = Join-Path $RepoRoot 'build\qa'
 $GameDir = Join-Path $QaRoot 'game'
 $LatestDir = Join-Path $QaRoot 'latest'
 $TestPack = Join-Path $RepoRoot 'src\test\resources\shaderpacks\focalis-depth-view'
+$RoutesPack = Join-Path $RepoRoot 'src\test\resources\shaderpacks\focalis-world-routes'
 
 if (-not ('FocalisQaWindow' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -244,6 +254,9 @@ function Initialize-GameDir([string]$Name) {
     $enabled = $(if ($config.Shaders) { 'true' } else { 'false' })
     $worldTargetEnabled = $(if ($WorldTarget -or ($config.ContainsKey('WorldTarget') -and $config.WorldTarget)) {
             'true' } else { 'false' })
+    $worldProgramsEnabled = $(if ($WorldPrograms -or ($config.ContainsKey('WorldPrograms') -and $config.WorldPrograms)) {
+            'true' } else { 'false' })
+    $programsPack = $(if ($config.ContainsKey('ProgramsPack')) { $config.ProgramsPack } else { 'focalis-world-routes' })
     Write-Utf8 (Join-Path $GameDir 'config\focalis.cfg') @"
 # Configuration file
 
@@ -264,6 +277,11 @@ features {
         S:pack=$($config.Pack)
     }
 
+    world_programs {
+        B:enabled=$worldProgramsEnabled
+        S:pack=$programsPack
+    }
+
     world_target {
         B:enabled=$worldTargetEnabled
     }
@@ -280,6 +298,15 @@ features {
     $depth = Join-Path $packs 'focalis-broken\shaders\lib\depth.glsl'
     $text = [IO.File]::ReadAllText($depth)
     Write-Utf8 $depth ($text.Replace('/ 16.0);', '/ 16.0)'))
+    foreach ($pack in @('focalis-world-routes', 'focalis-world-routes-broken')) {
+        $target = Join-Path $packs $pack
+        if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+        Copy-Item -Recurse $RoutesPack $target
+    }
+    # Every program of the broken copy shares one vertex shader, which loses a semicolon.
+    $vertex = Join-Path $packs 'focalis-world-routes-broken\shaders\lib\vertex.glsl'
+    $text = [IO.File]::ReadAllText($vertex)
+    Write-Utf8 $vertex ($text.Replace('gl_Position = ftransform();', 'gl_Position = ftransform()'))
 }
 
 function Test-LogLine([string]$Line, [string[]]$Allowed) {
@@ -437,6 +464,7 @@ function Invoke-Scenario([string]$Name) {
                     captures         = @($probe.postPass.captures).Count
                     stateMismatches  = $probe.boundary.mismatchFrames
                     worldTargetPasses = $probe.worldTarget.redirectedPasses
+                    programScopes    = $probe.worldPrograms.scopes
                     glErrorsInFocalis = $probe.glErrors.duringFocalis
                     averageFrameMs   = [Math]::Round($probe.frames.averageFrameMs, 2)
                     averageFocalisWorldEndMs = [Math]::Round($probe.frames.averageFocalisWorldEndMs, 3)
@@ -504,6 +532,7 @@ $report = [ordered]@{
     result      = $(if ($allPassed) { 'pass' } else { 'fail' })
     task        = $(if ($Obfuscated) { 'runObfClient' } else { 'runClient' })
     worldTarget = [bool]$WorldTarget
+    worldPrograms = [bool]$WorldPrograms
     source      = $source
 }
 # Only runObfClient tests a release jar.
@@ -525,6 +554,10 @@ if ($WorldTarget) {
     $summary.Add('')
     $summary.Add('World target on in every scenario.')
 }
+if ($WorldPrograms) {
+    $summary.Add('')
+    $summary.Add('World programs on in every scenario.')
+}
 $summary.Add('')
 $dirtyText = $(if ($null -eq $source.dirty) { 'unknown' } elseif ($source.dirty) { 'uncommitted changes' } else { 'clean' })
 $summary.Add("Source: $(if ($source.head) { $source.head } else { 'unknown' }) on $(if ($source.branch) { $source.branch } else { 'no branch' }), $dirtyText")
@@ -532,14 +565,14 @@ if ($Obfuscated) {
     $summary.Add("Release jar SHA-256: $(if ($report.artifact) { $report.artifact.sha256 } else { 'unknown, a scenario found no jar or the jars differed' })")
 }
 $summary.Add('')
-$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Stage pairs | Stage problems | Rendered | Redirected | Mismatches | GL errors | Captures | Seconds |')
-$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+$summary.Add('| Scenario | Result | World passes | Start/end pairs | Phase problems | Stage pairs | Stage problems | Rendered | Redirected | Program scopes | Mismatches | GL errors | Captures | Seconds |')
+$summary.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 foreach ($result in $results) {
     $n = $result.numbers
     if ($n) {
-        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.stagePairs) | $($n.stageProblems) | $($n.renderedFrames) | $($n.worldTargetPasses) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | $($n.worldFrames) | $($n.startEndPairs) | $($n.phaseProblems) | $($n.stagePairs) | $($n.stageProblems) | $($n.renderedFrames) | $($n.worldTargetPasses) | $($n.programScopes) | $($n.stateMismatches) | $($n.glErrorsInFocalis) | $($n.captures) | $($result.durationSeconds) |")
     } else {
-        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | - | - | - | $($result.durationSeconds) |")
+        $summary.Add("| $($result.name) | $($result.result) | - | - | - | - | - | - | - | - | - | - | - | $($result.durationSeconds) |")
     }
 }
 foreach ($result in $results) {

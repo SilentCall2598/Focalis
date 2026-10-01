@@ -21,17 +21,19 @@ public final class RenderLifecycle {
     @FunctionalInterface
     public interface FailureHandler {
 
-        void onListenerFailure(String owner, RenderStage stage, RenderPhase phase, RenderDrawKind drawKind,
-                Throwable error);
+        /** @param during where it failed, like "render stage SKY START (SKY_TEXTURED)" */
+        void onListenerFailure(String owner, String during, Throwable error);
     }
 
     private static final Registration[] NONE = new Registration[0];
+    private static final CheckpointRegistration[] NO_CHECKPOINTS = new CheckpointRegistration[0];
 
     // One array per stage, indexed by ordinal. Changes replace the arrays, so a dispatch walks its own snapshot
     // without allocating.
     private volatile Registration[][] listeners;
+    private volatile CheckpointRegistration[] checkpointListeners = NO_CHECKPOINTS;
     private final Set<RenderStage> dispatchedStages = EnumSet.noneOf(RenderStage.class);
-    private volatile FailureHandler failureHandler = (owner, stage, phase, drawKind, error) -> {
+    private volatile FailureHandler failureHandler = (owner, during, error) -> {
     };
 
     public RenderLifecycle() {
@@ -69,6 +71,16 @@ public final class RenderLifecycle {
         listeners = updated;
     }
 
+    /** Checkpoints aren't stages, so every listener gets every checkpoint in registration order. */
+    public synchronized void registerCheckpoint(String owner, RenderCheckpointListener listener) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(listener, "listener");
+        CheckpointRegistration[] current = checkpointListeners;
+        CheckpointRegistration[] grown = Arrays.copyOf(current, current.length + 1);
+        grown[current.length] = new CheckpointRegistration(owner, listener);
+        checkpointListeners = grown;
+    }
+
     public synchronized void removeOwner(String owner) {
         Registration[][] updated = listeners.clone();
         for (int i = 0; i < updated.length; i++) {
@@ -83,6 +95,15 @@ public final class RenderLifecycle {
             updated[i] = kept.toArray(NONE);
         }
         listeners = updated;
+        List<CheckpointRegistration> keptCheckpoints = new ArrayList<>();
+        for (CheckpointRegistration registration : checkpointListeners) {
+            if (registration.owner.equals(owner)) {
+                registration.active = false;
+            } else {
+                keptCheckpoints.add(registration);
+            }
+        }
+        checkpointListeners = keptCheckpoints.toArray(NO_CHECKPOINTS);
     }
 
     public void dispatch(RenderStage stage, RenderPhase phase, float partialTicks) {
@@ -102,7 +123,25 @@ public final class RenderLifecycle {
                 removeOwner(registration.owner);
                 FocalisLog.LOGGER.error("Render listener of '{}' failed during {} {} ({}). All of its render"
                         + " listeners have been removed.", registration.owner, stage, phase, drawKind, e);
-                failureHandler.onListenerFailure(registration.owner, stage, phase, drawKind, e);
+                failureHandler.onListenerFailure(registration.owner,
+                        "render stage " + stage + " " + phase + " (" + drawKind + ")", e);
+            }
+        }
+    }
+
+    // Same failure handling as a stage, without anything that allocates on the way through.
+    public void dispatchCheckpoint(RenderCheckpoint checkpoint) {
+        for (CheckpointRegistration registration : checkpointListeners) {
+            if (!registration.active) {
+                continue;
+            }
+            try {
+                registration.listener.onCheckpoint(checkpoint);
+            } catch (Exception | LinkageError e) { // VM errors such as OutOfMemoryError deliberately propagate
+                removeOwner(registration.owner);
+                FocalisLog.LOGGER.error("Render listener of '{}' failed at renderer checkpoint {}. All of its render"
+                        + " listeners have been removed.", registration.owner, checkpoint, e);
+                failureHandler.onListenerFailure(registration.owner, "renderer checkpoint " + checkpoint, e);
             }
         }
     }
@@ -114,6 +153,18 @@ public final class RenderLifecycle {
         volatile boolean active = true;
 
         Registration(String owner, RenderStageListener listener) {
+            this.owner = owner;
+            this.listener = listener;
+        }
+    }
+
+    private static final class CheckpointRegistration {
+
+        final String owner;
+        final RenderCheckpointListener listener;
+        volatile boolean active = true;
+
+        CheckpointRegistration(String owner, RenderCheckpointListener listener) {
             this.owner = owner;
             this.listener = listener;
         }

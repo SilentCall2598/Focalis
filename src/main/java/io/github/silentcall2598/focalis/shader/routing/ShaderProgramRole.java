@@ -7,7 +7,10 @@ package io.github.silentcall2598.focalis.shader.routing;
  * program fills a role is decided separately.
  */
 public enum ShaderProgramRole {
-    /** The boundary isn't something that gets drawn, like a whole frame or world pass. */
+    /**
+     * Nothing at this boundary is for a Focalis program to draw, like a whole frame or world pass, or vanilla's entity
+     * outlines, which use vanilla's own shaders.
+     */
     NONE,
     /** Something is drawn here, but its context isn't understood well enough to give it a role. */
     UNCLASSIFIED,

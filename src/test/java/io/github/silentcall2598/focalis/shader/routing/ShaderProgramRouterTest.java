@@ -18,6 +18,10 @@ class ShaderProgramRouterTest {
         assertEquals(ShaderProgramRole.NONE, route(RenderStage.FRAME, RenderDrawKind.DEFAULT));
         assertEquals(ShaderProgramRole.NONE, route(RenderStage.WORLD, RenderDrawKind.DEFAULT));
         assertEquals(ShaderProgramRole.NONE, route(RenderStage.GUI, RenderDrawKind.DEFAULT));
+        // Vanilla draws the entity outlines with its own shaders.
+        assertEquals(ShaderProgramRole.NONE, route(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT));
+        assertEquals(ShaderProgramRole.UNCLASSIFIED,
+                route(RenderStage.ENTITY_OUTLINES, RenderDrawKind.ENTITY_PASS_0));
     }
 
     @Test

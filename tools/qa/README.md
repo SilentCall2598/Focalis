@@ -19,6 +19,7 @@ report with screenshots and logs.
 .\tools\qa\run-qa.ps1 -Scenario post-process-resize -AllowFullscreen # include a fullscreen round trip
 .\tools\qa\run-qa.ps1 -Scenario all -Obfuscated                      # use the reobfuscated jar
 .\tools\qa\run-qa.ps1 -Scenario all -WorldTarget                     # draw the world through the world target
+.\tools\qa\run-qa.ps1 -Scenario all -WorldPrograms                   # bind the world programs of the test pack
 .\tools\qa\run-qa.ps1 -List
 ```
 
@@ -38,7 +39,10 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `world-reload` | Leaves and rejoins twice. The pass keeps running and the capture isn't recreated. |
 | `world-lifecycle` | Test pack on, with a pause screen and a rejoin. Start/end pairs match the world passes in both sessions and the pass runs once in every WORLD END. |
 | `world-target-failure` | World target on. Throws inside its copy back. The feature must fail cleanly, put Minecraft's framebuffer back on that same world pass, delete its target and never redirect again. |
-| `render-stages` | Test pack on, in rain next to an entity and in view of a glowing one, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds, except the sun and moon, which fire twice inside the sky. Each routes to the expected shader program role with nothing unclassified. |
+| `render-stages` | Test pack on, in rain next to an entity, a chest and a sign and in view of a glowing entity, below and then above cloud height. Every precise stage and draw kind fires exactly once per world pass, like the three terrain layers, both entity passes and both particle kinds, except the sun and moon, which fire twice inside the sky. The glowing entity's outlines fire at most once per world pass. Each stage routes to the expected shader program role with nothing unclassified, and only the outlines have no role. |
+| `world-program-binding` | World target and world programs on, with the `render-stages` tour. Every world stage and draw kind must have its role's program from `focalis-world-routes` current in every world pass, drawing into the world target, and the sun and moon must put the sky's program back. When vanilla's entity outlines start, the program from before ENTITIES has to be back, and when they end the entities program has to be bound again. Chests drawn after them have to draw with it. The probe's pig and chest renderers also leave other programs bound when they return, like mod renderers with their own shaders, and the entities program has to be current again right after each one. Roles that share a program must share its id, and HAND must stay unbound. |
+| `world-program-failure` | World target and world programs on. Throws right after the sun's scope opened inside the sky's. The feature must fail cleanly, unwind both scopes on that same START, delete every program and never bind again, while the world target keeps running. |
+| `world-program-bad-pack` | World programs on with a copy of `focalis-world-routes` where no program compiles. Each failed program is logged, the binding stops for the session with the feature still active, and nothing is ever bound. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
 state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
@@ -53,6 +57,14 @@ checked when translucent terrain starts, which is after vanilla rebinds its fram
 pass has to end with the framebuffer bindings it started with, and a replaced target has to be deleted. Without it,
 every pass has to draw into Minecraft's framebuffer. `post-process-state-restore` expects the pass to skip when
 something else is bound for drawing, which the world target corrects, so it isn't meant to run with `-WorldTarget`.
+
+`-WorldPrograms` turns on the experimental world programs with the `focalis-world-routes` test pack in every
+scenario. Right after each world stage START the program of its role has to be current, and right after its END the
+program from before the START has to be back. No Focalis program may be current at HAND, in a stage without a
+scope or while vanilla draws entity outlines. Inside a bound ENTITIES stage, the entities program has to be current
+right after every outermost entity and block entity renderer returns. The probe also wraps the chest renderer to
+check the program a real block entity draw gets. The programs have to be built once for the whole run, across
+rejoins.
 
 ## Output
 

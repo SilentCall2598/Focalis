@@ -26,8 +26,7 @@ class RenderLifecycleTest {
         lifecycle.markDispatched(RenderStage.WORLD);
         calls = new ArrayList<>();
         failures = new ArrayList<>();
-        lifecycle.setFailureHandler((owner, stage, phase, kind, error) ->
-                failures.add(owner + "@" + stage + "/" + phase + "/" + kind));
+        lifecycle.setFailureHandler((owner, during, error) -> failures.add(owner + "@" + during));
     }
 
     @Test
@@ -85,7 +84,7 @@ class RenderLifecycleTest {
         lifecycle.dispatch(RenderStage.ENTITIES, RenderPhase.START, RenderDrawKind.ENTITY_PASS_0, 0F);
         lifecycle.dispatch(RenderStage.ENTITIES, RenderPhase.START, RenderDrawKind.ENTITY_PASS_1, 0F);
 
-        assertEquals(Arrays.asList("picky@ENTITIES/START/ENTITY_PASS_1"), failures);
+        assertEquals(Arrays.asList("picky@render stage ENTITIES START (ENTITY_PASS_1)"), failures);
     }
 
     @Test
@@ -115,7 +114,7 @@ class RenderLifecycleTest {
         lifecycle.dispatch(RenderStage.FRAME, RenderPhase.END, 0F);
         lifecycle.dispatch(RenderStage.WORLD, RenderPhase.END, 0F);
 
-        assertEquals(Arrays.asList("broken@FRAME/START/DEFAULT"), failures);
+        assertEquals(Arrays.asList("broken@render stage FRAME START (DEFAULT)"), failures);
         assertEquals(Arrays.asList("healthy:START", "healthy:END"), calls);
     }
 
@@ -127,7 +126,7 @@ class RenderLifecycleTest {
 
         lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
 
-        assertEquals(Arrays.asList("missing-dependency@FRAME/START/DEFAULT"), failures);
+        assertEquals(Arrays.asList("missing-dependency@render stage FRAME START (DEFAULT)"), failures);
     }
 
     @Test
@@ -138,6 +137,47 @@ class RenderLifecycleTest {
         lifecycle.register(RenderStage.FRAME, "owner", (stage, phase, kind, ticks) -> calls.add("second"));
 
         lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
+
+        assertTrue(calls.isEmpty());
+    }
+
+    @Test
+    void checkpointsReachEveryCheckpointListenerInRegistrationOrder() {
+        lifecycle.registerCheckpoint("a", checkpoint -> calls.add("a:" + checkpoint));
+        lifecycle.registerCheckpoint("b", checkpoint -> calls.add("b:" + checkpoint));
+
+        lifecycle.dispatchCheckpoint(RenderCheckpoint.ENTITY_RENDERED);
+        lifecycle.dispatchCheckpoint(RenderCheckpoint.BLOCK_ENTITY_RENDERED);
+
+        assertEquals(Arrays.asList("a:ENTITY_RENDERED", "b:ENTITY_RENDERED", "a:BLOCK_ENTITY_RENDERED",
+                "b:BLOCK_ENTITY_RENDERED"), calls);
+    }
+
+    @Test
+    void failingCheckpointListenerDetachesEveryListenerOfItsOwner() {
+        lifecycle.registerCheckpoint("broken", checkpoint -> {
+            throw new IllegalStateException("boom");
+        });
+        lifecycle.register(RenderStage.FRAME, "broken", (stage, phase, kind, ticks) -> calls.add("broken:frame"));
+        lifecycle.registerCheckpoint("healthy", checkpoint -> calls.add("healthy:" + checkpoint));
+
+        lifecycle.dispatchCheckpoint(RenderCheckpoint.BLOCK_ENTITY_RENDERED);
+        lifecycle.dispatchCheckpoint(RenderCheckpoint.ENTITY_RENDERED);
+        lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
+
+        assertEquals(Arrays.asList("broken@renderer checkpoint BLOCK_ENTITY_RENDERED"), failures);
+        assertEquals(Arrays.asList("healthy:BLOCK_ENTITY_RENDERED", "healthy:ENTITY_RENDERED"), calls);
+    }
+
+    @Test
+    void failingStageListenerAlsoDetachesItsCheckpointListeners() {
+        lifecycle.register(RenderStage.FRAME, "broken", (stage, phase, kind, ticks) -> {
+            throw new IllegalStateException("boom");
+        });
+        lifecycle.registerCheckpoint("broken", checkpoint -> calls.add("broken:" + checkpoint));
+
+        lifecycle.dispatch(RenderStage.FRAME, RenderPhase.START, 0F);
+        lifecycle.dispatchCheckpoint(RenderCheckpoint.ENTITY_RENDERED);
 
         assertTrue(calls.isEmpty());
     }

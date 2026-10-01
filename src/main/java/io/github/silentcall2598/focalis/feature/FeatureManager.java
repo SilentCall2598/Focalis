@@ -6,10 +6,7 @@ import io.github.silentcall2598.focalis.compat.CompatibilityReport;
 import io.github.silentcall2598.focalis.config.ConfigSection;
 import io.github.silentcall2598.focalis.config.FocalisConfig;
 import io.github.silentcall2598.focalis.core.FocalisLog;
-import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
-import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
-import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -117,16 +114,14 @@ public final class FeatureManager {
         deactivate(entry);
     }
 
-    private void onRenderFailure(String owner, RenderStage stage, RenderPhase phase, RenderDrawKind drawKind,
-            Throwable error) {
+    private void onRenderFailure(String owner, String during, Throwable error) {
         // Internal owners like focalis:render aren't features, so there's nothing to update for them.
         Entry entry = entries.get(owner);
         if (entry == null || entry.status.state() != FeatureState.ACTIVE) {
             return;
         }
         // The lifecycle has already removed the listeners and logged the stack trace.
-        entry.status = new FeatureStatus(owner, FeatureState.FAILED,
-                "failed during render stage " + stage + " " + phase + " (" + drawKind + "): " + error);
+        entry.status = new FeatureStatus(owner, FeatureState.FAILED, "failed during " + during + ": " + error);
         FocalisLog.LOGGER.error("Feature '{}' is disabled for this session. Other features are unaffected.", owner);
         deactivate(entry);
     }

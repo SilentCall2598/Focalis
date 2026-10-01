@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.diagnostics.qa;
 
+import io.github.silentcall2598.focalis.render.target.WorldTargetFeature;
 import io.github.silentcall2598.focalis.shader.ShaderFeature;
+import io.github.silentcall2598.focalis.shader.WorldProgramsFeature;
 import net.minecraft.client.gui.GuiMainMenu;
 
 import javax.annotation.Nullable;
@@ -284,20 +286,7 @@ public enum QaScenario {
                     + " pass.") {
         @Override
         List<QaStep> steps() {
-            List<QaStep> steps = enterWorld();
-            steps.add(QaStep.action("command /weather rain", probe -> probe.command("/weather rain")));
-            steps.add(QaStep.action("command /summon", probe -> probe.command("/summon pig ~2 ~ ~2 {NoAI:1b}")));
-            // Glowing makes vanilla draw entity outlines, which rebinds its framebuffer in the middle of the pass.
-            steps.add(QaStep.action("command /summon glowing", probe -> probe.command(
-                    "/summon pig ~-4 ~ ~ {NoAI:1b,Glowing:1b}")));
-            steps.add(QaStep.waitTicks(40));
-            steps.add(screenshot("stages-below-clouds"));
-            steps.add(QaStep.action("fly", QaProbe::fly));
-            steps.add(QaStep.action("command /tp", probe -> probe.command("/tp @p ~ 140 ~")));
-            steps.add(QaStep.waitTicks(40));
-            steps.add(screenshot("stages-above-clouds"));
-            steps.add(QaStep.waitTicks(20));
-            return steps;
+            return stageTour("stages");
         }
 
         @Override
@@ -305,14 +294,7 @@ public enum QaScenario {
             checkShadersActive(r);
             // Vanilla draws each of these exactly once per world pass here, except the sun and moon inside the sky.
             // Anything else means a hook fires twice, didn't apply, or reports the wrong kind.
-            Map<String, Integer> perPass = new TreeMap<>();
-            for (String kind : Arrays.asList("SKY/SKY_BASIC", "TERRAIN/TERRAIN_SOLID",
-                    "TERRAIN/TERRAIN_CUTOUT_MIPPED", "TERRAIN/TERRAIN_CUTOUT", "TRANSLUCENT/TERRAIN_TRANSLUCENT",
-                    "ENTITIES/ENTITY_PASS_0", "ENTITIES/ENTITY_PASS_1", "PARTICLES/PARTICLES_LIT",
-                    "PARTICLES/PARTICLES_NORMAL", "WEATHER/DEFAULT", "CLOUDS/DEFAULT", "HAND/DEFAULT")) {
-                perPass.put(kind, 1);
-            }
-            perPass.put("SKY/SKY_TEXTURED", 2);
+            Map<String, Integer> perPass = kindsPerPass();
             Map<String, Integer> pairs = new TreeMap<>();
             boolean everyPass = true;
             for (Map.Entry<String, Integer> kind : perPass.entrySet()) {
@@ -326,7 +308,9 @@ public enum QaScenario {
                     "pairs " + pairs + " over " + r.frames.world + " world passes, per pass " + perPass);
             List<String> unexpected = new ArrayList<>(r.renderStages.kinds.keySet());
             unexpected.removeAll(perPass.keySet());
+            unexpected.remove(OUTLINES);
             r.check("no-unexpected-draw-kinds", unexpected.isEmpty(), "unexpected " + unexpected);
+            checkOutlinesSeen(r);
             checkShaderRoles(r);
             checkEveryFrameRendered(r);
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
@@ -372,9 +356,146 @@ public enum QaScenario {
                     world.drawMismatches + " of " + world.drawSamples + " sampled world passes drew elsewhere");
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }
+    },
+
+    WORLD_PROGRAM_BINDING("world-program-binding",
+            "World target and world programs on, with the same tour as render-stages. Every world stage has to have"
+                    + " its role's program current while vanilla draws it and get the previous one back at its END.") {
+        @Override
+        List<QaStep> steps() {
+            return stageTour("programs");
+        }
+
+        @Override
+        boolean injectsRendererLeaks() {
+            return true;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkFeatureActive(r, WORLD_PROGRAMS);
+            checkFeatureActive(r, WorldTargetFeature.ID);
+            QaReport.WorldPrograms programs = r.worldPrograms;
+            // Every stage the tour draws, minus HAND, which is never bound.
+            Map<String, Integer> perPass = kindsPerPass();
+            perPass.remove("HAND/DEFAULT");
+            boolean everyPass = r.frames.world > 0;
+            for (Map.Entry<String, Integer> kind : perPass.entrySet()) {
+                everyPass &= programs.bound.getOrDefault(kind.getKey(), 0) == kind.getValue() * r.frames.world;
+            }
+            r.check("bound-every-world-pass", everyPass && programs.bound.keySet().equals(perPass.keySet()),
+                    "bound " + programs.bound + " over " + r.frames.world + " world passes, per pass " + perPass);
+            r.check("sun-and-moon-restore-sky", programs.nestedSkyRestores == 2 * r.frames.world,
+                    programs.nestedSkyRestores + " sky programs put back over " + r.frames.world + " world passes");
+            r.check("hand-checked-every-pass", programs.handChecks == r.frames.world,
+                    programs.handChecks + " HAND starts over " + r.frames.world + " world passes");
+            checkOutlinesSeen(r);
+            QaReport.StageCounts outlines = r.renderStages.kinds.get(OUTLINES);
+            int outlinePairs = outlines == null ? 0 : outlines.pairs;
+            r.check("outlines-left-to-vanilla", programs.outlineStarts == outlinePairs && outlinePairs > 0
+                            && programs.outlineProblems == 0,
+                    programs.outlineProblems + " of " + programs.outlineStarts + " outline starts kept a Focalis"
+                            + " program");
+            r.check("entities-program-after-outlines", programs.outlineResumes == outlinePairs
+                            && programs.outlineResumeProblems == 0,
+                    programs.outlineResumeProblems + " of " + programs.outlineResumes + " outline ends didn't bind"
+                            + " the entities program again");
+            r.check("chests-drawn-with-entities-program", programs.blockEntitySamplesAfterOutlines > 0
+                            && programs.blockEntityMismatches == 0,
+                    programs.blockEntityMismatches + " of " + programs.blockEntitySamples + " chest draws had another"
+                            + " program, " + programs.blockEntitySamplesAfterOutlines + " of them after the outlines");
+            r.check("renderer-leaks-injected", programs.entityLeaksInjected > 0
+                            && programs.blockEntityLeaksInjected > 0,
+                    programs.entityLeaksInjected + " pig and " + programs.blockEntityLeaksInjected + " chest renderers"
+                            + " left another program bound");
+            r.check("program-back-after-renderers", programs.entityRendererChecks > 0
+                            && programs.blockEntityRendererChecks > 0 && programs.rendererMismatches == 0
+                            && programs.entityRenderersLeftOther >= programs.entityLeaksInjected
+                            && programs.blockEntityRenderersLeftOther >= programs.blockEntityLeaksInjected,
+                    programs.rendererMismatches + " of " + programs.entityRendererChecks + " entity and "
+                            + programs.blockEntityRendererChecks + " block entity renderers returned without the"
+                            + " ENTITIES program, " + programs.entityRenderersLeftOther + " and "
+                            + programs.blockEntityRenderersLeftOther + " had left another one");
+            checkTestPackPrograms(r);
+            r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
+        }
+    },
+
+    WORLD_PROGRAM_FAILURE("world-program-failure",
+            "World target and world programs on. Throws right after the sun's scope opened inside the sky's. The"
+                    + " feature has to fail cleanly, unwind both scopes, delete its programs and never bind again.") {
+        @Override
+        List<QaStep> steps() {
+            List<QaStep> steps = enterWorld();
+            steps.add(screenshot("world-programs-before-failure"));
+            steps.add(QaStep.action("arm-world-program-failure", QaProbe::armWorldProgramFailure));
+            steps.add(QaStep.until("failure-happened", 200, QaProbe::failureObserved));
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("world-programs-after-failure"));
+            steps.add(QaStep.waitTicks(40));
+            return steps;
+        }
+
+        @Override
+        boolean expectsFeatureFailure() {
+            return true;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            QaReport.InjectedFailure failure = r.injectedFailure;
+            QaReport.WorldPrograms programs = r.worldPrograms;
+            r.check("feature-failed", failure != null && failure.featureFailed && failure.featureDetail != null
+                            && failure.featureDetail.contains(QaProbe.INJECTED_FAILURE),
+                    failure == null ? "no failure injected" : String.valueOf(failure.featureDetail));
+            r.check("program-restored-on-failure", failure != null && failure.stateRestored,
+                    "current program right after the failing START");
+            r.check("programs-released", failure != null && failure.resourcesReleased,
+                    programs.roles.size() + " roles, every program deleted");
+            r.check("bound-before-failure", programs.builds == 1 && programs.scopes > 0,
+                    programs.builds + " builds, " + programs.scopes + " scopes");
+            r.check("binding-stopped", failure != null && failure.frame > 0 && failure.renderedAfterFailure == 0
+                            && programs.unboundLeaks == 0 && programs.bindMismatches == 0
+                            && programs.restoreMismatches == 0 && programs.handProblems == 0,
+                    (failure == null ? "?" : failure.renderedAfterFailure) + " scopes after the failure, problems "
+                            + programs.problems);
+            checkFeatureActive(r, WorldTargetFeature.ID);
+            r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
+        }
+    },
+
+    WORLD_PROGRAM_BAD_PACK("world-program-bad-pack",
+            "World target and world programs on, with a pack where no program compiles. Rendering has to stay"
+                    + " vanilla without failing the feature, and nothing is ever bound.") {
+        @Override
+        List<QaStep> steps() {
+            List<QaStep> steps = enterWorld();
+            steps.add(screenshot("world-programs-bad-pack"));
+            steps.add(QaStep.waitTicks(60));
+            return steps;
+        }
+
+        @Override
+        boolean expectsWorldProgramsStopped() {
+            return true;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkFeatureActive(r, WORLD_PROGRAMS);
+            checkFeatureActive(r, WorldTargetFeature.ID);
+            QaReport.WorldPrograms programs = r.worldPrograms;
+            r.check("stopped-without-programs", programs.stopped != null
+                            && programs.stopped.contains("None of the world programs could be built"),
+                    String.valueOf(programs.stopped));
+            r.check("nothing-bound", programs.builds == 0 && programs.scopes == 0 && programs.roles.isEmpty(),
+                    programs.builds + " builds, " + programs.scopes + " scopes");
+        }
     };
 
     static final String SHADERS = ShaderFeature.ID;
+    static final String WORLD_PROGRAMS = WorldProgramsFeature.ID;
+    private static final String OUTLINES = "ENTITY_OUTLINES/DEFAULT";
 
     private static final List<String> SETUP_COMMANDS = Arrays.asList("/gamerule sendCommandFeedback false",
             "/gamerule doDaylightCycle false", "/gamerule doWeatherCycle false", "/gamerule doMobSpawning false",
@@ -393,6 +514,15 @@ public enum QaScenario {
     abstract void evaluate(QaReport report);
 
     boolean expectsFeatureFailure() {
+        return false;
+    }
+
+    boolean expectsWorldProgramsStopped() {
+        return false;
+    }
+
+    // The probe's pig and chest renderers then leave other programs bound, like mod renderers with their own shaders.
+    boolean injectsRendererLeaks() {
         return false;
     }
 
@@ -562,6 +692,75 @@ public enum QaScenario {
         };
     }
 
+    // In rain next to an entity and in view of a glowing one, first below and then above cloud height, so every
+    // precise stage draws.
+    private static List<QaStep> stageTour(String screenshots) {
+        List<QaStep> steps = enterWorld();
+        steps.add(QaStep.action("command /weather rain", probe -> probe.command("/weather rain")));
+        steps.add(QaStep.action("command /summon", probe -> probe.command("/summon pig ~2 ~ ~2 {NoAI:1b}")));
+        // Glowing makes vanilla draw entity outlines, which rebinds its framebuffer in the middle of the pass.
+        steps.add(QaStep.action("command /summon glowing", probe -> probe.command(
+                "/summon pig ~-4 ~ ~ {NoAI:1b,Glowing:1b}")));
+        // Block entities draw after the outlines inside the same ENTITIES stage.
+        steps.add(QaStep.action("command /setblock chest", probe -> probe.command(
+                "/setblock ~-3 ~ ~1 minecraft:chest")));
+        // Not next to the first one, which would make a double chest, so the two draw one after the other.
+        steps.add(QaStep.action("command /setblock second chest", probe -> probe.command(
+                "/setblock ~-3 ~ ~3 minecraft:chest")));
+        steps.add(QaStep.action("command /setblock sign", probe -> probe.command(
+                "/setblock ~-3 ~ ~-1 minecraft:standing_sign 12 replace {Text2:\"{\\\"text\\\":\\\"Focalis\\\"}\"}")));
+        steps.add(QaStep.waitTicks(40));
+        steps.add(screenshot(screenshots + "-below-clouds"));
+        steps.add(QaStep.action("fly", QaProbe::fly));
+        steps.add(QaStep.action("command /tp", probe -> probe.command("/tp @p ~ 140 ~")));
+        steps.add(QaStep.waitTicks(40));
+        steps.add(screenshot(screenshots + "-above-clouds"));
+        steps.add(QaStep.waitTicks(20));
+        return steps;
+    }
+
+    // How often each stage and draw kind fires in one world pass of the stage tour.
+    private static Map<String, Integer> kindsPerPass() {
+        Map<String, Integer> perPass = new TreeMap<>();
+        for (String kind : Arrays.asList("SKY/SKY_BASIC", "TERRAIN/TERRAIN_SOLID", "TERRAIN/TERRAIN_CUTOUT_MIPPED",
+                "TERRAIN/TERRAIN_CUTOUT", "TRANSLUCENT/TERRAIN_TRANSLUCENT", "ENTITIES/ENTITY_PASS_0",
+                "ENTITIES/ENTITY_PASS_1", "PARTICLES/PARTICLES_LIT", "PARTICLES/PARTICLES_NORMAL", "WEATHER/DEFAULT",
+                "CLOUDS/DEFAULT", "HAND/DEFAULT")) {
+            perPass.put(kind, 1);
+        }
+        perPass.put("SKY/SKY_TEXTURED", 2);
+        return perPass;
+    }
+
+    // The focalis-world-routes pack has no weather or hand program, so those fall back to gbuffers_textured_lit
+    // and share it with lit particles. Its gbuffers_basic is never picked since every role has something closer.
+    private static void checkTestPackPrograms(QaReport r) {
+        Map<String, String> expected = new TreeMap<>();
+        expected.put("SKY_BASIC", "gbuffers_skybasic");
+        expected.put("SKY_TEXTURED", "gbuffers_skytextured");
+        expected.put("TERRAIN_SOLID", "gbuffers_terrain");
+        expected.put("TERRAIN_CUTOUT_MIPPED", "gbuffers_terrain");
+        expected.put("TERRAIN_CUTOUT", "gbuffers_terrain");
+        expected.put("TERRAIN_TRANSLUCENT", "gbuffers_water");
+        expected.put("ENTITIES", "gbuffers_entities");
+        expected.put("PARTICLES_LIT", "gbuffers_textured_lit");
+        expected.put("PARTICLES_NORMAL", "gbuffers_textured");
+        expected.put("WEATHER", "gbuffers_textured_lit");
+        expected.put("CLOUDS", "gbuffers_clouds");
+        expected.put("HAND", "gbuffers_textured_lit");
+        Map<String, String> actual = new TreeMap<>();
+        Map<String, Integer> idsByName = new TreeMap<>();
+        boolean shared = true;
+        for (Map.Entry<String, QaReport.BuiltProgram> role : r.worldPrograms.roles.entrySet()) {
+            QaReport.BuiltProgram program = role.getValue();
+            actual.put(role.getKey(), program.name);
+            Integer id = idsByName.putIfAbsent(program.name, program.id);
+            shared &= id == null || id == program.id;
+        }
+        r.check("test-pack-programs", actual.equals(expected) && shared && idsByName.size() == 8,
+                "roles " + actual + ", " + idsByName.size() + " programs " + idsByName);
+    }
+
     // What the shader router makes of one world pass here. Each role at most this often per pass and exactly this
     // often on average means every single pass had exactly this many.
     private static void checkShaderRoles(QaReport r) {
@@ -584,12 +783,31 @@ public enum QaScenario {
                 "roles " + counts + " over " + r.frames.world + " world passes, per pass " + perPass);
         List<String> other = new ArrayList<>(r.shaderRoutes.roles.keySet());
         other.removeAll(perPass.keySet());
-        r.check("no-unclassified-shader-roles", other.isEmpty(), "other roles " + other);
+        // The entity outlines are the only precise stage without a role, since vanilla draws them with its shaders.
+        other.remove("NONE");
+        QaReport.RoleCounts none = r.shaderRoutes.roles.get("NONE");
+        QaReport.StageCounts outlines = r.renderStages.kinds.get(OUTLINES);
+        int noRole = none == null ? 0 : none.count;
+        int outlineStarts = outlines == null ? 0 : outlines.starts;
+        r.check("no-unclassified-shader-roles", other.isEmpty() && noRole == outlineStarts,
+                "other roles " + other + ", " + noRole + " without a role for " + outlineStarts + " outline starts");
+    }
+
+    // Vanilla only draws outlines while the glowing pig is in view, so they don't happen in every world pass.
+    private static void checkOutlinesSeen(QaReport r) {
+        QaReport.StageCounts outlines = r.renderStages.kinds.get(OUTLINES);
+        r.check("entity-outlines-seen", outlines != null && outlines.pairs > 0 && outlines.maxPerWorldPass == 1,
+                outlines == null ? "never" : outlines.pairs + " pairs, at most " + outlines.maxPerWorldPass
+                        + " per world pass");
     }
 
     private static void checkShadersActive(QaReport r) {
-        r.check("shaders-active", "ACTIVE".equals(r.featureState(SHADERS)),
-                "shaders feature is " + r.featureState(SHADERS));
+        checkFeatureActive(r, SHADERS);
+    }
+
+    private static void checkFeatureActive(QaReport r, String feature) {
+        r.check(feature.replace('_', '-') + "-active", "ACTIVE".equals(r.featureState(feature)),
+                feature + " feature is " + r.featureState(feature));
     }
 
     private static void checkSingleProgram(QaReport r) {

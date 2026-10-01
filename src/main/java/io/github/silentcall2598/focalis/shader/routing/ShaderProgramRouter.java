@@ -23,6 +23,8 @@ public final class ShaderProgramRouter {
             case FRAME:
             case WORLD:
             case GUI:
+            // Vanilla draws the outlines with its own shaders.
+            case ENTITY_OUTLINES:
                 return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.NONE);
             case SKY:
                 if (kind == RenderDrawKind.SKY_BASIC) {

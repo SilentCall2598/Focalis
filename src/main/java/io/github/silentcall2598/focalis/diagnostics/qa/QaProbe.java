@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 import io.github.silentcall2598.focalis.Focalis;
 import io.github.silentcall2598.focalis.feature.FeatureState;
 import io.github.silentcall2598.focalis.feature.FeatureStatus;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpoint;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
@@ -15,8 +16,14 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.render.target.WorldTargetFeature;
 import io.github.silentcall2598.focalis.render.target.WorldTargetMonitor;
+import io.github.silentcall2598.focalis.shader.WorldProgramMonitor;
+import io.github.silentcall2598.focalis.shader.WorldProgramsFeature;
 import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import io.github.silentcall2598.focalis.shader.post.ScenePostPass;
+import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
+import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
+import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
+import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRouter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.GuiChat;
@@ -26,11 +33,17 @@ import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
+import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
+import net.minecraft.entity.passive.EntityPig;
+import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.world.GameType;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
+import net.minecraftforge.client.event.RenderLivingEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
@@ -49,14 +62,17 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 
 /**
- * Development QA mode. It checks the GL state around Focalis's world-end work and the order of WORLD START and END,
- * drives one scenario from client ticks and writes probe.json for tools/qa. It only exists when
+ * Development QA mode. It checks the GL state around Focalis's world-end work, the order of WORLD START and END and
+ * the program bound around each precise stage, drives one scenario from client ticks and writes probe.json for
+ * tools/qa. It only exists when
  * {@code focalis.qa.scenario} is set, so normal play never runs any of it.
  */
 public final class QaProbe {
@@ -73,6 +89,7 @@ public final class QaProbe {
     private static final long WORLD_SEED = 20260926L;
     private static final int[] TOUCHED_UNITS = {ScenePostPass.SCENE_COLOR_UNIT, ScenePostPass.SCENE_DEPTH_UNIT};
     private static final int WRITE_INTERVAL_TICKS = 20;
+    private static final int MAX_STAGE_DEPTH = 16;
 
     // The ways the state-restore scenario changes GL state before the pass, one kind per frame in turn.
     private enum Perturbation {
@@ -93,6 +110,7 @@ public final class QaProbe {
     private final QaReport report;
     private final List<QaStep> steps;
     private final Monitor monitor = new Monitor();
+    private final ProgramMonitor programMonitor = new ProgramMonitor();
     private final WorldPhaseTracker worldPhases;
     private final RenderStageTracker renderStages;
     private final ShaderRouteTracker shaderRoutes;
@@ -156,6 +174,24 @@ public final class QaProbe {
     @Nullable
     private QaReport.Capture currentWorldTarget;
 
+    // Program ids per role once the world programs are built, 0 for roles without one.
+    private final int[] rolePrograms = new int[ShaderProgramRole.values().length];
+    private final Set<Integer> focalisPrograms = new HashSet<>();
+    private boolean programsLive;
+    // One entry per open precise stage, innermost last. The stage, the program before the features' START, and
+    // whether a world program scope opened there.
+    private final RenderStage[] stageOpen = new RenderStage[MAX_STAGE_DEPTH];
+    private final int[] stageProgramBefore = new int[MAX_STAGE_DEPTH];
+    private final boolean[] stageScopeOpened = new boolean[MAX_STAGE_DEPTH];
+    private int stageDepth;
+    // Whether the entity outlines already ended inside the ENTITIES stage that is open now.
+    private boolean outlinesEnded;
+    private int openScopes;
+    private boolean scopeJustStarted;
+    private boolean programFailureArmed;
+    private boolean programFailureInjected;
+    private boolean programFailurePending;
+
     public QaProbe(QaSettings settings, Supplier<List<FeatureStatus>> features, Supplier<GlContextInfo> glContext) {
         this.settings = settings;
         this.features = features;
@@ -176,6 +212,10 @@ public final class QaProbe {
 
     public WorldTargetMonitor worldTargetMonitor() {
         return monitor;
+    }
+
+    public WorldProgramMonitor worldProgramMonitor() {
+        return programMonitor;
     }
 
     /** Registers the listeners that have to run before the features' own. Call it before features register. */
@@ -203,12 +243,13 @@ public final class QaProbe {
         for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
             lifecycle.register(stage, OWNER, this::onStage);
         }
+        lifecycle.registerCheckpoint(OWNER, this::beforeFocalisCheckpoint);
         MinecraftForge.EVENT_BUS.register(this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::writeOnExit, "Focalis QA report"));
         write(false);
     }
 
-    /** Registers the listener that has to run after the features' own. */
+    /** Registers the listeners that have to run after the features' own. */
     public void installAfter(RenderLifecycle lifecycle) {
         lifecycle.register(RenderStage.WORLD, OWNER, (stage, phase, drawKind, partialTicks) -> {
             worldPhases.dispatchFinished();
@@ -218,6 +259,10 @@ public final class QaProbe {
                 afterFocalisWorldStart();
             }
         });
+        for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
+            lifecycle.register(stage, OWNER, this::afterFocalisStage);
+        }
+        lifecycle.registerCheckpoint(OWNER, this::afterFocalisCheckpoint);
     }
 
     @SubscribeEvent
@@ -227,6 +272,7 @@ public final class QaProbe {
         }
         ticks++;
         if (ticks == 1) {
+            sampleChests();
             report.environment.initialWidth = mc().displayWidth;
             report.environment.initialHeight = mc().displayHeight;
             report.status = "running";
@@ -305,8 +351,321 @@ public final class QaProbe {
                 if (stage == RenderStage.TRANSLUCENT) {
                     sampleWorldDrawFramebuffer();
                 }
+                if (programsLive) {
+                    beforeFocalisStageStart(stage);
+                }
             }
         }
+    }
+
+    private void beforeFocalisStageStart(RenderStage stage) {
+        if (stageDepth == MAX_STAGE_DEPTH) {
+            broken("before a stage start", new IllegalStateException("Precise stages nest deeper than "
+                    + MAX_STAGE_DEPTH));
+            return;
+        }
+        try {
+            stageOpen[stageDepth] = stage;
+            stageProgramBefore[stageDepth] = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            stageScopeOpened[stageDepth] = false;
+            stageDepth++;
+            scopeJustStarted = false;
+            if (stage == RenderStage.ENTITIES) {
+                outlinesEnded = false;
+            }
+        } catch (RuntimeException e) {
+            broken("before a stage start", e);
+        }
+    }
+
+    // Stages balance with their START, which render-stages-balanced checks, so the entries line up.
+    private void afterFocalisStage(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind,
+            float partialTicks) {
+        if (!programsLive || finished || brokenReason != null || stageDepth == 0) {
+            return;
+        }
+        try {
+            int current = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            if (phase == RenderPhase.START) {
+                afterStageStart(stage, drawKind, current);
+            } else {
+                afterStageEnd(stage, drawKind, current);
+            }
+        } catch (RuntimeException e) {
+            broken("after a stage " + phase, e);
+        }
+    }
+
+    private void afterStageStart(RenderStage stage, RenderDrawKind drawKind, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int top = stageDepth - 1;
+        boolean opened = scopeJustStarted;
+        scopeJustStarted = false;
+        stageScopeOpened[top] = opened;
+        if (programFailurePending) {
+            programFailurePending = false;
+            recordProgramFailure(current);
+            return;
+        }
+        String where = stage + "/" + drawKind;
+        if (stage == RenderStage.HAND) {
+            programs.handChecks++;
+            if (opened || openScopes != 0 || focalisPrograms.contains(current)) {
+                programs.handProblems++;
+                QaReport.addCapped(programs.problems, "HAND started in world pass " + worldFrames + " with program "
+                        + current + " and " + openScopes + " open scopes");
+            }
+            return;
+        }
+        if (stage == RenderStage.ENTITY_OUTLINES) {
+            checkOutlinesStart(where, current);
+            return;
+        }
+        if (!opened) {
+            if (focalisPrograms.contains(current)) {
+                programs.unboundLeaks++;
+                QaReport.addCapped(programs.problems, where + " had Focalis program " + current
+                        + " current without a scope in world pass " + (worldFrames + 1));
+            }
+            return;
+        }
+        openScopes++;
+        programs.scopes++;
+        int role = rolePrograms[ShaderProgramRouter.route(stage, drawKind).ordinal()];
+        int expected = role != 0 ? role : stageProgramBefore[top];
+        if (current != expected) {
+            programs.bindMismatches++;
+            QaReport.addCapped(programs.problems, where + " had program " + current + " current instead of "
+                    + expected + " in world pass " + (worldFrames + 1));
+            return;
+        }
+        if (role != 0) {
+            programs.bound.merge(where, 1, Integer::sum);
+            sampleProgramDrawFramebuffer(where);
+        }
+    }
+
+    private void sampleProgramDrawFramebuffer(String where) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        QaReport.Capture target = currentWorldTarget;
+        int expected = passRedirected && target != null ? target.framebuffer
+                : mc().getFramebuffer().framebufferObject;
+        int draw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        programs.drawSamples++;
+        if (draw != expected) {
+            programs.drawMismatches++;
+            QaReport.addCapped(programs.problems, where + " drew into " + draw + " instead of " + expected
+                    + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    // Vanilla draws the outlined entities expecting no program and then runs its own shaders, so the program from
+    // before the outermost Focalis scope has to be back here.
+    private void checkOutlinesStart(String where, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int expected = stageProgramBefore[stageDepth - 1];
+        for (int i = 0; i < stageDepth - 1; i++) {
+            if (stageScopeOpened[i]) {
+                expected = stageProgramBefore[i];
+                break;
+            }
+        }
+        programs.outlineStarts++;
+        if (current != expected || focalisPrograms.contains(current)) {
+            programs.outlineProblems++;
+            QaReport.addCapped(programs.problems, where + " started with program " + current + " instead of "
+                    + expected + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    // Still inside ENTITIES, so its program has to be back once vanilla is done with the outlines.
+    private void checkOutlinesEnd(String where, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int parent = stageDepth - 1;
+        outlinesEnded = true;
+        if (parent < 0 || stageOpen[parent] != RenderStage.ENTITIES || !stageScopeOpened[parent]) {
+            return;
+        }
+        int entities = rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
+        int expected = entities != 0 ? entities : stageProgramBefore[parent];
+        programs.outlineResumes++;
+        if (current != expected) {
+            programs.outlineResumeProblems++;
+            QaReport.addCapped(programs.problems, where + " ended with program " + current + " instead of "
+                    + expected + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    // Called by the chest renderer right before a chest draws.
+    private void sampleBlockEntity() {
+        if (!programsLive || finished || brokenReason != null || stageDepth == 0) {
+            return;
+        }
+        int top = stageDepth - 1;
+        int entities = rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
+        if (stageOpen[top] != RenderStage.ENTITIES || !stageScopeOpened[top] || entities == 0) {
+            return;
+        }
+        try {
+            QaReport.WorldPrograms programs = report.worldPrograms;
+            int current = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            programs.blockEntitySamples++;
+            if (outlinesEnded) {
+                programs.blockEntitySamplesAfterOutlines++;
+            }
+            if (current != entities) {
+                programs.blockEntityMismatches++;
+                QaReport.addCapped(programs.problems, "a chest drew with program " + current + " instead of "
+                        + entities + (outlinesEnded ? " after the entity outlines" : "") + " in world pass "
+                        + (worldFrames + 1));
+            }
+        } catch (RuntimeException e) {
+            broken("while a chest draws", e);
+        }
+    }
+
+    // Wraps the chest renderer so the probe sees the program a real block entity draw gets, which comes after
+    // vanilla's entity outlines inside the same ENTITIES stage. In scenarios that ask for it, each chest also leaves
+    // another program bound when it returns, like a mod renderer with its own shader.
+    private void sampleChests() {
+        TileEntitySpecialRenderer<TileEntityChest> chests =
+                TileEntityRendererDispatcher.instance.getRenderer(TileEntityChest.class);
+        if (chests == null) {
+            QaReport.addCapped(report.probeErrors, "no chest renderer to sample block entities with");
+            return;
+        }
+        ClientRegistry.bindTileEntitySpecialRenderer(TileEntityChest.class,
+                new SamplingRenderer<>(chests, this::sampleBlockEntity, this::leakFromBlockEntity));
+    }
+
+    // The ENTITIES program while a bound ENTITIES scope is the innermost open stage, 0 otherwise.
+    private int ownedEntitiesProgram() {
+        if (!programsLive || finished || brokenReason != null || stageDepth == 0) {
+            return 0;
+        }
+        int top = stageDepth - 1;
+        if (stageOpen[top] != RenderStage.ENTITIES || !stageScopeOpened[top]) {
+            return 0;
+        }
+        return rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
+    }
+
+    // Leaves 0 bound, like a mod that binds its own shader and releases it.
+    @SubscribeEvent
+    public void onRenderLivingPost(RenderLivingEvent.Post<?> event) {
+        if (!settings.scenario.injectsRendererLeaks() || !(event.getEntity() instanceof EntityPig)
+                || ownedEntitiesProgram() == 0) {
+            return;
+        }
+        GL20.glUseProgram(0);
+        report.worldPrograms.entityLeaksInjected++;
+    }
+
+    // Leaves another real program bound, here the terrain one.
+    private void leakFromBlockEntity() {
+        int entities = ownedEntitiesProgram();
+        int other = rolePrograms[ShaderProgramRole.TERRAIN_SOLID.ordinal()];
+        if (!settings.scenario.injectsRendererLeaks() || entities == 0 || other == 0 || other == entities) {
+            return;
+        }
+        GL20.glUseProgram(other);
+        report.worldPrograms.blockEntityLeaksInjected++;
+    }
+
+    // Before the features repair anything, so what a renderer left behind shows up here.
+    private void beforeFocalisCheckpoint(RenderCheckpoint checkpoint) {
+        int entities = ownedEntitiesProgram();
+        if (entities == 0) {
+            return;
+        }
+        try {
+            if (GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != entities) {
+                QaReport.WorldPrograms programs = report.worldPrograms;
+                if (checkpoint == RenderCheckpoint.ENTITY_RENDERED) {
+                    programs.entityRenderersLeftOther++;
+                } else {
+                    programs.blockEntityRenderersLeftOther++;
+                }
+            }
+        } catch (RuntimeException e) {
+            broken("before a renderer checkpoint", e);
+        }
+    }
+
+    // Right after a renderer returned and the features had their turn, the ENTITIES program has to be current.
+    private void afterFocalisCheckpoint(RenderCheckpoint checkpoint) {
+        int entities = ownedEntitiesProgram();
+        if (entities == 0) {
+            return;
+        }
+        try {
+            QaReport.WorldPrograms programs = report.worldPrograms;
+            int current = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            if (checkpoint == RenderCheckpoint.ENTITY_RENDERED) {
+                programs.entityRendererChecks++;
+            } else {
+                programs.blockEntityRendererChecks++;
+            }
+            if (current != entities) {
+                programs.rendererMismatches++;
+                QaReport.addCapped(programs.problems, checkpoint + " left program " + current + " instead of "
+                        + entities + " in world pass " + (worldFrames + 1));
+            }
+        } catch (RuntimeException e) {
+            broken("after a renderer checkpoint", e);
+        }
+    }
+
+    private void afterStageEnd(RenderStage stage, RenderDrawKind drawKind, int current) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int top = --stageDepth;
+        int before = stageProgramBefore[top];
+        if (stageScopeOpened[top]) {
+            openScopes--;
+        }
+        if (stage == RenderStage.ENTITY_OUTLINES) {
+            checkOutlinesEnd(stage + "/" + drawKind, current);
+        }
+        programs.restores++;
+        if (current != before) {
+            programs.restoreMismatches++;
+            QaReport.addCapped(programs.problems, stage + "/" + drawKind + " ended with program " + current
+                    + " instead of " + before + " in world pass " + (worldFrames + 1));
+        } else if (stageScopeOpened[top] && drawKind == RenderDrawKind.SKY_TEXTURED && before != 0
+                && before == rolePrograms[ShaderProgramRole.SKY_BASIC.ordinal()]) {
+            programs.nestedSkyRestores++;
+        }
+    }
+
+    // The failing START already unwound every open scope, so each of them has to find the program from before the
+    // outermost one, and later ENDs expect what is current now.
+    private void recordProgramFailure(int current) {
+        QaReport.InjectedFailure failure = report.injectedFailure;
+        failureChecked = true;
+        int expected = current;
+        for (int i = 0; i < stageDepth; i++) {
+            if (stageScopeOpened[i]) {
+                expected = stageProgramBefore[i];
+                break;
+            }
+        }
+        for (int i = 0; i < stageDepth; i++) {
+            stageProgramBefore[i] = current;
+            stageScopeOpened[i] = false;
+        }
+        openScopes = 0;
+        if (failure == null) {
+            return;
+        }
+        failure.stateRestored = current == expected && !focalisPrograms.contains(current);
+        FeatureStatus feature = featureStatus(WorldProgramsFeature.ID);
+        failure.featureFailed = feature != null && feature.state() == FeatureState.FAILED;
+        failure.featureDetail = feature == null ? null : feature.detail();
+        boolean released = !focalisPrograms.isEmpty();
+        for (int program : focalisPrograms) {
+            released &= !GL20.glIsProgram(program);
+        }
+        failure.resourcesReleased = released;
     }
 
     private void beforeFocalisWorldStart() {
@@ -851,6 +1210,12 @@ public final class QaProbe {
         worldTargetFailureInjected = true;
     }
 
+    void armWorldProgramFailure() {
+        report.injectedFailure = new QaReport.InjectedFailure();
+        programFailureArmed = true;
+        programFailureInjected = true;
+    }
+
     boolean failureObserved() {
         return failureChecked;
     }
@@ -910,6 +1275,7 @@ public final class QaProbe {
                 phases.passesOutsideEnd + " outside WORLD END, " + phases.repeatedPasses + " repeated in one END");
         checkRenderStages();
         checkWorldTarget();
+        checkWorldPrograms();
         if (!settings.scenario.expectsFeatureFailure()) {
             List<String> failed = new ArrayList<>();
             for (QaReport.FeatureEntry feature : report.features) {
@@ -962,6 +1328,52 @@ public final class QaProbe {
         } else if (FeatureState.DISABLED.name().equals(state)) {
             report.check("world-target-idle", world.redirectedPasses == 0 && world.targets.isEmpty()
                     && world.drawSamples > 0 && world.drawMismatches == 0, draws);
+        }
+    }
+
+    // Any scenario can run with the world programs on or off. A failed or stopped feature is judged by its own
+    // scenario.
+    private void checkWorldPrograms() {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        String state = report.featureState(WorldProgramsFeature.ID);
+        String problems = programs.problems.isEmpty() ? "" : ", like " + programs.problems.get(0);
+        if (settings.scenario.expectsWorldProgramsStopped()) {
+            return;
+        }
+        if (FeatureState.ACTIVE.name().equals(state)) {
+            report.check("world-programs-built-once", programs.builds == 1 && programs.stopped == null
+                            && !programs.roles.isEmpty(),
+                    programs.builds + " builds, " + programs.roles.size() + " roles with a program"
+                            + (programs.stopped == null ? "" : ", stopped: " + programs.stopped));
+            report.check("world-programs-bound", programs.scopes > 0 && programs.bindMismatches == 0
+                            && programs.unboundLeaks == 0,
+                    programs.scopes + " scopes, " + programs.bindMismatches + " with the wrong program, "
+                            + programs.unboundLeaks + " Focalis programs without a scope" + problems);
+            report.check("world-programs-restored", programs.restores > 0 && programs.restoreMismatches == 0,
+                    programs.restoreMismatches + " of " + programs.restores + " stage ends didn't restore"
+                            + problems);
+            report.check("world-programs-drawn-into-world", programs.drawSamples > 0 && programs.drawMismatches == 0,
+                    programs.drawMismatches + " of " + programs.drawSamples + " bound stages drew elsewhere"
+                            + problems);
+            report.check("world-programs-hand-untouched", programs.handChecks > 0 && programs.handProblems == 0,
+                    programs.handProblems + " of " + programs.handChecks + " HAND starts had a scope or program"
+                            + problems);
+            report.check("world-programs-after-renderers", programs.rendererMismatches == 0,
+                    programs.rendererMismatches + " of " + (programs.entityRendererChecks
+                            + programs.blockEntityRendererChecks) + " renderers returned without the ENTITIES program"
+                            + " bound again, " + (programs.entityRenderersLeftOther
+                            + programs.blockEntityRenderersLeftOther) + " had left another one" + problems);
+            // Only has something to check when something glows or a chest is in view.
+            report.check("world-programs-outlines-left-to-vanilla", programs.outlineProblems == 0
+                            && programs.outlineResumeProblems == 0 && programs.blockEntityMismatches == 0,
+                    programs.outlineProblems + " of " + programs.outlineStarts + " outline starts kept a Focalis"
+                            + " program, " + programs.outlineResumeProblems + " of " + programs.outlineResumes
+                            + " outline ends didn't bind the entities program again, "
+                            + programs.blockEntityMismatches + " of " + programs.blockEntitySamples
+                            + " chests drew with another program" + problems);
+        } else if (FeatureState.DISABLED.name().equals(state)) {
+            report.check("world-programs-idle", programs.builds == 0 && programs.scopes == 0,
+                    programs.builds + " builds, " + programs.scopes + " scopes");
         }
     }
 
@@ -1123,6 +1535,47 @@ public final class QaProbe {
         @Override
         public void stopped(String reason) {
             report.worldTarget.stopped = reason;
+        }
+    }
+
+    private final class ProgramMonitor implements WorldProgramMonitor {
+
+        @Override
+        public void programsBuilt(BuiltWorldPrograms programs) {
+            QaReport.WorldPrograms world = report.worldPrograms;
+            world.builds++;
+            for (BuiltWorldPrograms.Entry entry : programs.entries().values()) {
+                ShaderProgram program = entry.program();
+                if (entry.ready() && program != null) {
+                    rolePrograms[entry.role().ordinal()] = program.id();
+                    focalisPrograms.add(program.id());
+                    world.roles.put(entry.role().name(), new QaReport.BuiltProgram(program.name(), program.id()));
+                }
+            }
+            programsLive = true;
+        }
+
+        // The failure goes into the sun or moon, so the sky's scope is open too and both have to unwind.
+        @Override
+        public void scopeStarted(RenderStage stage, RenderDrawKind drawKind) {
+            scopeJustStarted = true;
+            QaReport.InjectedFailure failure = report.injectedFailure;
+            if (failure == null || !programFailureInjected) {
+                return;
+            }
+            if (failureChecked) {
+                failure.renderedAfterFailure++;
+            } else if (programFailureArmed && drawKind == RenderDrawKind.SKY_TEXTURED) {
+                programFailureArmed = false;
+                programFailurePending = true;
+                failure.frame = worldFrames + 1;
+                throw new IllegalStateException(INJECTED_FAILURE);
+            }
+        }
+
+        @Override
+        public void stopped(String reason) {
+            report.worldPrograms.stopped = reason;
         }
     }
 }

@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,6 +24,11 @@ class ScopedProgramBindingTest {
     private static final RenderDrawKind TEXTURED = RenderDrawKind.SKY_TEXTURED;
     private static final RenderStage TERRAIN = RenderStage.TERRAIN;
     private static final RenderDrawKind SOLID = RenderDrawKind.TERRAIN_SOLID;
+    private static final RenderStage ENTITIES = RenderStage.ENTITIES;
+    private static final RenderDrawKind PASS_0 = RenderDrawKind.ENTITY_PASS_0;
+    // Suspending stands in for vanilla's entity outlines, which bind their own programs and leave 0 behind.
+    private static final RenderStage OUTLINES = RenderStage.ENTITY_OUTLINES;
+    private static final RenderDrawKind OUTLINE_KIND = RenderDrawKind.DEFAULT;
 
     // A program some other mod or Minecraft had active before Focalis did anything.
     private final RecordingProgramBindingGl gl = new RecordingProgramBindingGl(7);
@@ -298,9 +304,426 @@ class ScopedProgramBindingTest {
         assertThrows(NullPointerException.class, () -> binding.start(SKY, null, target));
         assertThrows(NullPointerException.class, () -> binding.end(null, BASIC));
         assertThrows(NullPointerException.class, () -> binding.end(SKY, null));
+        assertThrows(NullPointerException.class, () -> binding.suspend(null, OUTLINE_KIND));
+        assertThrows(NullPointerException.class, () -> binding.suspend(OUTLINES, null));
+        assertThrows(NullPointerException.class, () -> binding.resume(null, OUTLINE_KIND));
+        assertThrows(NullPointerException.class, () -> binding.resume(OUTLINES, null));
 
         assertEquals(0, gl.queries);
         assertUses();
         assertEquals(0, binding.depth());
+    }
+
+    // What vanilla's outline shader does to the program, without going through the binding's own GL calls.
+    private void vanillaShaderRuns() {
+        gl.current = 0;
+    }
+
+    @Test
+    void suspendStepsAsideAndResumeBindsTheProgramAgain() {
+        binding.start(ENTITIES, PASS_0, program(31));
+
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        assertEquals(7, gl.current);
+        assertTrue(binding.isSuspended());
+        assertEquals(1, binding.depth());
+        vanillaShaderRuns();
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        assertEquals(31, gl.current);
+        assertFalse(binding.isSuspended());
+        binding.end(ENTITIES, PASS_0);
+
+        // The END still restores the program from before the scope, not what vanilla left behind.
+        assertEquals(7, gl.current);
+        assertUses(31, 7, 31, 7);
+        assertTrue(binding.isEmpty());
+    }
+
+    @Test
+    void nestedScopesStepAsideToTheProgramFromBeforeTheOutermost() {
+        openThree();
+
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        assertEquals(7, gl.current);
+        vanillaShaderRuns();
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        assertEquals(55, gl.current);
+        binding.end(TERRAIN, SOLID);
+        assertEquals(44, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertUses(31, 44, 55, 7, 55, 44, 31, 7);
+        assertTrue(binding.isEmpty());
+    }
+
+    @Test
+    void resumeBindsTheInnermostProgramThroughNullAndSameTargetScopes() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(31));
+        binding.start(TERRAIN, SOLID, null);
+
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        assertEquals(31, gl.current);
+        binding.end(TERRAIN, SOLID);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertUses(31, 7, 31, 7);
+    }
+
+    @Test
+    void suspendWithoutAFocalisProgramChangesNothing() {
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        binding.start(ENTITIES, PASS_0, null);
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        binding.end(ENTITIES, PASS_0);
+
+        // A null scope still leaves whatever vanilla bound alone.
+        assertEquals(0, gl.current);
+        assertUses();
+        // Only the START looked at the current program.
+        assertEquals(1, gl.queries);
+    }
+
+    @Test
+    void programSomethingElseBoundIsNeitherTakenAwayNorBoundOver() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        gl.current = 55;
+
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        assertEquals(55, gl.current);
+        vanillaShaderRuns();
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        assertEquals(0, gl.current);
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 7);
+    }
+
+    @Test
+    void suspendingTwiceIsRejectedAndDropsTheScopes() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> binding.suspend(OUTLINES, OUTLINE_KIND));
+
+        assertTrue(error.getMessage().contains("while suspended"), error.getMessage());
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        // The program went back when the scopes stepped aside, so nothing is bound over what vanilla left.
+        assertEquals(0, gl.current);
+        assertUses(31, 7);
+    }
+
+    @Test
+    void resumeWithoutSuspensionIsRejectedAndUnwinds() {
+        binding.start(ENTITIES, PASS_0, program(31));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> binding.resume(OUTLINES, OUTLINE_KIND));
+
+        assertTrue(error.getMessage().contains("without a suspension"), error.getMessage());
+        assertTrue(binding.isEmpty());
+        assertEquals(7, gl.current);
+        assertUses(31, 7);
+    }
+
+    @Test
+    void resumeForAnotherStageIsRejected() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+
+        assertThrows(IllegalStateException.class, () -> binding.resume(ENTITIES, PASS_0));
+
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        assertUses(31, 7);
+    }
+
+    @Test
+    void startAndEndWhileSuspendedAreRejected() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        assertThrows(IllegalStateException.class, () -> binding.start(TERRAIN, SOLID, program(44)));
+        assertTrue(binding.isEmpty());
+
+        binding.start(ENTITIES, PASS_0, program(31));
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        assertThrows(IllegalStateException.class, () -> binding.end(ENTITIES, PASS_0));
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+
+        assertUses(31, 7, 31, 7);
+        assertEquals(7, gl.current);
+    }
+
+    @Test
+    void abortWhileSuspendedLeavesNoScopeOrProgramBehind() {
+        openThree();
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+
+        binding.abort();
+
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        assertEquals(0, gl.current);
+        assertUses(31, 44, 55, 7);
+        // Usable again afterwards.
+        binding.start(TERRAIN, SOLID, program(31));
+        binding.end(TERRAIN, SOLID);
+        assertEquals(0, gl.current);
+    }
+
+    @Test
+    void failedSuspendUnwindsLikeAnyOtherFailure() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        RuntimeException failure = new RuntimeException("bind");
+        gl.useThrowsOnCall.put(2, failure);
+
+        assertSame(failure, assertThrows(RuntimeException.class, () -> binding.suspend(OUTLINES, OUTLINE_KIND)));
+
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        assertEquals(7, gl.current);
+        assertUses(31, 7, 7);
+    }
+
+    @Test
+    void failedQueryWhileSuspendingUnwinds() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        gl.queryThrows = new IllegalStateException("query");
+
+        assertThrows(IllegalStateException.class, () -> binding.suspend(OUTLINES, OUTLINE_KIND));
+
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        assertEquals(7, gl.current);
+        assertUses(31, 7);
+    }
+
+    @Test
+    void failedResumeStillEndsWithTheExternalProgram() {
+        openThree();
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+        RuntimeException failure = new RuntimeException("bind");
+        // Three binds and the suspension so far, so the fifth use is the resume.
+        gl.useThrowsOnCall.put(5, failure);
+
+        assertSame(failure, assertThrows(RuntimeException.class, () -> binding.resume(OUTLINES, OUTLINE_KIND)));
+
+        assertTrue(binding.isEmpty());
+        assertFalse(binding.isSuspended());
+        assertEquals(7, gl.current);
+        assertUses(31, 44, 55, 7, 55, 44, 31, 7);
+    }
+
+    // What a mod renderer does to the program before it returns, without going through the binding.
+    private void rendererLeaves(int program) {
+        gl.current = program;
+    }
+
+    @Test
+    void reassertLeavesAProgramThatIsStillCurrentAlone() {
+        binding.start(ENTITIES, PASS_0, program(31));
+
+        assertFalse(binding.reassert());
+        binding.end(ENTITIES, PASS_0);
+
+        assertUses(31, 7);
+        assertEquals(7, gl.current);
+    }
+
+    @Test
+    void reassertBindsTheProgramAgainAfterARendererLeftZero() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        assertEquals(1, binding.depth());
+        binding.end(ENTITIES, PASS_0);
+
+        // The END still restores the program from before the scope.
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    @Test
+    void reassertReplacesAnotherProgramARendererLeftBound() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        rendererLeaves(55);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    @Test
+    void repeatedReassertsKeepTheScopeAsItIs() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        for (int renderer = 0; renderer < 3; renderer++) {
+            rendererLeaves(0);
+            assertTrue(binding.reassert());
+            assertEquals(31, gl.current);
+            assertEquals(1, binding.depth());
+        }
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 31, 31, 7);
+        assertTrue(binding.isEmpty());
+    }
+
+    @Test
+    void reassertBindsTheInnermostProgram() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(44));
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(44, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 44, 44, 31, 7);
+    }
+
+    @Test
+    void reassertWithSameTargetNestingBindsThatProgramOnce() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(31));
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    @Test
+    void reassertDoesNothingForANullScope() {
+        binding.start(ENTITIES, PASS_0, null);
+        rendererLeaves(55);
+
+        assertFalse(binding.reassert());
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(55, gl.current);
+        assertUses();
+        // Only the START looked at the current program.
+        assertEquals(1, gl.queries);
+    }
+
+    @Test
+    void reassertWithoutAnyScopeDoesNothing() {
+        rendererLeaves(55);
+
+        assertFalse(binding.reassert());
+
+        assertEquals(55, gl.current);
+        assertEquals(0, gl.queries);
+        assertUses();
+    }
+
+    // A null scope inside a bound one draws with the outer program, so that program is still Focalis's.
+    @Test
+    void reassertKeepsTheOuterProgramThroughANullInnerScope() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, null);
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    // Something else had bound its own program before the null scope opened, so Focalis didn't own it anymore.
+    @Test
+    void reassertDoesNotTakeBackAProgramSomethingElseBoundBeforeANullInnerScope() {
+        binding.start(SKY, BASIC, program(31));
+        rendererLeaves(55);
+        binding.start(SKY, TEXTURED, null);
+        rendererLeaves(0);
+
+        assertFalse(binding.reassert());
+        assertEquals(0, gl.current);
+        binding.end(SKY, TEXTURED);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 7);
+    }
+
+    @Test
+    void reassertDoesNothingWhileSuspended() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+        int queries = gl.queries;
+
+        assertFalse(binding.reassert());
+        assertEquals(0, gl.current);
+        assertEquals(queries, gl.queries);
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        assertEquals(31, gl.current);
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 7, 31, 7);
+    }
+
+    @Test
+    void failedQueryWhileReassertingUnwinds() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(44));
+        rendererLeaves(0);
+        gl.queryThrows = new IllegalStateException("query");
+
+        assertThrows(IllegalStateException.class, () -> binding.reassert());
+
+        assertTrue(binding.isEmpty());
+        assertEquals(7, gl.current);
+        assertUses(31, 44, 31, 7);
+    }
+
+    @Test
+    void failedBindWhileReassertingUnwinds() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        rendererLeaves(0);
+        RuntimeException failure = new RuntimeException("bind");
+        gl.useThrowsOnCall.put(2, failure);
+
+        assertSame(failure, assertThrows(RuntimeException.class, () -> binding.reassert()));
+
+        assertTrue(binding.isEmpty());
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
     }
 }
