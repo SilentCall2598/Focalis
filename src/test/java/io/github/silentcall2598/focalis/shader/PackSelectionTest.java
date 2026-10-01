@@ -3,11 +3,13 @@
 package io.github.silentcall2598.focalis.shader;
 
 import io.github.silentcall2598.focalis.shader.pack.ProgramStage;
+import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
+import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
+import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 import io.github.silentcall2598.focalis.shader.program.PreparedProgram;
 import io.github.silentcall2598.focalis.shader.program.PreparedWorldPrograms;
-import io.github.silentcall2598.focalis.shader.routing.ProgramResolution;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,6 +26,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -88,31 +91,55 @@ class PackSelectionTest {
     }
 
     @Test
-    void worldProgramsOnlyComeFromTheMainShadersFolder() throws Exception {
-        Path shaders = Files.createDirectories(temp.resolve("Dimensions").resolve("shaders"));
-        write(shaders.resolve("gbuffers_basic.vsh"), VERTEX);
-        write(shaders.resolve("gbuffers_basic.fsh"), FRAGMENT);
-        write(shaders.resolve("dimension.properties"), "dimension.overworld=minecraft:overworld\n");
-        for (String folder : Arrays.asList("world0", "world-1", "world1", "overworld")) {
-            write(shaders.resolve(folder).resolve("gbuffers_terrain.vsh"), VERTEX);
-            write(shaders.resolve(folder).resolve("gbuffers_terrain.fsh"), FRAGMENT);
+    void dimensionRoutesTestPackGivesEachDimensionItsOwnFolder() throws Exception {
+        Path shaderpacks = Paths.get(getClass().getResource("/shaderpacks").toURI());
+        ShaderPack pack = ShaderPackLoader.load(PackSelection.resolve(shaderpacks, "focalis-dimension-routes"));
+
+        assertEquals("world0", pack.programDirectoryFor(0).name());
+        assertEquals("world-1", pack.programDirectoryFor(-1).name());
+        assertSame(pack.root(), pack.programDirectoryFor(1));
+        Map<ShaderProgramRole, String> overworld = new EnumMap<>(ShaderProgramRole.class);
+        for (ShaderProgramRole role : EnumSet.range(ShaderProgramRole.SKY_BASIC, ShaderProgramRole.HAND)) {
+            overworld.put(role, "world0/gbuffers_textured");
         }
+        overworld.remove(ShaderProgramRole.SKY_BASIC);
+        overworld.put(ShaderProgramRole.ENTITIES, "world0/gbuffers_entities");
+        assertEquals(overworld, preparedNames(pack, 0));
+        Map<ShaderProgramRole, String> main = new EnumMap<>(ShaderProgramRole.class);
+        for (ShaderProgramRole role : EnumSet.range(ShaderProgramRole.SKY_BASIC, ShaderProgramRole.HAND)) {
+            main.put(role, "gbuffers_textured");
+        }
+        main.put(ShaderProgramRole.SKY_BASIC, "gbuffers_basic");
+        for (ShaderProgramRole role : Arrays.asList(ShaderProgramRole.TERRAIN_SOLID,
+                ShaderProgramRole.TERRAIN_CUTOUT_MIPPED, ShaderProgramRole.TERRAIN_CUTOUT,
+                ShaderProgramRole.TERRAIN_TRANSLUCENT)) {
+            main.put(role, "gbuffers_terrain");
+        }
+        assertEquals(main, preparedNames(pack, 1));
+        // world-1 prepares fine and only fails once the driver compiles it.
+        assertEquals("world-1/gbuffers_textured", preparedNames(pack, -1).get(ShaderProgramRole.TERRAIN_SOLID));
+    }
 
-        PreparedWorldPrograms programs = PackSelection.prepareWorldPrograms(temp.resolve("Dimensions"));
-
-        ProgramResolution terrain = programs.forRole(ShaderProgramRole.TERRAIN_SOLID).resolution();
-        assertEquals("gbuffers_basic", terrain.selectedName());
-        assertEquals("", terrain.program().directory());
-        assertEquals(1, programs.uniquePrograms().size());
-        assertEquals(4, ShaderPackLoader.load(temp.resolve("Dimensions")).dimensionDirectories().size());
+    private static Map<ShaderProgramRole, String> preparedNames(ShaderPack pack, int dimension) {
+        PreparedWorldPrograms programs = PreparedWorldPrograms.prepare(pack, pack.programDirectoryFor(dimension),
+                StandardMacros.environment(), ShaderMacros.empty());
+        Map<ShaderProgramRole, String> names = new EnumMap<>(ShaderProgramRole.class);
+        for (PreparedWorldPrograms.Entry entry : programs.entries().values()) {
+            assertNull(entry.problem(), entry.role().toString());
+            if (entry.ready()) {
+                names.put(entry.role(), entry.program().name());
+            }
+        }
+        return names;
     }
 
     @Test
     void worldRoutesTestPackGivesEveryWorldStageAProgram() throws Exception {
         Path shaderpacks = Paths.get(getClass().getResource("/shaderpacks").toURI());
 
-        PreparedWorldPrograms programs = PackSelection.prepareWorldPrograms(
-                PackSelection.resolve(shaderpacks, "focalis-world-routes"));
+        ShaderPack pack = ShaderPackLoader.load(PackSelection.resolve(shaderpacks, "focalis-world-routes"));
+        PreparedWorldPrograms programs = PreparedWorldPrograms.prepare(pack, pack.root(), StandardMacros.environment(),
+                ShaderMacros.empty());
 
         Map<ShaderProgramRole, String> expected = new EnumMap<>(ShaderProgramRole.class);
         expected.put(ShaderProgramRole.SKY_BASIC, "gbuffers_skybasic");

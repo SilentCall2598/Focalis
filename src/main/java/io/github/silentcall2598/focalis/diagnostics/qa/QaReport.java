@@ -322,11 +322,20 @@ final class QaReport {
     // What the world programs did, if their feature ran.
     static final class WorldPrograms {
         int builds;
-        // Every role with a program, taken when the programs were built.
+        // Builds per program folder, like shaders or shaders/world-1. Each folder is built once per session.
+        final Map<String, Integer> folderBuilds = new TreeMap<>();
+        // Every role with a program in each built folder.
+        final Map<String, Map<String, BuiltProgram>> folderRoles = new TreeMap<>();
+        // Each time a world pass picked other programs, the dimension and the folder it used.
+        final List<String> selections = new ArrayList<>();
+        // Every role with a program in the folder selected last.
         final Map<String, BuiltProgram> roles = new TreeMap<>();
         // Stage STARTs where a scope opened, and per draw kind how often its role's program really was current.
         int scopes;
         final Map<String, Integer> bound = new TreeMap<>();
+        // The same per dimension.
+        final Map<String, Integer> scopesByDimension = new TreeMap<>();
+        final Map<String, Integer> boundByDimension = new TreeMap<>();
         int bindMismatches;
         // Right after every stage END, the program from before its START has to be back.
         int restores;

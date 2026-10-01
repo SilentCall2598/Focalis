@@ -55,6 +55,10 @@ $Scenarios = [ordered]@{
     'world-program-failure'          = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true }
     'world-program-bad-pack'         = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true
         ProgramsPack = 'focalis-world-routes-broken' }
+    'world-program-dimensions'       = @{ Shaders = $false; Pack = ''; WorldPrograms = $true
+        ProgramsPack = 'focalis-dimension-routes' }
+    'world-program-dimensions-zip'   = @{ Shaders = $false; Pack = ''; WorldPrograms = $true
+        ProgramsPack = 'focalis-dimension-routes.zip' }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.
@@ -67,7 +71,11 @@ $ScenarioAllowed = @{
         "Feature 'world_target' is disabled for this session")
     'world-program-failure' = @('Focalis QA injected failure', "Render listener of 'world_programs' failed",
         "Feature 'world_programs' is disabled for this session")
-    'world-program-bad-pack' = @("can't be built, so", 'The world programs stopped for this session')
+    'world-program-bad-pack' = @("can't be built, so", 'None of the world programs in shaders could be built')
+    'world-program-dimensions' = @("world-1/gbuffers_textured can't be built, so",
+        'None of the world programs in shaders/world-1 could be built')
+    'world-program-dimensions-zip' = @("world-1/gbuffers_textured can't be built, so",
+        'None of the world programs in shaders/world-1 could be built')
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -76,6 +84,7 @@ $GameDir = Join-Path $QaRoot 'game'
 $LatestDir = Join-Path $QaRoot 'latest'
 $TestPack = Join-Path $RepoRoot 'src\test\resources\shaderpacks\focalis-depth-view'
 $RoutesPack = Join-Path $RepoRoot 'src\test\resources\shaderpacks\focalis-world-routes'
+$DimensionsPack = Join-Path $RepoRoot 'src\test\resources\shaderpacks\focalis-dimension-routes'
 
 if (-not ('FocalisQaWindow' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -307,6 +316,34 @@ features {
     $vertex = Join-Path $packs 'focalis-world-routes-broken\shaders\lib\vertex.glsl'
     $text = [IO.File]::ReadAllText($vertex)
     Write-Utf8 $vertex ($text.Replace('gl_Position = ftransform();', 'gl_Position = ftransform()'))
+    $target = Join-Path $packs 'focalis-dimension-routes'
+    if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+    Copy-Item -Recurse $DimensionsPack $target
+    New-DimensionsZip (Join-Path $packs 'focalis-dimension-routes.zip')
+}
+
+# The dimension pack as a ZIP, plus an entry for an empty world1 folder, which git can't keep in the folder pack.
+function New-DimensionsZip([string]$Path) {
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    if (Test-Path $Path) { Remove-Item -Force $Path }
+    $zip = [IO.Compression.ZipFile]::Open($Path, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $root = (Resolve-Path $DimensionsPack).Path
+        foreach ($file in Get-ChildItem -Recurse -File $root) {
+            $name = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+            $entry = $zip.CreateEntry($name)
+            $stream = $entry.Open()
+            try {
+                $bytes = [IO.File]::ReadAllBytes($file.FullName)
+                $stream.Write($bytes, 0, $bytes.Length)
+            } finally {
+                $stream.Dispose()
+            }
+        }
+        $zip.CreateEntry('shaders/world1/') | Out-Null
+    } finally {
+        $zip.Dispose()
+    }
 }
 
 function Test-LogLine([string]$Line, [string[]]$Allowed) {

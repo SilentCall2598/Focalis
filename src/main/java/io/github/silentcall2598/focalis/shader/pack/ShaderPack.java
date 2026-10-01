@@ -49,9 +49,21 @@ public final class ShaderPack {
         return root;
     }
 
-    /** Dimension folders with programs in them, keyed by folder name such as {@code world-1}. */
+    /**
+     * Dimension folders keyed by folder name such as {@code world-1}. A {@code world<id>} folder is included even
+     * without programs, since its presence still decides what its dimension uses.
+     */
     public Map<String, ProgramDirectory> dimensionDirectories() {
         return dimensionDirectories;
+    }
+
+    /**
+     * The folder a dimension draws with. A {@code world<id>} folder named exactly after the dimension replaces the
+     * shaders folder completely, even when its programs are missing or broken. Without one it's the shaders folder.
+     */
+    public ProgramDirectory programDirectoryFor(int dimension) {
+        ProgramDirectory override = dimensionDirectories.get(ProgramDirectory.worldFolder(dimension));
+        return override != null ? override : root;
     }
 
     public DimensionProperties dimensionProperties() {

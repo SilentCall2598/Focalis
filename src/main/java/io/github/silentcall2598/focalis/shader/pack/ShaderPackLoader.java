@@ -86,8 +86,19 @@ public final class ShaderPackLoader {
             }
         }
 
+        // A world folder without programs still turns shaders off for its dimension, so it's kept.
+        for (String folder : source.folders()) {
+            Integer worldId = ProgramDirectory.worldId(folder);
+            if (worldId != null && folder.equals(ProgramDirectory.worldFolder(worldId))
+                    && !dimensionDirectories.containsKey(folder)) {
+                dimensionDirectories.put(folder,
+                        new ProgramDirectory(folder, Collections.<String, ProgramSource>emptyMap()));
+            }
+        }
+
         for (String folder : dimensions.dimensionsByFolder().keySet()) {
-            if (!dimensionDirectories.containsKey(folder)) {
+            ProgramDirectory listed = dimensionDirectories.get(folder);
+            if (listed == null || listed.programs().isEmpty()) {
                 issues.add(new PackIssue(null, DimensionProperties.FILE_NAME + " lists folder " + folder
                         + ", which has no programs"));
             }

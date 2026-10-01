@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.shader;
 
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 
 /**
@@ -15,8 +16,15 @@ public interface WorldProgramMonitor {
     WorldProgramMonitor NONE = new WorldProgramMonitor() {
     };
 
-    /** The programs were built, and the ones that work are about to be bound. */
-    default void programsBuilt(BuiltWorldPrograms programs) {
+    /** The programs of one folder were built, which happens once per folder and session. */
+    default void programsBuilt(ProgramDirectory directory, BuiltWorldPrograms programs) {
+    }
+
+    /**
+     * A world pass selected other programs than the one before, or the same ones for another dimension. Runs before
+     * any of its stages.
+     */
+    default void programsSelected(int dimension, ProgramDirectory directory, BuiltWorldPrograms programs) {
     }
 
     /** Runs right after a stage's program scope opened, before vanilla draws. */

@@ -40,13 +40,17 @@ skies, video settings, and compatibility tooling for large modpacks.
   rendering and doesn't run shaderpack world programs itself. It needs OpenGL 3.0 and stays unavailable when
   OptiFine is installed.
 - Provides an experimental, off-by-default `world_programs` feature for testing. It binds the matching program
-  from the selected pack's main `shaders` folder while vanilla draws the sky, terrain, entities, particles,
-  weather and clouds. The hand isn't bound, and vanilla's glowing entity outlines keep their own shaders. Entity
-  and block entity renderers that use their own shaders can do so, and the program is bound again after each one.
-  No uniforms, textures, dimension folders or composite passes are set up, so regular shaderpacks won't render
+  from the selected pack while vanilla draws the sky, terrain, entities, particles, weather and clouds. Each
+  dimension uses the pack's `shaders/world<id>` folder for its numeric dimension id when there is one, like
+  `world-1` for the Nether, and the main `shaders` folder otherwise. A world folder replaces the main folder
+  completely, so an empty one or one whose programs fail leaves that dimension vanilla. `dimension.properties` is
+  read but not used yet. Each folder is built the first time a dimension needs it and kept, so changing dimension
+  or rejoining doesn't build it again. The hand isn't bound, and vanilla's glowing entity outlines keep their own
+  shaders. Entity and block entity renderers that use their own shaders can do so, and the program is bound again
+  after each one. No uniforms, textures or composite passes are set up, so regular shaderpacks won't render
   correctly. Programs that fail to load or build are logged and those parts draw the vanilla way. It stays
-  unavailable when OptiFine is installed. The development test pack lives in
-  `src/test/resources/shaderpacks/focalis-world-routes`.
+  unavailable when OptiFine is installed. The development test packs live in
+  `src/test/resources/shaderpacks/focalis-world-routes` and `focalis-dimension-routes`.
 
 ## Requirements
 
@@ -112,6 +116,3 @@ All code lives under `io.github.silentcall2598.focalis`:
 
 Focalis is licensed under the GNU Lesser General Public License, version 3 only (SPDX: `LGPL-3.0-only`).
 See [LICENSE](LICENSE). LGPLv3 adds additional permissions on top of GPLv3, whose text is included in [COPYING](COPYING).
-
-Focalis does not contain OptiFine code, decompiled or otherwise. Any code adapted from other open-source projects
-is used only after its license has been checked for compatibility, and its origin is recorded.

@@ -15,9 +15,10 @@ import java.util.Set;
 
 /**
  * Binds the built world program of each precise world stage around its draw and restores the previous program at
- * its END. A role without a ready program gets a scope that binds nothing. Where vanilla binds its own programs
- * inside a stage, it steps aside until that part is over. It never owns, builds or deletes programs. Client thread
- * only, with the GL context current.
+ * its END, using the programs selected for the current world pass. A role without a ready program, or a pass without
+ * selected programs, gets a scope that binds nothing. Where vanilla binds its own programs inside a stage, it steps
+ * aside until that part is over. It never owns, builds or deletes programs. Client thread only, with the GL context
+ * current.
  */
 public final class WorldProgramBinding {
 
@@ -36,16 +37,31 @@ public final class WorldProgramBinding {
     public static final Set<RenderStage> VANILLA_PROGRAM_STAGES = Collections.unmodifiableSet(
             EnumSet.of(RenderStage.ENTITY_OUTLINES));
 
-    private final BuiltWorldPrograms programs;
     private final ScopedProgramBinding scopes;
+    @Nullable
+    private BuiltWorldPrograms programs;
 
-    public WorldProgramBinding(BuiltWorldPrograms programs) {
-        this(programs, new ScopedProgramBinding());
+    WorldProgramBinding(ScopedProgramBinding scopes) {
+        this.scopes = Objects.requireNonNull(scopes, "scopes");
     }
 
-    WorldProgramBinding(BuiltWorldPrograms programs, ScopedProgramBinding scopes) {
-        this.programs = Objects.requireNonNull(programs, "programs");
-        this.scopes = scopes;
+    /**
+     * Switches the programs the stages bind, or to none. Only allowed while no scope is open or suspended, so every
+     * scope ends with the programs it started with. Otherwise every open scope is unwound and this throws.
+     */
+    public void select(@Nullable BuiltWorldPrograms selected) {
+        if (!scopes.isEmpty() || scopes.isSuspended()) {
+            scopes.abort();
+            throw new IllegalStateException("World programs can't be switched while a program scope is open or"
+                    + " suspended");
+        }
+        programs = selected;
+    }
+
+    /** The programs the stages bind, or null when none are selected. */
+    @Nullable
+    public BuiltWorldPrograms selected() {
+        return programs;
     }
 
     /**
@@ -97,10 +113,17 @@ public final class WorldProgramBinding {
         }
     }
 
-    /** The program a role binds, or null when it has none ready and the stage draws the way it did before. */
+    /**
+     * The program a role binds, or null when nothing is selected or the role has none ready, and the stage draws the
+     * way it did before.
+     */
     @Nullable
     public ShaderProgram program(ShaderProgramRole role) {
-        BuiltWorldPrograms.Entry entry = programs.forRole(role);
+        BuiltWorldPrograms selected = programs;
+        if (selected == null) {
+            return null;
+        }
+        BuiltWorldPrograms.Entry entry = selected.forRole(role);
         return entry.ready() ? entry.program() : null;
     }
 

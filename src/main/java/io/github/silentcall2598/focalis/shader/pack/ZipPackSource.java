@@ -11,6 +11,7 @@ import java.util.Enumeration;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
@@ -22,11 +23,13 @@ final class ZipPackSource implements ShaderPackSource {
     private final String name;
     private final ZipFile zip;
     private final Map<ShaderPath, ZipEntry> files;
+    private final Set<String> folders;
 
-    private ZipPackSource(String name, ZipFile zip, Map<ShaderPath, ZipEntry> files) {
+    private ZipPackSource(String name, ZipFile zip, Map<ShaderPath, ZipEntry> files, Set<String> folders) {
         this.name = name;
         this.zip = zip;
         this.files = files;
+        this.folders = folders;
     }
 
     static ZipPackSource open(Path zipFile) throws ShaderPackException, IOException {
@@ -38,7 +41,9 @@ final class ZipPackSource implements ShaderPackSource {
             throw new ShaderPackException("'" + name + "' is not a readable ZIP file", e);
         }
         try {
-            return new ZipPackSource(name, zip, index(name, zip));
+            Set<String> folders = new TreeSet<>();
+            Map<ShaderPath, ZipEntry> files = index(name, zip, folders);
+            return new ZipPackSource(name, zip, files, Collections.unmodifiableSet(folders));
         } catch (ShaderPackException e) {
             zip.close();
             throw e;
@@ -49,8 +54,10 @@ final class ZipPackSource implements ShaderPackSource {
         }
     }
 
-    // Every entry is checked, even outside shaders/, because a ZIP containing path tricks isn't worth trusting.
-    private static Map<ShaderPath, ZipEntry> index(String name, ZipFile zip) throws ShaderPackException {
+    // Every entry is checked, even outside shaders/, because a ZIP containing path tricks isn't worth trusting. A
+    // folder is there when the ZIP has an entry for it or for anything inside it.
+    private static Map<ShaderPath, ZipEntry> index(String name, ZipFile zip, Set<String> folders)
+            throws ShaderPackException {
         Map<ShaderPath, ZipEntry> files = new TreeMap<>();
         String nestedShadersFolder = null;
         for (Enumeration<? extends ZipEntry> entries = zip.entries(); entries.hasMoreElements(); ) {
@@ -61,7 +68,18 @@ final class ZipPackSource implements ShaderPackSource {
             } catch (IllegalArgumentException e) {
                 throw new ShaderPackException("'" + name + "' contains an unsafe entry: " + e.getMessage());
             }
-            if (entry.isDirectory() || path.isEmpty()) {
+            // ZipEntry only knows folder entries ending in a slash, but Windows tools sometimes write backslashes.
+            boolean folder = entry.isDirectory() || entry.getName().endsWith("\\");
+            if (path.startsWith(SHADERS_PREFIX)) {
+                String inShaders = path.substring(SHADERS_PREFIX.length());
+                int slash = inShaders.indexOf('/');
+                if (slash > 0) {
+                    folders.add(inShaders.substring(0, slash));
+                } else if (folder) {
+                    folders.add(inShaders);
+                }
+            }
+            if (folder || path.isEmpty()) {
                 continue;
             }
             if (!path.startsWith(SHADERS_PREFIX)) {
@@ -93,6 +111,11 @@ final class ZipPackSource implements ShaderPackSource {
     @Override
     public Set<ShaderPath> files() {
         return files.keySet();
+    }
+
+    @Override
+    public Set<String> folders() {
+        return folders;
     }
 
     @Override
