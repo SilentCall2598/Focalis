@@ -28,6 +28,11 @@ public final class ProgramDirectory {
         return name;
     }
 
+    /** The folder as a pack path for messages, like {@code shaders/world-1}. */
+    public String path() {
+        return name.isEmpty() ? "shaders" : "shaders/" + name;
+    }
+
     /** The program with this name, or null if this folder doesn't provide it. */
     @Nullable
     public ProgramSource find(String programName) {
@@ -42,6 +47,11 @@ public final class ProgramDirectory {
     @Nullable
     public Integer worldId() {
         return worldId(name);
+    }
+
+    /** The exact folder name a dimension id selects, like {@code world-1}. */
+    public static String worldFolder(int dimension) {
+        return "world" + dimension;
     }
 
     @Nullable

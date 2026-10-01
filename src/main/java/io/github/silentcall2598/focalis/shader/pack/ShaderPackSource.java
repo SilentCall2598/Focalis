@@ -18,6 +18,12 @@ public interface ShaderPackSource extends Closeable {
     /** Every regular file under {@code shaders}, whether or not Focalis ever reads it. */
     Set<ShaderPath> files();
 
+    /**
+     * The names of the folders directly in {@code shaders}, also empty ones. A ZIP only has an empty folder when it
+     * has an entry for that folder.
+     */
+    Set<String> folders();
+
     /** Reads a file as UTF-8 text. */
     String readText(ShaderPath path) throws IOException;
 
