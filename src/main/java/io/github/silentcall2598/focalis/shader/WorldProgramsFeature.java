@@ -25,6 +25,7 @@ import io.github.silentcall2598.focalis.shader.program.ProgramFailure;
 import io.github.silentcall2598.focalis.shader.program.ShaderCapabilities;
 import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramBinding;
+import io.github.silentcall2598.focalis.shader.program.WorldProgramInputs;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.WorldClient;
@@ -43,8 +44,9 @@ import java.util.function.Supplier;
 /**
  * Experimental. Binds the pack program of each world stage while vanilla draws it. Each dimension takes its programs
  * from the pack's {@code world<id>} folder for it when there is one and from the main shaders folder otherwise.
- * Nothing else a shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its
- * programs leave rendering vanilla. Only a Focalis bug fails the feature.
+ * The legacy texture and lightmap samplers read the units Minecraft binds those textures on. Nothing else a
+ * shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its programs leave
+ * rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -79,8 +81,8 @@ public final class WorldProgramsFeature extends Feature {
     @Override
     protected void loadConfig(ConfigSection config) {
         packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. A world<id> folder"
-                + " in its shaders folder replaces the main one in that dimension. No uniforms or composite passes"
-                + " are set up.");
+                + " in its shaders folder replaces the main one in that dimension. Only the texture and lightmap"
+                + " samplers are set, and no composite passes run.");
     }
 
     @Override
@@ -229,6 +231,11 @@ public final class WorldProgramsFeature extends Feature {
                                 : failure + "\nFull driver log:\n" + failure.driverLog());
             } else if (program != null && !program.driverLog().isEmpty()) {
                 logger.warn("{} was built, and the driver reported:\n{}", program.name(), program.driverLog());
+            }
+            WorldProgramInputs inputs = build.inputs();
+            if (program != null && inputs != null && !inputs.unprovided().isEmpty()) {
+                logger.info("{} uses uniforms Focalis doesn't set yet, so they read as zero: {}", program.name(),
+                        inputs.unprovided());
             }
         }
     }
