@@ -62,8 +62,9 @@ something else is bound for drawing, which the world target corrects, so it isn'
 scenario. Right after each world stage START the program of its role has to be current, and right after its END the
 program from before the START has to be back. No Focalis program may be current at HAND, in a stage without a
 scope or while vanilla draws entity outlines. Inside a bound ENTITIES stage, the entities program has to be current
-right after every entity and block entity renderer returns. The probe also wraps the chest renderer to check the
-program a real block entity draw gets. The programs have to be built once for the whole run, across rejoins.
+right after every outermost entity and block entity renderer returns. The probe also wraps the chest renderer to
+check the program a real block entity draw gets. The programs have to be built once for the whole run, across
+rejoins.
 
 ## Output
 

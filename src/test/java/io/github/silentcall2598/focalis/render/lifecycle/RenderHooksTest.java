@@ -19,6 +19,7 @@ class RenderHooksTest {
     void doesNothingUntilInstalledThenReportsWorldStartOnly() {
         RenderHooks.worldPassStart(0.5F);
         RenderHooks.worldPassEnd();
+        RenderHooks.rendererStarted();
         assertEquals(HookAvailability.State.UNKNOWN, RenderHooks.worldStart().state());
 
         RenderLifecycle lifecycle = new RenderLifecycle();
@@ -26,14 +27,29 @@ class RenderHooksTest {
         List<String> calls = new ArrayList<>();
         lifecycle.register(RenderStage.WORLD, "test", (stage, phase, kind, ticks) ->
                 calls.add(stage + "/" + phase + "/" + ticks));
+        List<RenderCheckpoint> checkpoints = new ArrayList<>();
+        lifecycle.registerCheckpoint("test", checkpoints::add);
 
+        RenderHooks.rendererStarted();
+        RenderHooks.rendererReturned(RenderCheckpoint.ENTITY_RENDERED);
+        RenderHooks.rendererStarted();
+        RenderHooks.rendererStarted();
+        RenderHooks.rendererReturned(RenderCheckpoint.ENTITY_RENDERED);
+        RenderHooks.rendererReturned(RenderCheckpoint.BLOCK_ENTITY_RENDERED);
+        RenderHooks.rendererStarted();
+        RenderHooks.rendererStarted();
+        RenderHooks.rendererReturned(RenderCheckpoint.ENTITY_RENDERED);
         RenderHooks.worldPassStart(0.25F);
+        RenderHooks.rendererStarted();
+        RenderHooks.rendererReturned(RenderCheckpoint.ENTITY_RENDERED);
         RenderHooks.worldPassEnd();
         RenderHooks.worldPassStart(0.75F);
 
         assertTrue(lifecycle.isDispatched(RenderStage.WORLD));
         assertTrue(RenderHooks.worldStart().isAvailable());
         assertEquals(Arrays.asList("WORLD/START/0.25", "WORLD/START/0.75"), calls);
+        assertEquals(Arrays.asList(RenderCheckpoint.ENTITY_RENDERED, RenderCheckpoint.BLOCK_ENTITY_RENDERED,
+                RenderCheckpoint.ENTITY_RENDERED), checkpoints);
         assertThrows(IllegalStateException.class, () -> RenderHooks.install(new RenderLifecycle()));
     }
 
