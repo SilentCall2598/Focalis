@@ -15,6 +15,7 @@ import java.util.Collections;
 
 import static io.github.silentcall2598.focalis.shader.program.TestPrograms.FRAGMENT;
 import static io.github.silentcall2598.focalis.shader.program.TestPrograms.VERTEX;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -195,20 +196,106 @@ class WorldProgramInputsTest {
                 () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT));
 
         assertSame(failure, thrown);
+        assertEquals(0, thrown.getSuppressed().length);
         assertEquals(EXTERNAL, gl.current);
+        assertEquals(EXTERNAL, (int) gl.uses.get(gl.uses.size() - 1));
         assertTrue(gl.livePrograms.isEmpty());
         assertTrue(gl.liveShaders.isEmpty());
     }
 
     @Test
-    void aFailingRestoreIsReportedAndLeaksNothing() throws Exception {
-        IllegalStateException failure = new IllegalStateException("restore");
-        // The first use binds the new program and the second puts the previous one back.
-        gl.useThrowsOnCall.put(2, failure);
+    void aBindThatFailsBeforeBindingIsStillFollowedByTheRestore() throws Exception {
+        IllegalStateException failure = new IllegalStateException("bind");
+        gl.useThrowsOnCall.put(1, failure);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT));
+
+        assertSame(failure, thrown);
+        assertEquals(2, gl.uses.size());
+        assertEquals(EXTERNAL, (int) gl.uses.get(1));
+        assertEquals(EXTERNAL, gl.current);
+        assertEquals(Collections.emptyList(), gl.uniformSets);
+        assertTrue(gl.livePrograms.isEmpty());
+    }
+
+    @Test
+    void aBindThatThrowsAfterBindingIsUndone() throws Exception {
+        IllegalStateException failure = new IllegalStateException("late error");
+        gl.useThrowsAfterBindOnCall.put(1, failure);
 
         assertSame(failure, assertThrows(IllegalStateException.class,
                 () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT)));
 
+        assertEquals(EXTERNAL, gl.current);
+        assertEquals(Collections.emptyList(), gl.uniformSets);
+        assertTrue(gl.livePrograms.isEmpty());
+    }
+
+    @Test
+    void aFailedRestoreLeavesNoProgramBoundInsteadOfTheDeletedOne() throws Exception {
+        IllegalStateException failure = new IllegalStateException("restore");
+        // The first use binds the new program and the second puts the previous one back.
+        gl.useThrowsOnCall.put(2, failure);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT));
+
+        assertSame(failure, thrown);
+        assertEquals(0, thrown.getSuppressed().length);
+        int program = gl.uses.get(0);
+        assertEquals(Arrays.asList(program, EXTERNAL, 0), gl.uses);
+        assertEquals(0, gl.current);
+        assertEquals(Collections.singletonList(program), gl.deleteOrder);
+        assertTrue(gl.livePrograms.isEmpty());
+    }
+
+    @Test
+    void aRestoreThatThrowsAfterBindingKeepsThePreviousProgram() throws Exception {
+        gl.useThrowsAfterBindOnCall.put(2, new IllegalStateException("late error"));
+
+        assertThrows(IllegalStateException.class,
+                () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT));
+
+        // The previous program is back, so nothing else is bound over it.
+        assertEquals(2, gl.uses.size());
+        assertEquals(EXTERNAL, gl.current);
+        assertTrue(gl.livePrograms.isEmpty());
+    }
+
+    @Test
+    void laterFailuresAreKeptOnTheFirstOne() throws Exception {
+        IllegalStateException uniform = new IllegalStateException("uniform");
+        IllegalStateException restore = new IllegalStateException("restore");
+        IllegalStateException unbind = new IllegalStateException("unbind");
+        gl.uniformThrows = uniform;
+        gl.useThrowsOnCall.put(2, restore);
+        gl.useThrowsOnCall.put(3, unbind);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT));
+
+        assertSame(uniform, thrown);
+        assertArrayEquals(new Throwable[] {restore, unbind}, thrown.getSuppressed());
+        // Nothing could be unbound, so the program is still current when it's deleted. GL only flags it then.
+        int program = gl.uses.get(0);
+        assertEquals(program, gl.current);
+        assertEquals(Collections.singletonList(program), gl.deleteOrder);
+    }
+
+    @Test
+    void aFailingQueryAfterAFailedRestoreIsKept() throws Exception {
+        IllegalStateException restore = new IllegalStateException("restore");
+        IllegalStateException query = new IllegalStateException("query");
+        gl.useThrowsOnCall.put(2, restore);
+        // The first query is the one that remembers the previous program.
+        gl.currentThrowsOnCall.put(2, query);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT));
+
+        assertSame(restore, thrown);
+        assertArrayEquals(new Throwable[] {query}, thrown.getSuppressed());
         assertTrue(gl.livePrograms.isEmpty());
     }
 

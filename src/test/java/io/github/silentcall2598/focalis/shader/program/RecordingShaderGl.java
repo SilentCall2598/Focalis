@@ -57,6 +57,12 @@ final class RecordingShaderGl implements ShaderGl {
     int locationQueries;
     // Thrown by the useProgram call with this number, counting from 1. The current program doesn't change then.
     final Map<Integer, Throwable> useThrowsOnCall = new HashMap<>();
+    // Thrown by the useProgram call with this number after it bound the program, like a wrapper that checks for
+    // errors after the call and finds one left over from earlier.
+    final Map<Integer, Throwable> useThrowsAfterBindOnCall = new HashMap<>();
+    // Thrown by the currentProgram call with this number, counting from 1.
+    final Map<Integer, Throwable> currentThrowsOnCall = new HashMap<>();
+    private int currentQueries;
     @Nullable
     Throwable uniformThrows;
 
@@ -224,6 +230,11 @@ final class RecordingShaderGl implements ShaderGl {
     @Override
     public int currentProgram() {
         calls++;
+        currentQueries++;
+        Throwable failure = currentThrowsOnCall.get(currentQueries);
+        if (failure != null) {
+            throwUnchecked(failure);
+        }
         return current;
     }
 
@@ -236,6 +247,10 @@ final class RecordingShaderGl implements ShaderGl {
             throwUnchecked(failure);
         }
         current = program;
+        Throwable late = useThrowsAfterBindOnCall.get(uses.size());
+        if (late != null) {
+            throwUnchecked(late);
+        }
     }
 
     /** The value a uniform of a program holds, 0 until something set it, like after a real link. */

@@ -163,6 +163,8 @@ public final class BuiltWorldPrograms {
                 program.delete();
                 return new Build(prepared, null, null, e.failure());
             } catch (RuntimeException | LinkageError e) {
+                // If the inputs couldn't put the previous program back and this one is still current, GL only flags it
+                // for deletion and frees it once something else is bound.
                 try {
                     program.delete();
                 } catch (RuntimeException | LinkageError deleteFailure) {

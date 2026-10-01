@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -32,7 +33,8 @@ public final class WorldProgramInputs {
     /**
      * Finds the samplers the program uses and points each at its texture unit. Must run on the client thread with
      * the context current and no Focalis program scope open. The program is bound for a moment and whatever was
-     * current before is bound again, even when this throws.
+     * current before is bound again. That is tried even when something throws, and if putting it back fails while
+     * the program is still current, no program is left bound instead.
      *
      * @throws ProgramBuildException if the program declares a supported sampler with another type
      */
@@ -74,9 +76,10 @@ public final class WorldProgramInputs {
             return;
         }
         int previous = gl.currentProgram();
-        gl.useProgram(program);
         Throwable failure = null;
+        // The bind is inside too, since a wrapper that reports errors after the call can throw once it already bound.
         try {
+            gl.useProgram(program);
             for (WorldSampler sampler : WorldSampler.values()) {
                 int location = locations[sampler.ordinal()];
                 if (location >= 0) {
@@ -89,11 +92,8 @@ public final class WorldProgramInputs {
         try {
             gl.useProgram(previous);
         } catch (RuntimeException | LinkageError e) {
-            if (failure == null) {
-                failure = e;
-            } else {
-                failure.addSuppressed(e);
-            }
+            failure = collect(failure, e);
+            failure = unbindAfterFailedRestore(gl, program, failure);
         }
         if (failure instanceof RuntimeException) {
             throw (RuntimeException) failure;
@@ -101,6 +101,29 @@ public final class WorldProgramInputs {
         if (failure instanceof LinkageError) {
             throw (LinkageError) failure;
         }
+    }
+
+    // The caller deletes the program next, and GL only flags a current program for deletion. So when it's still
+    // current, nothing is bound instead. If even that fails it stays current until something else binds a program.
+    private static Throwable unbindAfterFailedRestore(ShaderGl gl, int program, Throwable failure) {
+        try {
+            if (gl.currentProgram() == program) {
+                gl.useProgram(0);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            return collect(failure, e);
+        }
+        return failure;
+    }
+
+    private static Throwable collect(@Nullable Throwable first, Throwable next) {
+        if (first == null) {
+            return next;
+        }
+        if (first != next) {
+            first.addSuppressed(next);
+        }
+        return first;
     }
 
     private static String describe(ActiveUniform uniform, boolean array) {
