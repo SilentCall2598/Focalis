@@ -45,6 +45,8 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `world-program-bad-pack` | World programs on with a copy of `focalis-world-routes` where no program compiles. Each failed program is logged, the feature stays active, the folder is built only once, and nothing is ever bound. |
 | `world-program-dimensions` | World programs on with the `focalis-dimension-routes` folder pack. Flies through the overworld, the Nether and the End with `/forge setdimension`, back to the overworld, and rejoins. The overworld has to use only `world0`, so its sky has no program even though the main folder has one. The Nether has to draw vanilla because `world-1` doesn't compile, without falling back to the main folder. The End has no `world1` and uses the main folder. Each folder has to be built exactly once. |
 | `world-program-dimensions-zip` | The same tour with the pack as a ZIP built by the runner, which also has an entry for an empty `world1` folder. The End then has to draw vanilla. |
+| `world-program-samplers` | World target and world programs on with `focalis-world-samplers`, whose lit programs draw the bound texture times the lightmap. With the HUD hidden, the middle of the screen has to show a red wool wall, then a white sheep, then a chest's wood, and the wall has to lose most of its light at midnight. Each program has to hold the expected sampler units, and the sheep and chests have to draw with their own texture and the lightmap. |
+| `samplers-vanilla-reference` | The same scene with Focalis rendering nothing, which has to pass the same color checks. It isn't meant to run with `-WorldPrograms`, whose test pack doesn't use the lightmap. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
 state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
@@ -66,7 +68,10 @@ program from before the START has to be back. No Focalis program may be current 
 scope or while vanilla draws entity outlines. Inside a bound ENTITIES stage, the entities program has to be current
 right after every outermost entity and block entity renderer returns. The probe also wraps the chest renderer to
 check the program a real block entity draw gets. Each program folder has to be built once for the whole run, across
-rejoins and dimension changes.
+rejoins and dimension changes. Every built program's `texture` and `lightmap` samplers are read back from GL and
+have to hold units 0 and 1. The active texture unit and its texture have to be the same right after each Focalis
+stage START and END as right before it. While a sheep or a chest draws in a bound scope, unit 1 has to hold
+Minecraft's lightmap and unit 0 its own texture.
 
 ## Output
 

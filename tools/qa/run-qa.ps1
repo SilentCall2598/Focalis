@@ -59,6 +59,9 @@ $Scenarios = [ordered]@{
         ProgramsPack = 'focalis-dimension-routes' }
     'world-program-dimensions-zip'   = @{ Shaders = $false; Pack = ''; WorldPrograms = $true
         ProgramsPack = 'focalis-dimension-routes.zip' }
+    'world-program-samplers'         = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true
+        ProgramsPack = 'focalis-world-samplers' }
+    'samplers-vanilla-reference'     = @{ Shaders = $false; Pack = '' }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.
@@ -320,6 +323,9 @@ features {
     if (Test-Path $target) { Remove-Item -Recurse -Force $target }
     Copy-Item -Recurse $DimensionsPack $target
     New-DimensionsZip (Join-Path $packs 'focalis-dimension-routes.zip')
+    $target = Join-Path $packs 'focalis-world-samplers'
+    if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+    Copy-Item -Recurse (Join-Path $RepoRoot 'src\test\resources\shaderpacks\focalis-world-samplers') $target
 }
 
 # The dimension pack as a ZIP, plus an entry for an empty world1 folder, which git can't keep in the folder pack.
