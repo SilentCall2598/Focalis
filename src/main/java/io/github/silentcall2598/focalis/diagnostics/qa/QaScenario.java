@@ -367,6 +367,11 @@ public enum QaScenario {
         }
 
         @Override
+        boolean injectsRendererLeaks() {
+            return true;
+        }
+
+        @Override
         void evaluate(QaReport r) {
             checkFeatureActive(r, WORLD_PROGRAMS);
             checkFeatureActive(r, WorldTargetFeature.ID);
@@ -399,6 +404,18 @@ public enum QaScenario {
                             && programs.blockEntityMismatches == 0,
                     programs.blockEntityMismatches + " of " + programs.blockEntitySamples + " chest draws had another"
                             + " program, " + programs.blockEntitySamplesAfterOutlines + " of them after the outlines");
+            r.check("renderer-leaks-injected", programs.entityLeaksInjected > 0
+                            && programs.blockEntityLeaksInjected > 0,
+                    programs.entityLeaksInjected + " pig and " + programs.blockEntityLeaksInjected + " chest renderers"
+                            + " left another program bound");
+            r.check("program-back-after-renderers", programs.entityRendererChecks > 0
+                            && programs.blockEntityRendererChecks > 0 && programs.rendererMismatches == 0
+                            && programs.entityRenderersLeftOther >= programs.entityLeaksInjected
+                            && programs.blockEntityRenderersLeftOther >= programs.blockEntityLeaksInjected,
+                    programs.rendererMismatches + " of " + programs.entityRendererChecks + " entity and "
+                            + programs.blockEntityRendererChecks + " block entity renderers returned without the"
+                            + " ENTITIES program, " + programs.entityRenderersLeftOther + " and "
+                            + programs.blockEntityRenderersLeftOther + " had left another one");
             checkTestPackPrograms(r);
             r.check("screenshots", r.screenshots.size() == 2, r.screenshots.size() + " of 2 saved");
         }
@@ -501,6 +518,11 @@ public enum QaScenario {
     }
 
     boolean expectsWorldProgramsStopped() {
+        return false;
+    }
+
+    // The probe's pig and chest renderers then leave other programs bound, like mod renderers with their own shaders.
+    boolean injectsRendererLeaks() {
         return false;
     }
 
@@ -682,6 +704,9 @@ public enum QaScenario {
         // Block entities draw after the outlines inside the same ENTITIES stage.
         steps.add(QaStep.action("command /setblock chest", probe -> probe.command(
                 "/setblock ~-3 ~ ~1 minecraft:chest")));
+        // Not next to the first one, which would make a double chest, so the two draw one after the other.
+        steps.add(QaStep.action("command /setblock second chest", probe -> probe.command(
+                "/setblock ~-3 ~ ~3 minecraft:chest")));
         steps.add(QaStep.action("command /setblock sign", probe -> probe.command(
                 "/setblock ~-3 ~ ~-1 minecraft:standing_sign 12 replace {Text2:\"{\\\"text\\\":\\\"Focalis\\\"}\"}")));
         steps.add(QaStep.waitTicks(40));

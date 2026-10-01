@@ -349,6 +349,16 @@ final class QaReport {
         int blockEntitySamples;
         int blockEntitySamplesAfterOutlines;
         int blockEntityMismatches;
+        // Right after each renderer returned inside a bound ENTITIES scope. Renderers may leave any program bound,
+        // and the ENTITIES program has to be current again once the features had their turn.
+        int entityRendererChecks;
+        int blockEntityRendererChecks;
+        int entityRenderersLeftOther;
+        int blockEntityRenderersLeftOther;
+        int rendererMismatches;
+        // Programs the probe's own pig and chest renderers deliberately left bound.
+        int entityLeaksInjected;
+        int blockEntityLeaksInjected;
         // Stages without a scope that still had a Focalis program current.
         int unboundLeaks;
         final List<String> problems = new ArrayList<>();

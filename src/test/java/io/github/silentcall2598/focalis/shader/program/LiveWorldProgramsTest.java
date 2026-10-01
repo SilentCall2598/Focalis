@@ -124,6 +124,51 @@ class LiveWorldProgramsTest {
     }
 
     @Test
+    void rendererThatLeftAnotherProgramGetsTheStageProgramBack() throws Exception {
+        LiveWorldPrograms live = build("gbuffers_entities");
+        int entities = id(live, ShaderProgramRole.ENTITIES);
+        live.worldStart();
+        live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+
+        // A mod renderer that binds its own shader and releases it to 0, then one that leaves its own bound.
+        gl.current = 0;
+        assertTrue(live.rendererReturned());
+        assertEquals(entities, gl.current);
+        assertFalse(live.rendererReturned());
+        gl.current = 55;
+        assertTrue(live.rendererReturned());
+        live.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.worldEnd();
+
+        assertEquals(EXTERNAL, gl.current);
+        assertEquals(Arrays.asList(entities, entities, entities, EXTERNAL), gl.uses);
+    }
+
+    @Test
+    void renderersOutsideTheWorldPassOrInsideTheOutlinesAreLeftAlone() throws Exception {
+        LiveWorldPrograms live = build("gbuffers_entities");
+        int entities = id(live, ShaderProgramRole.ENTITIES);
+        gl.current = 0;
+        assertFalse(live.rendererReturned());
+        assertEquals(0, gl.current);
+        gl.current = EXTERNAL;
+
+        live.worldStart();
+        live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.vanillaProgramsStart(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        gl.current = 0;
+        assertFalse(live.rendererReturned());
+        assertEquals(0, gl.current);
+        live.vanillaProgramsEnd(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+        live.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        live.worldEnd();
+        gl.current = 0;
+        assertFalse(live.rendererReturned());
+
+        assertEquals(Arrays.asList(entities, EXTERNAL, entities, EXTERNAL), gl.uses);
+    }
+
+    @Test
     void worldEndDuringOutlinesDropsTheSuspensionAndThrows() throws Exception {
         LiveWorldPrograms live = build("gbuffers_entities");
         int entities = id(live, ShaderProgramRole.ENTITIES);

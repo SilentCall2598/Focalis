@@ -15,7 +15,8 @@ import java.util.Objects;
  * programs it binds. Client thread only, with the OpenGL context current.
  *
  * <p>The open scopes can step aside for a region that binds its own programs, like vanilla's entity outline shaders.
- * While suspended they stay open but leave the program alone, and resuming binds the Focalis program again.
+ * While suspended they stay open but leave the program alone, and resuming binds the Focalis program again. Code that
+ * only borrows the program for a moment, like a mod's renderer, is repaired afterwards with {@link #reassert}.
  *
  * <p>If a call throws, every open scope is unwound first, so no Focalis program stays bound after a failure.
  */
@@ -157,6 +158,31 @@ public final class ScopedProgramBinding {
     }
 
     /**
+     * Binds the Focalis program the open scopes own again if something else is current now. Meant for right after code
+     * Focalis doesn't control returned, like one entity renderer, which may bind whatever it wants while it runs. The
+     * scopes, and what their ENDs restore, stay as they are. Does nothing while suspended or when the open scopes own
+     * no program.
+     *
+     * @return whether the program had to be bound again
+     */
+    public boolean reassert() {
+        int owned = ownedProgram();
+        if (owned == NO_PROGRAM) {
+            return false;
+        }
+        try {
+            if (gl.currentProgram() == owned) {
+                return false;
+            }
+            gl.useProgram(owned);
+            return true;
+        } catch (RuntimeException | LinkageError e) {
+            unwind(e);
+            throw e;
+        }
+    }
+
+    /**
      * Emergency cleanup. Closes every open scope newest first and restores what each one changed. If a restore
      * throws, the rest are still attempted and the first failure is rethrown with later ones suppressed. Suspended
      * scopes are only dropped, since their programs already went back when they stepped aside.
@@ -205,6 +231,26 @@ public final class ScopedProgramBinding {
             }
         }
         return -1;
+    }
+
+    // The innermost bound program, as long as every scope opened inside it started with that program still current.
+    // A scope that started with another program means something else had taken over by then, and that isn't
+    // Focalis's to undo.
+    private int ownedProgram() {
+        if (suspendedStage != null) {
+            return NO_PROGRAM;
+        }
+        int inner = innermostChanged();
+        if (inner < 0) {
+            return NO_PROGRAM;
+        }
+        int program = targets[inner];
+        for (int i = inner + 1; i < depth; i++) {
+            if (previousPrograms[i] != program) {
+                return NO_PROGRAM;
+            }
+        }
+        return program;
     }
 
     private int outermostChanged() {

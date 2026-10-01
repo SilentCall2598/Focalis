@@ -98,6 +98,16 @@ public final class LiveWorldPrograms {
         }
     }
 
+    /**
+     * Right after one entity or block entity renderer returned. It may have bound its own programs and left another
+     * one bound, so the stage's program is bound again if needed.
+     *
+     * @return whether the program had to be bound again
+     */
+    public boolean rendererReturned() {
+        return worldOpen && binding.reassert();
+    }
+
     // A scope still open here never got its END, or a suspension its resume. Both are closed so no program stays
     // bound, and this throws because Focalis lost track of the stages.
     private void checkClosed(String when) {

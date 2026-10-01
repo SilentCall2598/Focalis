@@ -82,6 +82,14 @@ public final class WorldProgramBinding {
         scopes.resume(stage, drawKind);
     }
 
+    /**
+     * Takes the program back after one renderer inside a bound stage returned with something else bound. See
+     * {@link ScopedProgramBinding#reassert}.
+     */
+    public boolean reassert() {
+        return scopes.reassert();
+    }
+
     private void checkVanillaStage(RenderStage stage) {
         if (!VANILLA_PROGRAM_STAGES.contains(stage)) {
             scopes.abort();

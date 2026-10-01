@@ -6,21 +6,27 @@ import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.tileentity.TileEntity;
 
-/** QA only. Runs a check right before a block entity draws, then draws it with the renderer it replaced. */
+/**
+ * QA only. Runs a check right before a block entity draws with the renderer it replaced, and another step as the
+ * last thing before returning.
+ */
 final class SamplingRenderer<T extends TileEntity> extends TileEntitySpecialRenderer<T> {
 
     private final TileEntitySpecialRenderer<T> original;
-    private final Runnable sample;
+    private final Runnable before;
+    private final Runnable after;
 
-    SamplingRenderer(TileEntitySpecialRenderer<T> original, Runnable sample) {
+    SamplingRenderer(TileEntitySpecialRenderer<T> original, Runnable before, Runnable after) {
         this.original = original;
-        this.sample = sample;
+        this.before = before;
+        this.after = after;
     }
 
     @Override
     public void render(T te, double x, double y, double z, float partialTicks, int destroyStage, float alpha) {
-        sample.run();
+        before.run();
         original.render(te, x, y, z, partialTicks, destroyStage, alpha);
+        after.run();
     }
 
     @Override

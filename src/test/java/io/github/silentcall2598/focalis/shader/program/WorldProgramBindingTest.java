@@ -324,6 +324,43 @@ class WorldProgramBindingTest {
     }
 
     @Test
+    void reassertBindsTheStageProgramAfterARendererChangedIt() throws Exception {
+        load("gbuffers_entities");
+        int entities = id(ShaderProgramRole.ENTITIES);
+        binding.start(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        gl.current = 0;
+
+        assertTrue(binding.reassert());
+        binding.end(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+
+        assertEquals(EXTERNAL, gl.current);
+        assertUses(entities, entities, EXTERNAL);
+    }
+
+    @Test
+    void reassertNeverClaimsTheProgramForARoleWithoutOne() throws Exception {
+        // No entities program, and a build failure for the clouds.
+        loadFiles("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAGMENT,
+                "gbuffers_clouds.vsh", VERTEX, "gbuffers_clouds.fsh", BROKEN);
+        binding.start(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        gl.current = 0;
+        assertFalse(binding.reassert());
+        binding.end(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+        binding.start(RenderStage.CLOUDS, RenderDrawKind.DEFAULT);
+        gl.current = 55;
+        assertFalse(binding.reassert());
+        binding.end(RenderStage.CLOUDS, RenderDrawKind.DEFAULT);
+        // An unclassified sky has no role either.
+        binding.start(RenderStage.SKY, RenderDrawKind.DEFAULT);
+        gl.current = 66;
+        assertFalse(binding.reassert());
+        binding.end(RenderStage.SKY, RenderDrawKind.DEFAULT);
+
+        assertEquals(66, gl.current);
+        assertUses();
+    }
+
+    @Test
     void onlyVanillaProgramStagesSuspend() throws Exception {
         load("gbuffers_entities");
         int entities = id(ShaderProgramRole.ENTITIES);

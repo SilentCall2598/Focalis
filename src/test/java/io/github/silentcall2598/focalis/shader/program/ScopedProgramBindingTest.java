@@ -529,4 +529,201 @@ class ScopedProgramBindingTest {
         assertEquals(7, gl.current);
         assertUses(31, 44, 55, 7, 55, 44, 31, 7);
     }
+
+    // What a mod renderer does to the program before it returns, without going through the binding.
+    private void rendererLeaves(int program) {
+        gl.current = program;
+    }
+
+    @Test
+    void reassertLeavesAProgramThatIsStillCurrentAlone() {
+        binding.start(ENTITIES, PASS_0, program(31));
+
+        assertFalse(binding.reassert());
+        binding.end(ENTITIES, PASS_0);
+
+        assertUses(31, 7);
+        assertEquals(7, gl.current);
+    }
+
+    @Test
+    void reassertBindsTheProgramAgainAfterARendererLeftZero() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        assertEquals(1, binding.depth());
+        binding.end(ENTITIES, PASS_0);
+
+        // The END still restores the program from before the scope.
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    @Test
+    void reassertReplacesAnotherProgramARendererLeftBound() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        rendererLeaves(55);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    @Test
+    void repeatedReassertsKeepTheScopeAsItIs() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        for (int renderer = 0; renderer < 3; renderer++) {
+            rendererLeaves(0);
+            assertTrue(binding.reassert());
+            assertEquals(31, gl.current);
+            assertEquals(1, binding.depth());
+        }
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 31, 31, 7);
+        assertTrue(binding.isEmpty());
+    }
+
+    @Test
+    void reassertBindsTheInnermostProgram() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(44));
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(44, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 44, 44, 31, 7);
+    }
+
+    @Test
+    void reassertWithSameTargetNestingBindsThatProgramOnce() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(31));
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    @Test
+    void reassertDoesNothingForANullScope() {
+        binding.start(ENTITIES, PASS_0, null);
+        rendererLeaves(55);
+
+        assertFalse(binding.reassert());
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(55, gl.current);
+        assertUses();
+        // Only the START looked at the current program.
+        assertEquals(1, gl.queries);
+    }
+
+    @Test
+    void reassertWithoutAnyScopeDoesNothing() {
+        rendererLeaves(55);
+
+        assertFalse(binding.reassert());
+
+        assertEquals(55, gl.current);
+        assertEquals(0, gl.queries);
+        assertUses();
+    }
+
+    // A null scope inside a bound one draws with the outer program, so that program is still Focalis's.
+    @Test
+    void reassertKeepsTheOuterProgramThroughANullInnerScope() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, null);
+        rendererLeaves(0);
+
+        assertTrue(binding.reassert());
+        assertEquals(31, gl.current);
+        binding.end(SKY, TEXTURED);
+        assertEquals(31, gl.current);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
+
+    // Something else had bound its own program before the null scope opened, so Focalis didn't own it anymore.
+    @Test
+    void reassertDoesNotTakeBackAProgramSomethingElseBoundBeforeANullInnerScope() {
+        binding.start(SKY, BASIC, program(31));
+        rendererLeaves(55);
+        binding.start(SKY, TEXTURED, null);
+        rendererLeaves(0);
+
+        assertFalse(binding.reassert());
+        assertEquals(0, gl.current);
+        binding.end(SKY, TEXTURED);
+        binding.end(SKY, BASIC);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 7);
+    }
+
+    @Test
+    void reassertDoesNothingWhileSuspended() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        binding.suspend(OUTLINES, OUTLINE_KIND);
+        vanillaShaderRuns();
+        int queries = gl.queries;
+
+        assertFalse(binding.reassert());
+        assertEquals(0, gl.current);
+        assertEquals(queries, gl.queries);
+        binding.resume(OUTLINES, OUTLINE_KIND);
+        assertEquals(31, gl.current);
+        binding.end(ENTITIES, PASS_0);
+
+        assertEquals(7, gl.current);
+        assertUses(31, 7, 31, 7);
+    }
+
+    @Test
+    void failedQueryWhileReassertingUnwinds() {
+        binding.start(SKY, BASIC, program(31));
+        binding.start(SKY, TEXTURED, program(44));
+        rendererLeaves(0);
+        gl.queryThrows = new IllegalStateException("query");
+
+        assertThrows(IllegalStateException.class, () -> binding.reassert());
+
+        assertTrue(binding.isEmpty());
+        assertEquals(7, gl.current);
+        assertUses(31, 44, 31, 7);
+    }
+
+    @Test
+    void failedBindWhileReassertingUnwinds() {
+        binding.start(ENTITIES, PASS_0, program(31));
+        rendererLeaves(0);
+        RuntimeException failure = new RuntimeException("bind");
+        gl.useThrowsOnCall.put(2, failure);
+
+        assertSame(failure, assertThrows(RuntimeException.class, () -> binding.reassert()));
+
+        assertTrue(binding.isEmpty());
+        assertEquals(7, gl.current);
+        assertUses(31, 31, 7);
+    }
 }

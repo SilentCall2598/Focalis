@@ -7,6 +7,7 @@ import io.github.silentcall2598.focalis.config.ConfigSection;
 import io.github.silentcall2598.focalis.feature.Availability;
 import io.github.silentcall2598.focalis.feature.Feature;
 import io.github.silentcall2598.focalis.feature.FeatureContext;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpoint;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
@@ -109,6 +110,7 @@ public final class WorldProgramsFeature extends Feature {
         for (RenderStage stage : WorldProgramBinding.VANILLA_PROGRAM_STAGES) {
             context.addRenderListener(stage, this::onVanillaPrograms);
         }
+        context.addCheckpointListener(this::onRendererReturned);
     }
 
     // Roles that share a pack program share its problem, so each program is only logged once.
@@ -228,6 +230,15 @@ public final class WorldProgramsFeature extends Feature {
             current.vanillaProgramsStart(stage, drawKind);
         } else {
             current.vanillaProgramsEnd(stage, drawKind);
+        }
+    }
+
+    // Mod renderers can bind their own programs and return with another one bound, often 0. Each renderer may do
+    // what it wants while it runs, and the next one gets the stage's program again.
+    private void onRendererReturned(RenderCheckpoint checkpoint) {
+        LiveWorldPrograms current = live;
+        if (current != null) {
+            current.rendererReturned();
         }
     }
 

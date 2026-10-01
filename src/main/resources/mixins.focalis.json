@@ -13,6 +13,8 @@
     "EntityRendererStageMixin",
     "OpenGlHelperMixin",
     "RenderGlobalOutlineMixin",
-    "RenderGlobalSkyMixin"
+    "RenderGlobalSkyMixin",
+    "RenderManagerMixin",
+    "TileEntityRendererDispatcherMixin"
   ]
 }

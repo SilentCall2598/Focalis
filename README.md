@@ -41,8 +41,9 @@ skies, video settings, and compatibility tooling for large modpacks.
   OptiFine is installed.
 - Provides an experimental, off-by-default `world_programs` feature for testing. It binds the matching program
   from the selected pack's main `shaders` folder while vanilla draws the sky, terrain, entities, particles,
-  weather and clouds. The hand isn't bound, and vanilla's glowing entity outlines keep their own shaders. No
-  uniforms, textures, dimension folders or composite passes are set up, so regular shaderpacks won't render
+  weather and clouds. The hand isn't bound, and vanilla's glowing entity outlines keep their own shaders. Entity
+  and block entity renderers that use their own shaders can do so, and the program is bound again after each one.
+  No uniforms, textures, dimension folders or composite passes are set up, so regular shaderpacks won't render
   correctly. Programs that fail to load or build are logged and those parts draw the vanilla way. It stays
   unavailable when OptiFine is installed. The development test pack lives in
   `src/test/resources/shaderpacks/focalis-world-routes`.

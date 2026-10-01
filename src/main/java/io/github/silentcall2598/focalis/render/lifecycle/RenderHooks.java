@@ -23,6 +23,7 @@ public final class RenderHooks {
 
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
+    private static final RendererNesting RENDERERS = new RendererNesting();
 
     @Nullable
     private static volatile RenderLifecycle lifecycle;
@@ -59,6 +60,7 @@ public final class RenderHooks {
         if (FIRST_PASS.worldPassStarted()) {
             reportFirstPass();
         }
+        RENDERERS.reset();
         target.dispatch(RenderStage.WORLD, RenderPhase.START, partialTicks);
     }
 
@@ -87,6 +89,22 @@ public final class RenderHooks {
         RenderLifecycle target = lifecycle;
         if (target != null) {
             target.dispatch(stage, RenderPhase.END, drawKind, partialTicks);
+        }
+    }
+
+    // Called by the Mixins as an entity or block entity renderer starts and returns, whoever called it. Mods can
+    // replace the loops in RenderGlobal.renderEntities, so the renderers themselves are the reliable boundary. These
+    // run for every renderer, so they only count and hand the checkpoint on.
+    public static void rendererStarted() {
+        if (lifecycle != null) {
+            RENDERERS.entered();
+        }
+    }
+
+    public static void rendererReturned(RenderCheckpoint checkpoint) {
+        RenderLifecycle target = lifecycle;
+        if (target != null && RENDERERS.returned()) {
+            target.dispatchCheckpoint(checkpoint);
         }
     }
 

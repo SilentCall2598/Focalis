@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.feature;
 
+import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpointListener;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStageListener;
@@ -33,6 +34,13 @@ public final class FeatureContext {
             throw new IllegalStateException("Feature '" + featureId + "' is no longer active");
         }
         renderLifecycle.register(stage, featureId, listener);
+    }
+
+    public void addCheckpointListener(RenderCheckpointListener listener) {
+        if (closed) {
+            throw new IllegalStateException("Feature '" + featureId + "' is no longer active");
+        }
+        renderLifecycle.registerCheckpoint(featureId, listener);
     }
 
     void close() {

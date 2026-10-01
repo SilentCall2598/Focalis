@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 import io.github.silentcall2598.focalis.Focalis;
 import io.github.silentcall2598.focalis.feature.FeatureState;
 import io.github.silentcall2598.focalis.feature.FeatureStatus;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpoint;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
@@ -34,11 +35,13 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
+import net.minecraft.entity.passive.EntityPig;
 import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.world.GameType;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
+import net.minecraftforge.client.event.RenderLivingEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -240,6 +243,7 @@ public final class QaProbe {
         for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
             lifecycle.register(stage, OWNER, this::onStage);
         }
+        lifecycle.registerCheckpoint(OWNER, this::beforeFocalisCheckpoint);
         MinecraftForge.EVENT_BUS.register(this);
         Runtime.getRuntime().addShutdownHook(new Thread(this::writeOnExit, "Focalis QA report"));
         write(false);
@@ -258,6 +262,7 @@ public final class QaProbe {
         for (RenderStage stage : RenderHooks.PRECISE_STAGES) {
             lifecycle.register(stage, OWNER, this::afterFocalisStage);
         }
+        lifecycle.registerCheckpoint(OWNER, this::afterFocalisCheckpoint);
     }
 
     @SubscribeEvent
@@ -520,7 +525,8 @@ public final class QaProbe {
     }
 
     // Wraps the chest renderer so the probe sees the program a real block entity draw gets, which comes after
-    // vanilla's entity outlines inside the same ENTITIES stage.
+    // vanilla's entity outlines inside the same ENTITIES stage. In scenarios that ask for it, each chest also leaves
+    // another program bound when it returns, like a mod renderer with its own shader.
     private void sampleChests() {
         TileEntitySpecialRenderer<TileEntityChest> chests =
                 TileEntityRendererDispatcher.instance.getRenderer(TileEntityChest.class);
@@ -529,7 +535,85 @@ public final class QaProbe {
             return;
         }
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityChest.class,
-                new SamplingRenderer<>(chests, this::sampleBlockEntity));
+                new SamplingRenderer<>(chests, this::sampleBlockEntity, this::leakFromBlockEntity));
+    }
+
+    // The ENTITIES program while a bound ENTITIES scope is the innermost open stage, 0 otherwise.
+    private int ownedEntitiesProgram() {
+        if (!programsLive || finished || brokenReason != null || stageDepth == 0) {
+            return 0;
+        }
+        int top = stageDepth - 1;
+        if (stageOpen[top] != RenderStage.ENTITIES || !stageScopeOpened[top]) {
+            return 0;
+        }
+        return rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
+    }
+
+    // Leaves 0 bound, like a mod that binds its own shader and releases it.
+    @SubscribeEvent
+    public void onRenderLivingPost(RenderLivingEvent.Post<?> event) {
+        if (!settings.scenario.injectsRendererLeaks() || !(event.getEntity() instanceof EntityPig)
+                || ownedEntitiesProgram() == 0) {
+            return;
+        }
+        GL20.glUseProgram(0);
+        report.worldPrograms.entityLeaksInjected++;
+    }
+
+    // Leaves another real program bound, here the terrain one.
+    private void leakFromBlockEntity() {
+        int entities = ownedEntitiesProgram();
+        int other = rolePrograms[ShaderProgramRole.TERRAIN_SOLID.ordinal()];
+        if (!settings.scenario.injectsRendererLeaks() || entities == 0 || other == 0 || other == entities) {
+            return;
+        }
+        GL20.glUseProgram(other);
+        report.worldPrograms.blockEntityLeaksInjected++;
+    }
+
+    // Before the features repair anything, so what a renderer left behind shows up here.
+    private void beforeFocalisCheckpoint(RenderCheckpoint checkpoint) {
+        int entities = ownedEntitiesProgram();
+        if (entities == 0) {
+            return;
+        }
+        try {
+            if (GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM) != entities) {
+                QaReport.WorldPrograms programs = report.worldPrograms;
+                if (checkpoint == RenderCheckpoint.ENTITY_RENDERED) {
+                    programs.entityRenderersLeftOther++;
+                } else {
+                    programs.blockEntityRenderersLeftOther++;
+                }
+            }
+        } catch (RuntimeException e) {
+            broken("before a renderer checkpoint", e);
+        }
+    }
+
+    // Right after a renderer returned and the features had their turn, the ENTITIES program has to be current.
+    private void afterFocalisCheckpoint(RenderCheckpoint checkpoint) {
+        int entities = ownedEntitiesProgram();
+        if (entities == 0) {
+            return;
+        }
+        try {
+            QaReport.WorldPrograms programs = report.worldPrograms;
+            int current = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            if (checkpoint == RenderCheckpoint.ENTITY_RENDERED) {
+                programs.entityRendererChecks++;
+            } else {
+                programs.blockEntityRendererChecks++;
+            }
+            if (current != entities) {
+                programs.rendererMismatches++;
+                QaReport.addCapped(programs.problems, checkpoint + " left program " + current + " instead of "
+                        + entities + " in world pass " + (worldFrames + 1));
+            }
+        } catch (RuntimeException e) {
+            broken("after a renderer checkpoint", e);
+        }
     }
 
     private void afterStageEnd(RenderStage stage, RenderDrawKind drawKind, int current) {
@@ -1274,6 +1358,11 @@ public final class QaProbe {
             report.check("world-programs-hand-untouched", programs.handChecks > 0 && programs.handProblems == 0,
                     programs.handProblems + " of " + programs.handChecks + " HAND starts had a scope or program"
                             + problems);
+            report.check("world-programs-after-renderers", programs.rendererMismatches == 0,
+                    programs.rendererMismatches + " of " + (programs.entityRendererChecks
+                            + programs.blockEntityRendererChecks) + " renderers returned without the ENTITIES program"
+                            + " bound again, " + (programs.entityRenderersLeftOther
+                            + programs.blockEntityRenderersLeftOther) + " had left another one" + problems);
             // Only has something to check when something glows or a chest is in view.
             report.check("world-programs-outlines-left-to-vanilla", programs.outlineProblems == 0
                             && programs.outlineResumeProblems == 0 && programs.blockEntityMismatches == 0,
