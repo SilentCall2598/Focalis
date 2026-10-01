@@ -116,6 +116,3 @@ All code lives under `io.github.silentcall2598.focalis`:
 
 Focalis is licensed under the GNU Lesser General Public License, version 3 only (SPDX: `LGPL-3.0-only`).
 See [LICENSE](LICENSE). LGPLv3 adds additional permissions on top of GPLv3, whose text is included in [COPYING](COPYING).
-
-Focalis does not contain OptiFine code, decompiled or otherwise. Any code adapted from other open-source projects
-is used only after its license has been checked for compatibility, and its origin is recorded.
