@@ -9,7 +9,6 @@ import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
 import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 import io.github.silentcall2598.focalis.shader.program.PreparedProgram;
-import io.github.silentcall2598.focalis.shader.program.PreparedWorldPrograms;
 
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -49,13 +48,6 @@ final class PackSelection {
                     + " Focalis can only run its own test program so far, not regular shaderpacks.");
         }
         return PreparedProgram.prepare(loaded, program, StandardMacros.environment(), ShaderMacros.empty());
-    }
-
-    // Dimension folders aren't picked yet, so every dimension uses the main shaders folder.
-    static PreparedWorldPrograms prepareWorldPrograms(Path pack) throws ShaderPackException {
-        ShaderPack loaded = ShaderPackLoader.load(pack);
-        return PreparedWorldPrograms.prepare(loaded, loaded.root(), StandardMacros.environment(),
-                ShaderMacros.empty());
     }
 
     private static ShaderPackException notAPackName(String name) {

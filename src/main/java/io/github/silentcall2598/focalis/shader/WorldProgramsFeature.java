@@ -12,9 +12,13 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
+import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
+import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
+import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
+import io.github.silentcall2598.focalis.shader.program.DirectoryPrograms;
 import io.github.silentcall2598.focalis.shader.program.LiveWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.PreparedWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.ProgramFailure;
@@ -23,20 +27,24 @@ import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramBinding;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.WorldClient;
 import org.apache.logging.log4j.Logger;
 
 import javax.annotation.Nullable;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * Experimental. Binds the pack program of each world stage while vanilla draws it, taken from the pack's main
- * shaders folder. Nothing else a shaderpack expects is set up, so regular packs won't look right. Problems with the
- * pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
+ * Experimental. Binds the pack program of each world stage while vanilla draws it. Each dimension takes its programs
+ * from the pack's {@code world<id>} folder for it when there is one and from the main shaders folder otherwise.
+ * Nothing else a shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its
+ * programs leave rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -49,6 +57,13 @@ public final class WorldProgramsFeature extends Feature {
     @Nullable
     private LiveWorldPrograms live;
     private boolean stopped;
+    // What the last world pass selected, so a change of dimension or folder is noticed once.
+    @Nullable
+    private DirectoryPrograms lastSelected;
+    private int lastDimension;
+    @Nullable
+    private DirectoryPrograms justBuilt;
+    private final Set<Integer> loggedDimensions = new HashSet<>();
 
     /**
      * @param glContext returns null until the first frame has captured the context
@@ -63,8 +78,9 @@ public final class WorldProgramsFeature extends Feature {
 
     @Override
     protected void loadConfig(ConfigSection config) {
-        packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. Only its main"
-                + " shaders folder is used, and no uniforms, composite passes or dimension folders are set up.");
+        packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. A world<id> folder"
+                + " in its shaders folder replaces the main one in that dimension. No uniforms or composite passes"
+                + " are set up.");
     }
 
     @Override
@@ -75,8 +91,8 @@ public final class WorldProgramsFeature extends Feature {
         return Availability.AVAILABLE;
     }
 
-    // Loading and preparing the pack is plain file work, so it happens here. Building the programs has to wait for
-    // the first world pass, when the GL context is known to be current.
+    // Loading the pack is plain file work, so it happens here. Building the programs has to wait for a world pass,
+    // when the GL context is known to be current and the dimension is known.
     @Override
     protected void setup(FeatureContext context) {
         logger = context.logger();
@@ -86,23 +102,17 @@ public final class WorldProgramsFeature extends Feature {
             return;
         }
         Path shaderpacks = Minecraft.getMinecraft().gameDir.toPath().resolve("shaderpacks");
-        PreparedWorldPrograms programs;
+        ShaderPack pack;
         try {
-            programs = PackSelection.prepareWorldPrograms(PackSelection.resolve(shaderpacks, packName));
+            pack = ShaderPackLoader.load(PackSelection.resolve(shaderpacks, packName));
         } catch (ShaderPackException e) {
             logger.error("Shaderpack '{}' can't be used, so the world draws the normal way. {}", packName,
                     e.getMessage());
             return;
         }
-        logPreparationProblems(programs);
-        if (programs.uniquePrograms().isEmpty()) {
-            logger.error("Shaderpack '{}' has no world program that can be used, so the world draws the normal way.",
-                    packName);
-            return;
-        }
-        logger.info("Binding the world programs of shaderpack '{}'", packName);
-        context.addRenderListener(RenderStage.WORLD, (stage, phase, drawKind, partialTicks) -> onWorld(phase,
-                programs));
+        logger.info("Binding the world programs of shaderpack '{}', with dimension folders {}", packName,
+                pack.dimensionDirectories().keySet());
+        context.addRenderListener(RenderStage.WORLD, (stage, phase, drawKind, partialTicks) -> onWorld(phase, pack));
         context.addRenderListener(RenderStage.FRAME, this::onFrame);
         for (RenderStage stage : WorldProgramBinding.STAGES) {
             context.addRenderListener(stage, this::onStage);
@@ -111,6 +121,85 @@ public final class WorldProgramsFeature extends Feature {
             context.addRenderListener(stage, this::onVanillaPrograms);
         }
         context.addCheckpointListener(this::onRendererReturned);
+    }
+
+    private void onWorld(RenderPhase phase, ShaderPack pack) {
+        if (phase == RenderPhase.START) {
+            worldStart(pack);
+            return;
+        }
+        LiveWorldPrograms current = live;
+        if (current != null) {
+            current.worldEnd();
+        }
+    }
+
+    // The dimension is read once per world pass, here. Nothing during the pass looks it up again.
+    private void worldStart(ShaderPack pack) {
+        LiveWorldPrograms current = live;
+        if (current == null && !stopped) {
+            current = start(pack);
+        }
+        if (current == null) {
+            return;
+        }
+        WorldClient world = Minecraft.getMinecraft().world;
+        if (world == null) {
+            current.worldStartWithoutWorld();
+            lastSelected = null;
+            return;
+        }
+        int dimension = world.provider.getDimension();
+        justBuilt = null;
+        DirectoryPrograms selected = current.worldStart(dimension);
+        if (selected != lastSelected || dimension != lastDimension) {
+            selectionChanged(pack, dimension, selected, selected == justBuilt);
+        }
+    }
+
+    @Nullable
+    private LiveWorldPrograms start(ShaderPack pack) {
+        GlContextInfo gl = glContext.get();
+        if (gl == null) {
+            stop("OpenGL information isn't available.");
+            return null;
+        }
+        // Owned right away, so cleanup deletes whatever it builds even if something throws later.
+        live = LiveWorldPrograms.create(pack, ShaderCapabilities.from(gl), this::folderBuilt);
+        return live;
+    }
+
+    // Once per folder and session. A folder that fails stays failed until the pack loads again.
+    private void folderBuilt(DirectoryPrograms programs) {
+        justBuilt = programs;
+        ProgramDirectory directory = programs.directory();
+        logPreparationProblems(programs.prepared());
+        logBuildResults(programs.programs());
+        if (directory.programs().isEmpty()) {
+            logger.info("{} has no programs, so dimensions using it draw the normal way.", directory.path());
+        } else if (!programs.usable()) {
+            logger.error("None of the world programs in {} could be built, so dimensions using it draw the normal"
+                    + " way for this session.", directory.path());
+        } else {
+            logger.info("World programs in {} are ready for {}", directory.path(), readyRoles(programs.programs()));
+        }
+        monitor.programsBuilt(directory, programs.programs());
+    }
+
+    private void selectionChanged(ShaderPack pack, int dimension, DirectoryPrograms selected, boolean built) {
+        lastSelected = selected;
+        lastDimension = dimension;
+        ProgramDirectory directory = selected.directory();
+        String source = directory == pack.root()
+                ? directory.path() + " since the pack has no " + ProgramDirectory.worldFolder(dimension) + " folder"
+                : directory.path() + " instead of " + pack.root().path();
+        String state = (selected.usable() ? "" : ", which draws the normal way") + (built ? "" : ", built earlier");
+        if (loggedDimensions.add(dimension)) {
+            logger.info("Dimension {} uses the world programs in {}{}", dimension, source, state);
+        } else {
+            logger.debug("Dimension {} uses the world programs in {}{}", dimension, source, state);
+        }
+        monitor.programsSelected(dimension, directory, selected.programs());
     }
 
     // Roles that share a pack program share its problem, so each program is only logged once.
@@ -123,53 +212,11 @@ public final class WorldProgramsFeature extends Feature {
             }
         }
         for (Map.Entry<ProgramSource, List<ShaderProgramRole>> program : failed.entrySet()) {
-            logger.error("{} can't be prepared, so {} draw the normal way. {}", program.getKey().name(),
-                    program.getValue(), programs.forRole(program.getValue().get(0)).problem());
+            ProgramSource source = program.getKey();
+            logger.error("{} can't be prepared, so {} draw the normal way. {}", source.directory().isEmpty()
+                    ? source.name() : source.directory() + "/" + source.name(), program.getValue(),
+                    programs.forRole(program.getValue().get(0)).problem());
         }
-    }
-
-    private void onWorld(RenderPhase phase, PreparedWorldPrograms programs) {
-        if (phase == RenderPhase.START) {
-            worldStart(programs);
-            return;
-        }
-        LiveWorldPrograms current = live;
-        if (current != null) {
-            current.worldEnd();
-        }
-    }
-
-    private void worldStart(PreparedWorldPrograms programs) {
-        LiveWorldPrograms current = live;
-        if (current == null && !stopped) {
-            current = build(programs);
-        }
-        if (current != null) {
-            current.worldStart();
-        }
-    }
-
-    // Built once per session. A world reload or dimension change keeps the same programs.
-    @Nullable
-    private LiveWorldPrograms build(PreparedWorldPrograms programs) {
-        GlContextInfo gl = glContext.get();
-        if (gl == null) {
-            stop("OpenGL information isn't available.");
-            return null;
-        }
-        LiveWorldPrograms built = LiveWorldPrograms.build(programs, ShaderCapabilities.from(gl));
-        // Owned right away, so cleanup deletes them if anything below throws.
-        live = built;
-        logBuildResults(built.programs());
-        if (!built.usable()) {
-            live = null;
-            built.delete();
-            stop("None of the world programs could be built.");
-            return null;
-        }
-        logger.info("World programs are ready for {}", readyRoles(built.programs()));
-        monitor.programsBuilt(built.programs());
-        return built;
     }
 
     private void logBuildResults(BuiltWorldPrograms programs) {
@@ -249,8 +296,8 @@ public final class WorldProgramsFeature extends Feature {
         }
     }
 
-    // Pack and driver problems end up here. Neither is a Focalis bug, so the feature stays active and only the
-    // binding stops.
+    // Without GL information nothing can be built in any dimension. That isn't a Focalis bug, so the feature stays
+    // active and only the binding stops.
     private void stop(String problem) {
         stopped = true;
         monitor.stopped(problem);
@@ -265,6 +312,9 @@ public final class WorldProgramsFeature extends Feature {
     protected void cleanup() {
         LiveWorldPrograms current = live;
         live = null;
+        lastSelected = null;
+        justBuilt = null;
+        loggedDimensions.clear();
         if (current != null) {
             current.delete();
         }

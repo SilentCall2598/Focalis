@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiMainMenu;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -466,7 +467,8 @@ public enum QaScenario {
 
     WORLD_PROGRAM_BAD_PACK("world-program-bad-pack",
             "World target and world programs on, with a pack where no program compiles. Rendering has to stay"
-                    + " vanilla without failing the feature, and nothing is ever bound.") {
+                    + " vanilla without failing the feature, the folder is built only once, and nothing is ever"
+                    + " bound.") {
         @Override
         List<QaStep> steps() {
             List<QaStep> steps = enterWorld();
@@ -476,7 +478,7 @@ public enum QaScenario {
         }
 
         @Override
-        boolean expectsWorldProgramsStopped() {
+        boolean expectsUnusableWorldPrograms() {
             return true;
         }
 
@@ -485,11 +487,46 @@ public enum QaScenario {
             checkFeatureActive(r, WORLD_PROGRAMS);
             checkFeatureActive(r, WorldTargetFeature.ID);
             QaReport.WorldPrograms programs = r.worldPrograms;
-            r.check("stopped-without-programs", programs.stopped != null
-                            && programs.stopped.contains("None of the world programs could be built"),
-                    String.valueOf(programs.stopped));
-            r.check("nothing-bound", programs.builds == 0 && programs.scopes == 0 && programs.roles.isEmpty(),
-                    programs.builds + " builds, " + programs.scopes + " scopes");
+            r.check("built-once-without-programs", programs.stopped == null
+                            && programs.folderBuilds.equals(Collections.singletonMap("shaders", 1))
+                            && programs.folderRoles.equals(Collections.singletonMap("shaders",
+                                    Collections.<String, QaReport.BuiltProgram>emptyMap())),
+                    "builds per folder " + programs.folderBuilds + ", roles " + programs.folderRoles
+                            + (programs.stopped == null ? "" : ", stopped: " + programs.stopped));
+            r.check("nothing-bound", programs.scopes > 0 && programs.bound.isEmpty() && programs.roles.isEmpty()
+                            && programs.bindMismatches == 0 && programs.unboundLeaks == 0,
+                    programs.scopes + " scopes, bound " + programs.bound + ", " + programs.bindMismatches
+                            + " with the wrong program, " + programs.unboundLeaks
+                            + " Focalis programs without a scope");
+        }
+    },
+
+    WORLD_PROGRAM_DIMENSIONS("world-program-dimensions",
+            "World programs on, with the focalis-dimension-routes folder pack. Goes through the overworld, Nether and"
+                    + " End, back and rejoins. Each dimension has to use its own world folder or the main one, and each"
+                    + " folder is built only once.") {
+        @Override
+        List<QaStep> steps() {
+            return dimensionTour("dimensions");
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkDimensionPrograms(r, false);
+        }
+    },
+
+    WORLD_PROGRAM_DIMENSIONS_ZIP("world-program-dimensions-zip",
+            "Like world-program-dimensions, with the same pack as a ZIP that also has an empty world1 folder entry."
+                    + " The End then has to draw the normal way instead of using the main folder.") {
+        @Override
+        List<QaStep> steps() {
+            return dimensionTour("dimensions-zip");
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkDimensionPrograms(r, true);
         }
     };
 
@@ -517,7 +554,7 @@ public enum QaScenario {
         return false;
     }
 
-    boolean expectsWorldProgramsStopped() {
+    boolean expectsUnusableWorldPrograms() {
         return false;
     }
 
@@ -717,6 +754,108 @@ public enum QaScenario {
         steps.add(screenshot(screenshots + "-above-clouds"));
         steps.add(QaStep.waitTicks(20));
         return steps;
+    }
+
+    // Overworld, Nether, End, overworld again and a rejoin, flying so nothing depends on where the player lands.
+    private static List<QaStep> dimensionTour(String screenshots) {
+        List<QaStep> steps = enterWorld();
+        steps.add(QaStep.action("fly", QaProbe::fly));
+        steps.add(QaStep.waitTicks(20));
+        steps.add(screenshot(screenshots + "-overworld"));
+        steps.addAll(changeDimension(-1, "0 100 0"));
+        steps.add(screenshot(screenshots + "-nether"));
+        steps.addAll(changeDimension(1, "0 100 0"));
+        steps.add(screenshot(screenshots + "-end"));
+        steps.addAll(changeDimension(0, "0 120 0"));
+        steps.add(screenshot(screenshots + "-overworld-again"));
+        steps.add(leaveWorld());
+        steps.add(QaStep.waitTicks(20));
+        steps.add(joinWorld());
+        steps.add(QaStep.action("fly", QaProbe::fly));
+        steps.add(QaStep.waitTicks(20));
+        steps.add(screenshot(screenshots + "-rejoined"));
+        steps.add(QaStep.waitTicks(20));
+        return steps;
+    }
+
+    private static List<QaStep> changeDimension(int dimension, String position) {
+        String command = "/forge setdimension @p " + dimension + " " + position;
+        Integer target = dimension;
+        return Arrays.asList(QaStep.action("command " + command, probe -> probe.command(command)),
+                QaStep.until("in dimension " + dimension, 1200, probe -> target.equals(probe.dimension())
+                        && probe.inWorld() && probe.ticksInWorld() >= 60),
+                QaStep.action("fly", QaProbe::fly), QaStep.waitTicks(20));
+    }
+
+    // world0 replaces the main folder completely, so the overworld sky has no program even though the main folder
+    // has gbuffers_basic. world-1 doesn't compile and the Nether doesn't fall back to the main folder either.
+    private static void checkDimensionPrograms(QaReport r, boolean emptyEndFolder) {
+        checkFeatureActive(r, WORLD_PROGRAMS);
+        QaReport.WorldPrograms programs = r.worldPrograms;
+        String end = emptyEndFolder ? "shaders/world1" : "shaders";
+        List<String> selections = Arrays.asList("0 shaders/world0", "-1 shaders/world-1", "1 " + end,
+                "0 shaders/world0");
+        r.check("folder-per-dimension", programs.selections.equals(selections),
+                "selections " + programs.selections + ", expected " + selections);
+        Map<String, Integer> builds = new TreeMap<>();
+        for (String folder : Arrays.asList("shaders/world0", "shaders/world-1", end)) {
+            builds.put(folder, 1);
+        }
+        r.check("each-folder-built-once", programs.folderBuilds.equals(builds) && programs.stopped == null,
+                "builds per folder " + programs.folderBuilds + ", expected " + builds);
+        r.check("five-world-sessions", r.worldSessions == 5, r.worldSessions + " world sessions");
+
+        Map<String, String> world0 = new TreeMap<>();
+        for (String role : Arrays.asList("SKY_TEXTURED", "TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT",
+                "TERRAIN_TRANSLUCENT", "PARTICLES_LIT", "PARTICLES_NORMAL", "WEATHER", "CLOUDS", "HAND")) {
+            world0.put(role, "world0/gbuffers_textured");
+        }
+        world0.put("ENTITIES", "world0/gbuffers_entities");
+        r.check("override-replaces-main-folder", world0.equals(roleNames(programs, "shaders/world0"))
+                        && count(programs.boundByDimension, "0") > 0,
+                "world0 roles " + roleNames(programs, "shaders/world0") + ", " + count(programs.boundByDimension, "0")
+                        + " bound overworld scopes");
+        r.check("broken-override-draws-vanilla", roleNames(programs, "shaders/world-1").isEmpty()
+                        && count(programs.scopesByDimension, "-1") > 0 && count(programs.boundByDimension, "-1") == 0,
+                count(programs.boundByDimension, "-1") + " of " + count(programs.scopesByDimension, "-1")
+                        + " Nether scopes bound, world-1 roles " + roleNames(programs, "shaders/world-1"));
+        if (emptyEndFolder) {
+            r.check("empty-override-draws-vanilla", roleNames(programs, end).isEmpty()
+                            && count(programs.scopesByDimension, "1") > 0 && count(programs.boundByDimension, "1") == 0,
+                    count(programs.boundByDimension, "1") + " of " + count(programs.scopesByDimension, "1")
+                            + " End scopes bound");
+        } else {
+            Map<String, String> main = new TreeMap<>();
+            main.put("SKY_BASIC", "gbuffers_basic");
+            for (String role : Arrays.asList("SKY_TEXTURED", "ENTITIES", "PARTICLES_LIT", "PARTICLES_NORMAL",
+                    "WEATHER", "CLOUDS", "HAND")) {
+                main.put(role, "gbuffers_textured");
+            }
+            for (String role : Arrays.asList("TERRAIN_SOLID", "TERRAIN_CUTOUT_MIPPED", "TERRAIN_CUTOUT",
+                    "TERRAIN_TRANSLUCENT")) {
+                main.put(role, "gbuffers_terrain");
+            }
+            r.check("no-override-uses-main-folder", main.equals(roleNames(programs, end))
+                            && count(programs.boundByDimension, "1") > 0,
+                    "main roles " + roleNames(programs, end) + ", " + count(programs.boundByDimension, "1")
+                            + " bound End scopes");
+        }
+        r.check("screenshots", r.screenshots.size() == 5, r.screenshots.size() + " of 5 saved");
+    }
+
+    private static Map<String, String> roleNames(QaReport.WorldPrograms programs, String folder) {
+        Map<String, String> names = new TreeMap<>();
+        Map<String, QaReport.BuiltProgram> roles = programs.folderRoles.get(folder);
+        if (roles != null) {
+            for (Map.Entry<String, QaReport.BuiltProgram> role : roles.entrySet()) {
+                names.put(role.getKey(), role.getValue().name);
+            }
+        }
+        return names;
+    }
+
+    private static int count(Map<String, Integer> counts, String key) {
+        return counts.getOrDefault(key, 0);
     }
 
     // How often each stage and draw kind fires in one world pass of the stage tour.

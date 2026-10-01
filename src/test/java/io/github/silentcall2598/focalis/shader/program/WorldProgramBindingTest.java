@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -62,7 +63,8 @@ class WorldProgramBindingTest {
         PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, pack.root(),
                 StandardMacros.environment(), ShaderMacros.empty());
         programs = BuiltWorldPrograms.build(prepared, new ProgramBuilder(EVERYTHING, shaderGl));
-        binding = new WorldProgramBinding(programs, new ScopedProgramBinding(gl));
+        binding = new WorldProgramBinding(new ScopedProgramBinding(gl));
+        binding.select(programs);
     }
 
     private int id(ShaderProgramRole role) {
@@ -384,5 +386,68 @@ class WorldProgramBindingTest {
     void onlyStagesInsideTheWorldPassAreBound() {
         assertEquals(EnumSet.of(RenderStage.SKY, RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.PARTICLES,
                 RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS), WorldProgramBinding.STAGES);
+    }
+
+    @Test
+    void withNothingSelectedEveryScopeBindsNothing() {
+        binding = new WorldProgramBinding(new ScopedProgramBinding(gl));
+
+        binding.start(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        binding.end(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+
+        assertNull(binding.selected());
+        assertNull(binding.program(ShaderProgramRole.TERRAIN_SOLID));
+        assertUses();
+        assertEquals(EXTERNAL, gl.current);
+    }
+
+    @Test
+    void selectingOtherProgramsBindsThemFromTheNextScope() throws Exception {
+        load("gbuffers_terrain");
+        BuiltWorldPrograms first = programs;
+        int firstTerrain = id(ShaderProgramRole.TERRAIN_SOLID);
+        ShaderPack other = TestPrograms.pack(temp, "gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAGMENT);
+        programs = BuiltWorldPrograms.build(PreparedWorldPrograms.prepare(other, other.root(),
+                StandardMacros.environment(), ShaderMacros.empty()), new ProgramBuilder(EVERYTHING, shaderGl));
+        int secondTerrain = id(ShaderProgramRole.TERRAIN_SOLID);
+
+        binding.start(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        binding.end(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        binding.select(programs);
+        binding.start(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        binding.end(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        binding.select(null);
+        binding.start(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+        binding.end(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+
+        assertNotEquals(firstTerrain, secondTerrain);
+        assertUses(firstTerrain, EXTERNAL, secondTerrain, EXTERNAL);
+        assertNotNull(first.forRole(ShaderProgramRole.TERRAIN_SOLID).program());
+    }
+
+    @Test
+    void selectingWithAnOpenScopeRestoresAndThrows() throws Exception {
+        load("gbuffers_terrain");
+        BuiltWorldPrograms first = programs;
+        int terrain = id(ShaderProgramRole.TERRAIN_SOLID);
+        binding.start(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
+
+        assertThrows(IllegalStateException.class, () -> binding.select(null));
+
+        assertTrue(binding.isEmpty());
+        assertSame(first, binding.selected());
+        assertEquals(EXTERNAL, gl.current);
+        assertUses(terrain, EXTERNAL);
+    }
+
+    @Test
+    void selectingWhileSuspendedDropsTheSuspensionAndThrows() throws Exception {
+        load("gbuffers_entities");
+        binding.suspend(RenderStage.ENTITY_OUTLINES, RenderDrawKind.DEFAULT);
+
+        assertThrows(IllegalStateException.class, () -> binding.select(null));
+
+        assertFalse(binding.isSuspended());
+        assertTrue(binding.isEmpty());
     }
 }

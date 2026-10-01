@@ -22,11 +22,16 @@ final class TestPrograms {
     }
 
     static ShaderPack pack(Path parent, String... pathsAndTexts) throws Exception {
+        return ShaderPackLoader.load(packFolder(parent, pathsAndTexts));
+    }
+
+    // Only writes the files, so a test can add empty folders before loading.
+    static Path packFolder(Path parent, String... pathsAndTexts) throws IOException {
         Path pack = Files.createTempDirectory(parent, "pack");
         for (int i = 0; i < pathsAndTexts.length; i += 2) {
             write(pack.resolve("shaders").resolve(pathsAndTexts[i]), pathsAndTexts[i + 1]);
         }
-        return ShaderPackLoader.load(pack);
+        return pack;
     }
 
     static PreparedProgram prepareFinal(Path parent, String... pathsAndTexts) throws Exception {

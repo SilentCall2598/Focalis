@@ -18,6 +18,7 @@ import io.github.silentcall2598.focalis.render.target.WorldTargetFeature;
 import io.github.silentcall2598.focalis.render.target.WorldTargetMonitor;
 import io.github.silentcall2598.focalis.shader.WorldProgramMonitor;
 import io.github.silentcall2598.focalis.shader.WorldProgramsFeature;
+import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import io.github.silentcall2598.focalis.shader.post.ScenePostPass;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
@@ -65,6 +66,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
@@ -178,6 +180,8 @@ public final class QaProbe {
     private final int[] rolePrograms = new int[ShaderProgramRole.values().length];
     private final Set<Integer> focalisPrograms = new HashSet<>();
     private boolean programsLive;
+    // The dimension of the programs selected last, as a report key.
+    private String programDimension = "";
     // One entry per open precise stage, innermost last. The stage, the program before the features' START, and
     // whether a world program scope opened there.
     private final RenderStage[] stageOpen = new RenderStage[MAX_STAGE_DEPTH];
@@ -431,6 +435,7 @@ public final class QaProbe {
         }
         openScopes++;
         programs.scopes++;
+        programs.scopesByDimension.merge(programDimension, 1, Integer::sum);
         int role = rolePrograms[ShaderProgramRouter.route(stage, drawKind).ordinal()];
         int expected = role != 0 ? role : stageProgramBefore[top];
         if (current != expected) {
@@ -441,6 +446,7 @@ public final class QaProbe {
         }
         if (role != 0) {
             programs.bound.merge(where, 1, Integer::sum);
+            programs.boundByDimension.merge(programDimension, 1, Integer::sum);
             sampleProgramDrawFramebuffer(where);
         }
     }
@@ -1053,6 +1059,13 @@ public final class QaProbe {
         return ticksInWorld;
     }
 
+    // The dimension of the client world, or null without one.
+    @Nullable
+    Integer dimension() {
+        WorldClient world = mc().world;
+        return world == null ? null : world.provider.getDimension();
+    }
+
     int worldFrames() {
         return worldFrames;
     }
@@ -1331,19 +1344,26 @@ public final class QaProbe {
         }
     }
 
-    // Any scenario can run with the world programs on or off. A failed or stopped feature is judged by its own
-    // scenario.
+    // Any scenario can run with the world programs on or off. A failed feature or a pack without usable programs is
+    // judged by its own scenario.
     private void checkWorldPrograms() {
         QaReport.WorldPrograms programs = report.worldPrograms;
         String state = report.featureState(WorldProgramsFeature.ID);
         String problems = programs.problems.isEmpty() ? "" : ", like " + programs.problems.get(0);
-        if (settings.scenario.expectsWorldProgramsStopped()) {
+        if (settings.scenario.expectsUnusableWorldPrograms()) {
             return;
         }
         if (FeatureState.ACTIVE.name().equals(state)) {
-            report.check("world-programs-built-once", programs.builds == 1 && programs.stopped == null
-                            && !programs.roles.isEmpty(),
-                    programs.builds + " builds, " + programs.roles.size() + " roles with a program"
+            boolean oncePerFolder = !programs.folderBuilds.isEmpty();
+            for (int builds : programs.folderBuilds.values()) {
+                oncePerFolder &= builds == 1;
+            }
+            boolean anyRoles = false;
+            for (Map<String, QaReport.BuiltProgram> roles : programs.folderRoles.values()) {
+                anyRoles |= !roles.isEmpty();
+            }
+            report.check("world-programs-built-once", oncePerFolder && anyRoles && programs.stopped == null,
+                    "builds per folder " + programs.folderBuilds + (anyRoles ? "" : ", no roles with a program")
                             + (programs.stopped == null ? "" : ", stopped: " + programs.stopped));
             report.check("world-programs-bound", programs.scopes > 0 && programs.bindMismatches == 0
                             && programs.unboundLeaks == 0,
@@ -1541,17 +1561,36 @@ public final class QaProbe {
     private final class ProgramMonitor implements WorldProgramMonitor {
 
         @Override
-        public void programsBuilt(BuiltWorldPrograms programs) {
+        public void programsBuilt(ProgramDirectory directory, BuiltWorldPrograms programs) {
             QaReport.WorldPrograms world = report.worldPrograms;
             world.builds++;
+            world.folderBuilds.merge(directory.path(), 1, Integer::sum);
+            Map<String, QaReport.BuiltProgram> roles = new TreeMap<>();
+            for (BuiltWorldPrograms.Entry entry : programs.entries().values()) {
+                ShaderProgram program = entry.program();
+                if (entry.ready() && program != null) {
+                    focalisPrograms.add(program.id());
+                    roles.put(entry.role().name(), new QaReport.BuiltProgram(program.name(), program.id()));
+                }
+            }
+            world.folderRoles.put(directory.path(), roles);
+        }
+
+        // Every check during the world pass compares with the programs selected for it.
+        @Override
+        public void programsSelected(int dimension, ProgramDirectory directory, BuiltWorldPrograms programs) {
+            QaReport.WorldPrograms world = report.worldPrograms;
+            Arrays.fill(rolePrograms, 0);
+            world.roles.clear();
             for (BuiltWorldPrograms.Entry entry : programs.entries().values()) {
                 ShaderProgram program = entry.program();
                 if (entry.ready() && program != null) {
                     rolePrograms[entry.role().ordinal()] = program.id();
-                    focalisPrograms.add(program.id());
                     world.roles.put(entry.role().name(), new QaReport.BuiltProgram(program.name(), program.id()));
                 }
             }
+            programDimension = String.valueOf(dimension);
+            QaReport.addCapped(world.selections, dimension + " " + directory.path());
             programsLive = true;
         }
 

@@ -4,53 +4,120 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
+import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
+import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
+import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 
 import javax.annotation.Nullable;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 
 /**
- * The world programs of one session and their binding, driven by the world pass. Owns the programs, which are built
- * once and kept through world reloads and dimension changes. Client thread only, with the GL context current.
+ * The world programs of one session and their binding, driven by the world pass. Each world pass binds the programs
+ * of the folder its dimension selects. A folder's programs are prepared and built the first time a dimension needs
+ * them and kept for the rest of the session, failures included, so going back to a dimension or rejoining never
+ * builds again. Owns every program it built. Client thread only, with the GL context current.
  */
 public final class LiveWorldPrograms {
 
-    private final BuiltWorldPrograms programs;
+    /** Hears about each folder right after its programs were built and before anything binds them. */
+    public interface BuildListener {
+
+        void built(DirectoryPrograms programs);
+    }
+
+    private final ShaderPack pack;
+    private final Function<PreparedWorldPrograms, BuiltWorldPrograms> builder;
+    private final BuildListener listener;
     private final WorldProgramBinding binding;
+    // ProgramDirectory has no equals, so this is keyed by the folder object. Dimensions without their own folder
+    // all share the entry of the shaders folder.
+    private final Map<ProgramDirectory, DirectoryPrograms> folders = new LinkedHashMap<>();
+    @Nullable
+    private DirectoryPrograms selected;
+    private int selectedDimension;
     private boolean worldOpen;
+    private boolean deleted;
 
-    private LiveWorldPrograms(BuiltWorldPrograms programs, WorldProgramBinding binding) {
-        this.programs = programs;
-        this.binding = binding;
+    private LiveWorldPrograms(ShaderPack pack, Function<PreparedWorldPrograms, BuiltWorldPrograms> builder,
+            BuildListener listener, ScopedProgramBinding scopes) {
+        this.pack = Objects.requireNonNull(pack, "pack");
+        this.builder = builder;
+        this.listener = Objects.requireNonNull(listener, "listener");
+        this.binding = new WorldProgramBinding(scopes);
     }
 
-    /** Builds every program {@code prepared} selected. Programs the pack or driver can't build stay unbound. */
-    public static LiveWorldPrograms build(PreparedWorldPrograms prepared, ShaderCapabilities capabilities) {
-        BuiltWorldPrograms programs = BuiltWorldPrograms.build(prepared, capabilities);
-        return new LiveWorldPrograms(programs, new WorldProgramBinding(programs));
+    /** Nothing is built until a world pass needs it. */
+    public static LiveWorldPrograms create(ShaderPack pack, ShaderCapabilities capabilities,
+            BuildListener listener) {
+        Objects.requireNonNull(capabilities, "capabilities");
+        return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, capabilities), listener,
+                new ScopedProgramBinding());
     }
 
-    static LiveWorldPrograms build(PreparedWorldPrograms prepared, ProgramBuilder builder,
+    static LiveWorldPrograms create(ShaderPack pack, ProgramBuilder builder, BuildListener listener,
             ScopedProgramBinding scopes) {
-        BuiltWorldPrograms programs = BuiltWorldPrograms.build(prepared, builder);
-        return new LiveWorldPrograms(programs, new WorldProgramBinding(programs, scopes));
+        return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, builder), listener,
+                scopes);
     }
 
-    public BuiltWorldPrograms programs() {
+    /**
+     * Starts a world pass in {@code dimension} and selects the programs of the folder it uses, building them first if
+     * no world pass needed that folder before. Programs the pack or driver can't build stay unbound.
+     *
+     * @return the selected folder's programs
+     */
+    public DirectoryPrograms worldStart(int dimension) {
+        checkClosed("when a world pass started");
+        checkNotDeleted();
+        DirectoryPrograms programs = selected;
+        if (programs == null || dimension != selectedDimension) {
+            programs = programsFor(pack.programDirectoryFor(dimension));
+        }
+        binding.select(programs.programs());
+        selected = programs;
+        selectedDimension = dimension;
+        worldOpen = true;
         return programs;
     }
 
-    /** Whether at least one program was built, so something can be bound. */
-    public boolean usable() {
-        for (BuiltWorldPrograms.Build build : programs.builds()) {
-            if (build.succeeded()) {
-                return true;
-            }
-        }
-        return false;
+    /** Starts a world pass without a client world. It has no dimension, so nothing is bound in it. */
+    public void worldStartWithoutWorld() {
+        checkClosed("when a world pass started");
+        checkNotDeleted();
+        binding.select(null);
+        selected = null;
+        worldOpen = true;
     }
 
-    public void worldStart() {
-        checkClosed("when a world pass started");
-        worldOpen = true;
+    // A folder only goes in once its build returned, so a build that throws never leaves half a folder behind.
+    private DirectoryPrograms programsFor(ProgramDirectory directory) {
+        DirectoryPrograms programs = folders.get(directory);
+        if (programs != null) {
+            return programs;
+        }
+        PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, StandardMacros.environment(),
+                ShaderMacros.empty());
+        programs = new DirectoryPrograms(directory, prepared, builder.apply(prepared));
+        folders.put(directory, programs);
+        listener.built(programs);
+        return programs;
+    }
+
+    /** The programs the current or last world pass selected, or null when it had no world. */
+    @Nullable
+    public DirectoryPrograms selected() {
+        return selected;
+    }
+
+    /** Every folder built so far, in the order they were first needed. Read only. */
+    public Collection<DirectoryPrograms> built() {
+        return Collections.unmodifiableCollection(folders.values());
     }
 
     public void worldEnd() {
@@ -119,23 +186,37 @@ public final class LiveWorldPrograms {
                 + " program it replaced was put back.");
     }
 
+    private void checkNotDeleted() {
+        if (deleted) {
+            throw new IllegalStateException("The world programs of this session were already deleted");
+        }
+    }
+
     /**
-     * Closes any open scope first, so no program is deleted while bound, then deletes every program. Both are
-     * attempted even if the first throws, and the first failure is rethrown. Calling it again does nothing.
+     * Closes any open scope first, so no program is deleted while bound, then deletes the programs of every folder
+     * once. Everything is attempted even if something throws, and the first failure is rethrown. Calling it again
+     * does nothing.
      */
     public void delete() {
         worldOpen = false;
+        deleted = true;
         Throwable failure = null;
         try {
             binding.abort();
         } catch (RuntimeException | LinkageError e) {
             failure = e;
         }
-        try {
-            programs.delete();
-        } catch (RuntimeException | LinkageError e) {
-            failure = collect(failure, e);
+        // Aborting always empties the scopes, so nothing can refuse this.
+        binding.select(null);
+        selected = null;
+        for (DirectoryPrograms programs : folders.values()) {
+            try {
+                programs.programs().delete();
+            } catch (RuntimeException | LinkageError e) {
+                failure = collect(failure, e);
+            }
         }
+        folders.clear();
         if (failure instanceof RuntimeException) {
             throw (RuntimeException) failure;
         }
