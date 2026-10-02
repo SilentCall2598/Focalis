@@ -49,8 +49,14 @@ skies, video settings, and compatibility tooling for large modpacks.
   shaders. Entity and block entity renderers that use their own shaders can do so, and the program is bound again
   after each one. The legacy `texture` and `lightmap` samplers are set once per program to texture units 0 and 1,
   where Minecraft already binds the texture of each draw and its lightmap, so Focalis never binds textures itself.
-  A program that declares one of them as anything but a `sampler2D` is refused. No other uniforms or composite
-  passes are set up, so regular shaderpacks won't render correctly. Programs that fail to load or build are logged
+  A program that declares one of them as anything but a `sampler2D` is refused. The float uniforms `viewWidth`,
+  `viewHeight` and `aspectRatio` give the size of Minecraft's framebuffer in pixels. `frameCounter` is an int that
+  counts displayed frames from 0 to 720719 and then starts over, `frameTime` is the time between the start of the
+  last frame and this one in seconds, and `frameTimeCounter` is the seconds since the first frame, starting over
+  every hour. They're taken once at the start of each frame, so every program and world pass in a frame sees the
+  same values, and they keep running in menus, while paused and across dimensions and rejoins. A program that
+  declares one of them with another type or as an array is refused. No other uniforms or composite passes are set
+  up, so regular shaderpacks won't render correctly. Programs that fail to load or build are logged
   and those parts draw the vanilla way. It stays unavailable when OptiFine is installed. The development test packs
   live in `src/test/resources/shaderpacks`: `focalis-world-routes`, `focalis-dimension-routes` and
   `focalis-world-samplers`.

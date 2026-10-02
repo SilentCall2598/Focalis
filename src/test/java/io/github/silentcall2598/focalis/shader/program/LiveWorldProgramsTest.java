@@ -55,9 +55,11 @@ class LiveWorldProgramsTest {
     // The folders the session built, in order.
     private final List<String> built = new ArrayList<>();
     private RuntimeException listenerFailure;
+    private final FrameInputs frame = new FrameInputs();
 
     LiveWorldProgramsTest() {
         shaderGl.failCompileWhenSourceContains = "BROKEN";
+        frame.capture(0, 854, 480);
     }
 
     private LiveWorldPrograms session(ShaderPack pack) {
@@ -66,7 +68,7 @@ class LiveWorldProgramsTest {
             if (listenerFailure != null) {
                 throw listenerFailure;
             }
-        }, scopes);
+        }, scopes, frame);
     }
 
     // A pack with only a shaders folder, built by one overworld pass that drew nothing.

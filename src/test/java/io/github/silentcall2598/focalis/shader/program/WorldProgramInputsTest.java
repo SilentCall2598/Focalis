@@ -32,6 +32,9 @@ class WorldProgramInputsTest {
     private static final int EXTERNAL = 7;
     private static final String LIT = "#version 120\nuniform sampler2D texture;\nuniform sampler2D lightmap;\n"
             + "void main() { gl_FragColor = vec4(1.0); }\n";
+    static final String FRAME = "#version 120\nuniform float viewWidth;\nuniform float viewHeight;\n"
+            + "uniform float aspectRatio;\nuniform int frameCounter;\nuniform float frameTime;\n"
+            + "uniform float frameTimeCounter;\nvoid main() { gl_FragColor = vec4(1.0); }\n";
 
     @TempDir
     Path temp;
@@ -94,12 +97,158 @@ class WorldProgramInputsTest {
     @Test
     void aProgramWithoutSupportedSamplersIsNeverBound() throws Exception {
         BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh",
-                fragment("uniform float frameTimeCounter;"));
+                fragment("uniform float frameTimeCounter;\nuniform float rainStrength;"));
 
+        // Frame uniforms wait until the program is bound in a frame.
         assertEquals(Collections.emptyList(), gl.uses);
         assertEquals(Collections.emptyList(), gl.uniformSets);
         assertEquals(EXTERNAL, gl.current);
-        assertEquals(Collections.singletonList("frameTimeCounter"), only(programs).inputs().unprovided());
+        assertTrue(only(programs).inputs().location(FrameUniform.FRAME_TIME_COUNTER) >= 0);
+        assertEquals(Collections.singletonList("rainStrength"), only(programs).inputs().unprovided());
+    }
+
+    @Test
+    void frameUniformsAreFoundButNotSetWhileBuilding() throws Exception {
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAME);
+
+        WorldProgramInputs inputs = only(programs).inputs();
+        for (FrameUniform uniform : FrameUniform.values()) {
+            assertTrue(inputs.location(uniform) >= 0, uniform.toString());
+        }
+        assertEquals(Collections.emptyList(), inputs.unprovided());
+        assertEquals(Collections.emptyList(), gl.uniformSets);
+        assertEquals(0, inputs.updatedFrame());
+    }
+
+    @Test
+    void frameUniformsWithAnotherTypeFailOnlyTheirProgram() throws Exception {
+        BuiltWorldPrograms intWidth = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh",
+                fragment("uniform int viewWidth;"), "gbuffers_water.vsh", VERTEX, "gbuffers_water.fsh", FRAME);
+        BuiltWorldPrograms floatCounter = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh",
+                fragment("uniform float frameCounter;"));
+        BuiltWorldPrograms array = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh",
+                fragment("uniform float frameTime[2];"));
+        gl.trimmedArrays.add("aspectRatio");
+        BuiltWorldPrograms trimmed = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh",
+                fragment("uniform float aspectRatio[3];"));
+
+        BuiltWorldPrograms.Entry terrain = intWidth.forRole(ShaderProgramRole.TERRAIN_SOLID);
+        assertEquals(ProgramFailure.Kind.INPUTS, terrain.failure().kind());
+        assertTrue(terrain.failure().summary().contains("declares viewWidth as an int, but it has to be a float"),
+                terrain.failure().summary());
+        assertTrue(intWidth.forRole(ShaderProgramRole.TERRAIN_TRANSLUCENT).ready());
+        assertTrue(only(floatCounter).failure().summary().contains("frameCounter as a float, but it has to be an int"),
+                only(floatCounter).failure().summary());
+        for (BuiltWorldPrograms programs : Arrays.asList(array, trimmed)) {
+            assertTrue(only(programs).failure().summary().contains("as an array with a float, but it has to be a"
+                    + " float"), only(programs).failure().summary());
+        }
+        assertEquals(1, gl.livePrograms.size());
+    }
+
+    @Test
+    void anUpdateSetsEachFrameUniformWithItsOwnType() throws Exception {
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAME);
+        int id = only(programs).program().id();
+        FrameInputs frame = new FrameInputs();
+        frame.capture(0, 854, 480);
+        frame.capture(25_000_000L, 1280, 720);
+        gl.current = id;
+
+        only(programs).inputs().update(frame);
+
+        assertEquals(0, gl.uniformErrors);
+        assertEquals(1280f, gl.floatValue(id, "viewWidth"));
+        assertEquals(720f, gl.floatValue(id, "viewHeight"));
+        assertEquals(1280f / 720f, gl.floatValue(id, "aspectRatio"));
+        assertEquals(1, gl.uniformValue(id, "frameCounter"));
+        assertEquals(0.025f, gl.floatValue(id, "frameTime"), 1e-6f);
+        assertEquals(0.025f, gl.floatValue(id, "frameTimeCounter"), 1e-6f);
+        assertEquals(6, gl.uniformSets.size());
+        assertEquals(2, only(programs).inputs().updatedFrame());
+        // Nothing bound, nothing unbound.
+        assertEquals(Collections.emptyList(), gl.uses);
+    }
+
+    @Test
+    void aProgramIsUpdatedOncePerFrame() throws Exception {
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAME);
+        WorldProgramInputs inputs = only(programs).inputs();
+        int id = only(programs).program().id();
+        FrameInputs frame = new FrameInputs();
+        frame.capture(0, 854, 480);
+        gl.current = id;
+        int queries = gl.locationQueries;
+
+        inputs.update(frame);
+        int calls = gl.calls;
+        inputs.update(frame);
+        assertEquals(calls, gl.calls);
+
+        frame.capture(1, 854, 480);
+        inputs.update(frame);
+        assertEquals(1, gl.uniformValue(id, "frameCounter"));
+        assertEquals(12, gl.uniformSets.size());
+        assertEquals(queries, gl.locationQueries);
+        assertEquals(1, gl.activeUniformQueries);
+    }
+
+    @Test
+    void anOptimizedOutFrameUniformIsSkipped() throws Exception {
+        gl.optimizedOut.add("frameTime");
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAME);
+        WorldProgramInputs inputs = only(programs).inputs();
+        FrameInputs frame = new FrameInputs();
+        frame.capture(0, 854, 480);
+        gl.current = only(programs).program().id();
+
+        inputs.update(frame);
+
+        assertEquals(-1, inputs.location(FrameUniform.FRAME_TIME));
+        assertEquals(5, gl.uniformSets.size());
+        assertEquals(0, gl.uniformErrors);
+    }
+
+    @Test
+    void aProgramWithoutFrameUniformsMakesNoCallsButIsMarked() throws Exception {
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT);
+        FrameInputs frame = new FrameInputs();
+        frame.capture(0, 854, 480);
+        int calls = gl.calls;
+
+        only(programs).inputs().update(frame);
+
+        assertEquals(calls, gl.calls);
+        assertEquals(1, only(programs).inputs().updatedFrame());
+    }
+
+    @Test
+    void aFailedUpdateIsTriedAgain() throws Exception {
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAME);
+        WorldProgramInputs inputs = only(programs).inputs();
+        FrameInputs frame = new FrameInputs();
+        frame.capture(0, 854, 480);
+        gl.current = only(programs).program().id();
+        IllegalStateException failure = new IllegalStateException("uniform");
+        gl.uniformThrows = failure;
+        gl.uniformThrowsFromCall = gl.uniformCalls + 3;
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> inputs.update(frame)));
+
+        assertEquals(0, inputs.updatedFrame());
+        gl.uniformThrows = null;
+        inputs.update(frame);
+        assertEquals(1, inputs.updatedFrame());
+    }
+
+    @Test
+    void anUpdateBeforeAnyFrameWasCapturedIsRefused() throws Exception {
+        BuiltWorldPrograms programs = build("gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", FRAME);
+        int calls = gl.calls;
+
+        assertThrows(IllegalStateException.class, () -> only(programs).inputs().update(new FrameInputs()));
+
+        assertEquals(calls, gl.calls);
     }
 
     @Test

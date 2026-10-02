@@ -109,6 +109,11 @@ final class LwjglShaderGl implements ShaderGl {
     }
 
     @Override
+    public void uniform1f(int location, float value) {
+        GL20.glUniform1f(location, value);
+    }
+
+    @Override
     public int currentProgram() {
         return GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
     }
