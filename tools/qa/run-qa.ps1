@@ -62,6 +62,7 @@ $Scenarios = [ordered]@{
     'world-program-samplers'         = @{ Shaders = $false; Pack = ''; WorldTarget = $true; WorldPrograms = $true
         ProgramsPack = 'focalis-world-samplers' }
     'samplers-vanilla-reference'     = @{ Shaders = $false; Pack = '' }
+    'world-program-frame-inputs'     = @{ Shaders = $false; Pack = ''; WorldPrograms = $true }
 }
 
 # Log lines that are expected in every run, and extra ones a scenario causes on purpose.

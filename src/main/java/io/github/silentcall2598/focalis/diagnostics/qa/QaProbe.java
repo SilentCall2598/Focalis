@@ -131,6 +131,7 @@ public final class QaProbe {
     private final WorldPhaseTracker worldPhases;
     private final RenderStageTracker renderStages;
     private final ShaderRouteTracker shaderRoutes;
+    private final FrameUniformTracker frameUniforms;
 
     private int ticks;
     private int stepIndex;
@@ -227,6 +228,7 @@ public final class QaProbe {
         this.worldPhases = new WorldPhaseTracker(report.worldPhases);
         this.renderStages = new RenderStageTracker(report.renderStages);
         this.shaderRoutes = new ShaderRouteTracker(report.shaderRoutes);
+        this.frameUniforms = new FrameUniformTracker(report.frameUniforms);
         report.environment.focalisVersion = Focalis.VERSION;
         report.environment.fullscreenAllowed = settings.fullscreenAllowed;
         report.environment.startedAt = Instant.now().toString();
@@ -367,6 +369,7 @@ public final class QaProbe {
         }
         lastFrameNanos = now;
         report.frames.total++;
+        frameUniforms.frameStarted(report.frames.total, now, mc().displayWidth, mc().displayHeight);
     }
 
     private void onStage(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
@@ -480,6 +483,10 @@ public final class QaProbe {
             programs.bound.merge(where, 1, Integer::sum);
             programs.boundByDimension.merge(programDimension, 1, Integer::sum);
             sampleProgramDrawFramebuffer(where);
+            QaReport.Capture target = currentWorldTarget;
+            boolean redirected = passRedirected && target != null;
+            frameUniforms.check(current, where, redirected ? target.width : mc().getFramebuffer().framebufferWidth,
+                    redirected ? target.height : mc().getFramebuffer().framebufferHeight);
         }
     }
 
@@ -789,6 +796,7 @@ public final class QaProbe {
             return;
         }
         try {
+            frameUniforms.worldStarted();
             passRedirected = false;
             worldTargetCreatedThisPass = false;
             worldStartRead = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
@@ -1329,6 +1337,11 @@ public final class QaProbe {
         mc().toggleFullscreen();
     }
 
+    // Anaglyph draws the world twice in every frame, once per eye.
+    void setAnaglyph(boolean on) {
+        mc().gameSettings.anaglyph = on;
+    }
+
     void note(String note) {
         QaReport.addCapped(report.notes, note);
     }
@@ -1535,6 +1548,15 @@ public final class QaProbe {
             report.check("world-programs-samplers-set", programs.samplerMismatches == 0,
                     programs.samplerMismatches + " of " + programs.samplerChecks + " sampler units wrong, held "
                             + programs.samplers);
+            // Only has something to check when the pack's programs use frame uniforms.
+            QaReport.FrameUniforms frame = report.frameUniforms;
+            String frameProblems = frame.problems.isEmpty() ? "" : ", like " + frame.problems.get(0);
+            report.check("world-programs-frame-uniforms", frame.mismatches == 0 && frame.inconsistencies == 0
+                            && frame.samplerMismatches == 0,
+                    frame.mismatches + " of " + frame.readbacks + " readbacks wrong, " + frame.inconsistencies
+                            + " of " + frame.consistencyChecks + " differed within a frame, "
+                            + frame.samplerMismatches + " of " + frame.samplerRechecks + " sampler rechecks wrong"
+                            + frameProblems);
             report.check("world-programs-texture-state-kept", programs.textureStateChecks > 0
                             && programs.textureStateChanges == 0,
                     programs.textureStateChanges + " of " + programs.textureStateChecks + " stage starts and ends"
@@ -1728,6 +1750,7 @@ public final class QaProbe {
                 }
             }
             world.folderRoles.put(directory.path(), roles);
+            frameUniforms.programsBuilt(programs);
             for (BuiltWorldPrograms.Build build : programs.builds()) {
                 ShaderProgram program = build.program();
                 WorldProgramInputs inputs = build.inputs();

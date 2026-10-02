@@ -165,7 +165,9 @@ class PackSelectionTest {
         assertEquals(8, programs.uniquePrograms().size());
         String fragment = programs.forRole(ShaderProgramRole.TERRAIN_SOLID).program().stages()
                 .get(ProgramStage.FRAGMENT).source().text();
-        assertTrue(fragment.contains("gl_FragColor = texture2D(texture, texCoord) * color;"), fragment);
+        assertTrue(fragment.contains("gl_FragColor = texture2D(texture, texCoord) * color * frameInputs();"),
+                fragment);
+        assertTrue(fragment.contains("uniform int frameCounter;"), fragment);
     }
 
     @Test

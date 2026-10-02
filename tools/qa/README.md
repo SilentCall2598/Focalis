@@ -47,6 +47,7 @@ The exit code is 0 when every scenario passed, 1 when one failed and 2 when the 
 | `world-program-dimensions-zip` | The same tour with the pack as a ZIP built by the runner, which also has an entry for an empty `world1` folder. The End then has to draw vanilla. |
 | `world-program-samplers` | World target and world programs on with `focalis-world-samplers`, whose lit programs draw the bound texture times the lightmap. With the HUD hidden, the middle of the screen has to show a red wool wall, then a white sheep, then a chest's wood, and the wall has to lose most of its light at midnight. Each program has to hold the expected sampler units, and the sheep and chests have to draw with their own texture and the lightmap. |
 | `samplers-vanilla-reference` | The same scene with Focalis rendering nothing, which has to pass the same color checks. It isn't meant to run with `-WorldPrograms`, whose test pack doesn't use the lightmap. |
+| `world-program-frame-inputs` | World programs on with `focalis-world-routes`, whose programs use every view and frame uniform, next to a pig and a chest. Resizes to another aspect ratio and then to the first one at another size, makes a fullscreen round trip with `-AllowFullscreen`, turns on anaglyph so every frame has two world passes, sits on the pause screen, visits the Nether and rejoins. Every view size has to be read back, the same frame has to be read from several programs and from both anaglyph passes, and the counter and run time have to keep going through all of it. Add `-WorldTarget` to read the values while the world draws into the world target. |
 
 Every scenario also fails on GL errors raised during Focalis's world-end work, on any change to the promised GL
 state, on unexpected feature failures, and on unexpected warnings, errors or exceptions in the client log. It
@@ -69,8 +70,12 @@ scope or while vanilla draws entity outlines. Inside a bound ENTITIES stage, the
 right after every outermost entity and block entity renderer returns. The probe also wraps the chest renderer to
 check the program a real block entity draw gets. Each program folder has to be built once for the whole run, across
 rejoins and dimension changes. Every built program's `texture` and `lightmap` samplers are read back from GL and
-have to hold units 0 and 1. The active texture unit and its texture have to be the same right after each Focalis
-stage START and END as right before it. While a sheep or a chest draws in a bound scope, unit 1 has to hold
+have to hold units 0 and 1. Right after each bound stage START, the program's view and frame uniforms are read back
+from GL as well, along with its samplers again. The view size has to be the display size and the size of what the
+pass draws into, `frameCounter` has to follow the probe's own count of frames, `frameTime` and `frameTimeCounter`
+have to be within 2 ms of the probe's own clock, and everything read in one frame has to match exactly, whichever
+program or world pass it came from. The active texture unit and its texture have to be the same right after each
+Focalis stage START and END as right before it. While a sheep or a chest draws in a bound scope, unit 1 has to hold
 Minecraft's lightmap and unit 0 its own texture.
 
 ## Output
