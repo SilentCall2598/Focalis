@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
+
+import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 /** {@link ShaderGl} on LWJGL 2, which throws if no context is current on the calling thread. */
 final class LwjglShaderGl implements ShaderGl {
@@ -78,5 +83,38 @@ final class LwjglShaderGl implements ShaderGl {
     @Override
     public void deleteProgram(int program) {
         GL20.glDeleteProgram(program);
+    }
+
+    @Override
+    public List<ActiveUniform> activeUniforms(int program) {
+        int count = GL20.glGetProgrami(program, GL20.GL_ACTIVE_UNIFORMS);
+        int maxLength = GL20.glGetProgrami(program, GL20.GL_ACTIVE_UNIFORM_MAX_LENGTH);
+        IntBuffer sizeAndType = BufferUtils.createIntBuffer(2);
+        List<ActiveUniform> uniforms = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            String name = GL20.glGetActiveUniform(program, i, maxLength, sizeAndType);
+            uniforms.add(new ActiveUniform(name, sizeAndType.get(1), sizeAndType.get(0)));
+        }
+        return uniforms;
+    }
+
+    @Override
+    public int uniformLocation(int program, String name) {
+        return GL20.glGetUniformLocation(program, name);
+    }
+
+    @Override
+    public void uniform1i(int location, int value) {
+        GL20.glUniform1i(location, value);
+    }
+
+    @Override
+    public int currentProgram() {
+        return GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+    }
+
+    @Override
+    public void useProgram(int program) {
+        GL20.glUseProgram(program);
     }
 }

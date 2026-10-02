@@ -419,6 +419,67 @@ class LiveWorldProgramsTest {
         assertEquals(Collections.emptyList(), gl.uses);
     }
 
+    private static final String LIT = "#version 120\nuniform sampler2D texture;\nuniform sampler2D lightmap;\n"
+            + "void main() { gl_FragColor = vec4(1.0); }\n";
+
+    // Like dimensionPack, with both samplers in every program, and world-1 declaring the lightmap as a float.
+    private ShaderPack samplerPack() throws Exception {
+        return TestPrograms.pack(temp, "gbuffers_terrain.vsh", VERTEX, "gbuffers_terrain.fsh", LIT,
+                "world0/gbuffers_entities.vsh", VERTEX, "world0/gbuffers_entities.fsh", LIT,
+                "world-1/gbuffers_terrain.vsh", VERTEX, "world-1/gbuffers_terrain.fsh",
+                "#version 120\nuniform float lightmap;\nvoid main() { gl_FragColor = vec4(1.0); }\n");
+    }
+
+    @Test
+    void samplersAreSetOnceAndNeverWhileDrawingOrReturning() throws Exception {
+        LiveWorldPrograms live = session(samplerPack());
+
+        drawTerrainAndEntities(live, 0);
+        drawTerrainAndEntities(live, 1);
+        int sets = shaderGl.uniformSets.size();
+        int locations = shaderGl.locationQueries;
+        int lists = shaderGl.activeUniformQueries;
+        int binds = shaderGl.uses.size();
+        for (int dimension : new int[] {0, 1, 0, 1}) {
+            live.worldStart(dimension);
+            live.stageStart(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+            gl.current = 0;
+            live.rendererReturned();
+            live.stageEnd(RenderStage.ENTITIES, RenderDrawKind.ENTITY_PASS_0);
+            live.worldEnd();
+        }
+
+        assertEquals(4, sets);
+        assertEquals(4, locations);
+        assertEquals(2, lists);
+        assertEquals(sets, shaderGl.uniformSets.size());
+        assertEquals(locations, shaderGl.locationQueries);
+        assertEquals(lists, shaderGl.activeUniformQueries);
+        assertEquals(binds, shaderGl.uses.size());
+        for (DirectoryPrograms folder : live.built()) {
+            for (BuiltWorldPrograms.Build build : folder.programs().builds()) {
+                assertEquals(0, shaderGl.uniformValue(build.program().id(), "texture"));
+                assertEquals(1, shaderGl.uniformValue(build.program().id(), "lightmap"));
+            }
+        }
+    }
+
+    @Test
+    void aFolderWithAnUnusableSamplerLeavesTheOthersWorking() throws Exception {
+        LiveWorldPrograms live = session(samplerPack());
+
+        List<Integer> nether = drawTerrainAndEntities(live, -1);
+        List<Integer> end = drawTerrainAndEntities(live, 1);
+
+        assertEquals(Collections.emptyList(), nether);
+        BuiltWorldPrograms.Build broken = live.built().iterator().next().programs().builds().get(0);
+        assertEquals(ProgramFailure.Kind.INPUTS, broken.failure().kind());
+        // The main folder only has terrain, so entities draw the normal way there.
+        assertEquals(Arrays.asList(id(live, ShaderProgramRole.TERRAIN_SOLID), EXTERNAL), end);
+        assertEquals(1, shaderGl.uniformValue(id(live, ShaderProgramRole.TERRAIN_SOLID), "lightmap"));
+        assertEquals(Collections.singleton(id(live, ShaderProgramRole.TERRAIN_SOLID)), shaderGl.livePrograms);
+    }
+
     @Test
     void aWholeWorldPassBindsAndLeavesNothingBehind() throws Exception {
         LiveWorldPrograms live = build("gbuffers_terrain", "gbuffers_clouds");

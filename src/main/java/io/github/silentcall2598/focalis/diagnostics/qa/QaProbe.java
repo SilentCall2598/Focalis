@@ -23,6 +23,8 @@ import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
 import io.github.silentcall2598.focalis.shader.post.ScenePostPass;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
+import io.github.silentcall2598.focalis.shader.program.WorldProgramInputs;
+import io.github.silentcall2598.focalis.shader.program.WorldSampler;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRouter;
 import net.minecraft.client.Minecraft;
@@ -34,10 +36,13 @@ import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.texture.ITextureObject;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.entity.passive.EntityPig;
+import net.minecraft.entity.passive.EntitySheep;
 import net.minecraft.tileentity.TileEntityChest;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.world.GameType;
 import net.minecraft.world.WorldSettings;
@@ -49,13 +54,16 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
 import javax.annotation.Nullable;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -92,6 +100,13 @@ public final class QaProbe {
     private static final int[] TOUCHED_UNITS = {ScenePostPass.SCENE_COLOR_UNIT, ScenePostPass.SCENE_DEPTH_UNIT};
     private static final int WRITE_INTERVAL_TICKS = 20;
     private static final int MAX_STAGE_DEPTH = 16;
+    // EntityRenderer registers its lightmap as the first dynamic texture named lightMap, and the name is lowercased.
+    private static final ResourceLocation LIGHTMAP = new ResourceLocation("dynamic/lightmap_1");
+    private static final List<ResourceLocation> CHEST_TEXTURES = textures("textures/entity/chest/",
+            "normal.png", "normal_double.png", "trapped.png", "trapped_double.png", "christmas.png",
+            "christmas_double.png");
+    private static final List<ResourceLocation> SHEEP_TEXTURES = textures("textures/entity/sheep/", "sheep.png",
+            "sheep_fur.png");
 
     // The ways the state-restore scenario changes GL state before the pass, one kind per frame in turn.
     private enum Perturbation {
@@ -187,6 +202,13 @@ public final class QaProbe {
     private final RenderStage[] stageOpen = new RenderStage[MAX_STAGE_DEPTH];
     private final int[] stageProgramBefore = new int[MAX_STAGE_DEPTH];
     private final boolean[] stageScopeOpened = new boolean[MAX_STAGE_DEPTH];
+    // The active texture unit and its binding right before the features' START, and before the latest END.
+    private final int[] stageActiveTextureBefore = new int[MAX_STAGE_DEPTH];
+    private final int[] stageTextureBefore = new int[MAX_STAGE_DEPTH];
+    private int endActiveTextureBefore;
+    private int endTextureBefore;
+    // Minecraft's lightmap texture, looked up once, -1 when it couldn't be found.
+    private int lightmapTexture;
     private int stageDepth;
     // Whether the entity outlines already ended inside the ENTITIES stage that is open now.
     private boolean outlinesEnded;
@@ -358,6 +380,13 @@ public final class QaProbe {
                 if (programsLive) {
                     beforeFocalisStageStart(stage);
                 }
+            } else if (programsLive && stageDepth > 0) {
+                try {
+                    endActiveTextureBefore = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+                    endTextureBefore = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+                } catch (RuntimeException e) {
+                    broken("before a stage end", e);
+                }
             }
         }
     }
@@ -371,6 +400,8 @@ public final class QaProbe {
         try {
             stageOpen[stageDepth] = stage;
             stageProgramBefore[stageDepth] = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            stageActiveTextureBefore[stageDepth] = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+            stageTextureBefore[stageDepth] = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
             stageScopeOpened[stageDepth] = false;
             stageDepth++;
             scopeJustStarted = false;
@@ -406,6 +437,7 @@ public final class QaProbe {
         boolean opened = scopeJustStarted;
         scopeJustStarted = false;
         stageScopeOpened[top] = opened;
+        checkTextureState(stage + "/" + drawKind + " START", stageActiveTextureBefore[top], stageTextureBefore[top]);
         if (programFailurePending) {
             programFailurePending = false;
             recordProgramFailure(current);
@@ -525,6 +557,7 @@ public final class QaProbe {
                         + entities + (outlinesEnded ? " after the entity outlines" : "") + " in world pass "
                         + (worldFrames + 1));
             }
+            checkLightmap("a chest");
         } catch (RuntimeException e) {
             broken("while a chest draws", e);
         }
@@ -541,7 +574,7 @@ public final class QaProbe {
             return;
         }
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityChest.class,
-                new SamplingRenderer<>(chests, this::sampleBlockEntity, this::leakFromBlockEntity));
+                new SamplingRenderer<>(chests, this::sampleBlockEntity, this::afterChest));
     }
 
     // The ENTITIES program while a bound ENTITIES scope is the innermost open stage, 0 otherwise.
@@ -556,15 +589,36 @@ public final class QaProbe {
         return rolePrograms[ShaderProgramRole.ENTITIES.ordinal()];
     }
 
-    // Leaves 0 bound, like a mod that binds its own shader and releases it.
+    // Checks a sheep drew with its own texture and the lightmap, and in scenarios that ask for it, leaves 0 bound
+    // after a pig, like a mod that binds its own shader and releases it.
     @SubscribeEvent
     public void onRenderLivingPost(RenderLivingEvent.Post<?> event) {
+        if (event.getEntity() instanceof EntitySheep && ownedEntitiesProgram() != 0) {
+            try {
+                checkOwnTexture("a sheep", SHEEP_TEXTURES);
+                checkLightmap("a sheep");
+            } catch (RuntimeException e) {
+                broken("after a sheep drew", e);
+            }
+        }
         if (!settings.scenario.injectsRendererLeaks() || !(event.getEntity() instanceof EntityPig)
                 || ownedEntitiesProgram() == 0) {
             return;
         }
         GL20.glUseProgram(0);
         report.worldPrograms.entityLeaksInjected++;
+    }
+
+    // Right after a chest drew, its own texture has to be on unit 0.
+    private void afterChest() {
+        if (ownedEntitiesProgram() != 0) {
+            try {
+                checkOwnTexture("a chest", CHEST_TEXTURES);
+            } catch (RuntimeException e) {
+                broken("after a chest drew", e);
+            }
+        }
+        leakFromBlockEntity();
     }
 
     // Leaves another real program bound, here the terrain one.
@@ -622,10 +676,66 @@ public final class QaProbe {
         }
     }
 
+    // Focalis only ever changes the program, so the active unit and what is bound there have to stay as they were.
+    private void checkTextureState(String where, int activeBefore, int textureBefore) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int active = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        int texture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        programs.textureStateChecks++;
+        if (active != activeBefore || texture != textureBefore) {
+            programs.textureStateChanges++;
+            QaReport.addCapped(programs.problems, where + " changed the active unit from " + activeBefore + " to "
+                    + active + " or its texture from " + textureBefore + " to " + texture);
+        }
+    }
+
+    // Switches the active unit with raw GL and back again, which leaves GlStateManager's record of it right.
+    private static int textureOn(int unit) {
+        int active = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        if (active == GL13.GL_TEXTURE0 + unit) {
+            return GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        }
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+        int texture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        GL13.glActiveTexture(active);
+        return texture;
+    }
+
+    private void checkLightmap(String what) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        if (lightmapTexture == 0) {
+            ITextureObject texture = mc().getTextureManager().getTexture(LIGHTMAP);
+            lightmapTexture = texture == null ? -1 : texture.getGlTextureId();
+        }
+        int bound = textureOn(1);
+        programs.lightmapChecks++;
+        if (bound != lightmapTexture) {
+            programs.lightmapMismatches++;
+            QaReport.addCapped(programs.problems, what + " drew with texture " + bound + " on unit 1 instead of the"
+                    + " lightmap " + lightmapTexture + " in world pass " + (worldFrames + 1));
+        }
+    }
+
+    private void checkOwnTexture(String what, List<ResourceLocation> textures) {
+        QaReport.WorldPrograms programs = report.worldPrograms;
+        int bound = textureOn(0);
+        programs.ownTextureChecks++;
+        for (ResourceLocation location : textures) {
+            ITextureObject texture = mc().getTextureManager().getTexture(location);
+            if (texture != null && texture.getGlTextureId() == bound) {
+                return;
+            }
+        }
+        programs.ownTextureMismatches++;
+        QaReport.addCapped(programs.problems, what + " drew with texture " + bound + " on unit 0 instead of its own"
+                + " in world pass " + (worldFrames + 1));
+    }
+
     private void afterStageEnd(RenderStage stage, RenderDrawKind drawKind, int current) {
         QaReport.WorldPrograms programs = report.worldPrograms;
         int top = --stageDepth;
         int before = stageProgramBefore[top];
+        checkTextureState(stage + "/" + drawKind + " END", endActiveTextureBefore, endTextureBefore);
         if (stageScopeOpened[top]) {
             openScopes--;
         }
@@ -1044,10 +1154,41 @@ public final class QaProbe {
                 && currentProgram != 0 && !GL20.glIsProgram(currentProgram);
     }
 
+    private static List<ResourceLocation> textures(String folder, String... names) {
+        List<ResourceLocation> textures = new ArrayList<>();
+        for (String name : names) {
+            textures.add(new ResourceLocation(folder + name));
+        }
+        return textures;
+    }
+
     // Everything below is used by the scenario steps, on the client tick.
 
     Minecraft mc() {
         return Minecraft.getMinecraft();
+    }
+
+    // The last frame's average color in a box at the middle of the screen, a twelfth of its width and height. With
+    // the HUD hidden that's the world itself.
+    void sampleCenter(String name) {
+        Minecraft mc = mc();
+        BufferedImage image = ScreenShotHelper.createScreenshot(mc.displayWidth, mc.displayHeight,
+                mc.getFramebuffer());
+        int boxWidth = Math.max(1, image.getWidth() / 12);
+        int boxHeight = Math.max(1, image.getHeight() / 12);
+        int left = (image.getWidth() - boxWidth) / 2;
+        int top = (image.getHeight() - boxHeight) / 2;
+        double[] sum = new double[3];
+        for (int y = top; y < top + boxHeight; y++) {
+            for (int x = left; x < left + boxWidth; x++) {
+                int rgb = image.getRGB(x, y);
+                sum[0] += (rgb >> 16) & 0xFF;
+                sum[1] += (rgb >> 8) & 0xFF;
+                sum[2] += rgb & 0xFF;
+            }
+        }
+        double count = boxWidth * (double) boxHeight * 255.0;
+        report.centerColors.put(name, new double[] {sum[0] / count, sum[1] / count, sum[2] / count});
     }
 
     boolean inWorld() {
@@ -1391,6 +1532,19 @@ public final class QaProbe {
                             + " outline ends didn't bind the entities program again, "
                             + programs.blockEntityMismatches + " of " + programs.blockEntitySamples
                             + " chests drew with another program" + problems);
+            report.check("world-programs-samplers-set", programs.samplerMismatches == 0,
+                    programs.samplerMismatches + " of " + programs.samplerChecks + " sampler units wrong, held "
+                            + programs.samplers);
+            report.check("world-programs-texture-state-kept", programs.textureStateChecks > 0
+                            && programs.textureStateChanges == 0,
+                    programs.textureStateChanges + " of " + programs.textureStateChecks + " stage starts and ends"
+                            + " changed the active texture unit or its texture" + problems);
+            // Only has something to check when a sheep or a chest is in view.
+            report.check("world-programs-draw-textures", programs.lightmapMismatches == 0
+                            && programs.ownTextureMismatches == 0,
+                    programs.lightmapMismatches + " of " + programs.lightmapChecks + " draws without the lightmap on"
+                            + " unit 1, " + programs.ownTextureMismatches + " of " + programs.ownTextureChecks
+                            + " without their own texture on unit 0" + problems);
         } else if (FeatureState.DISABLED.name().equals(state)) {
             report.check("world-programs-idle", programs.builds == 0 && programs.scopes == 0,
                     programs.builds + " builds, " + programs.scopes + " scopes");
@@ -1574,6 +1728,38 @@ public final class QaProbe {
                 }
             }
             world.folderRoles.put(directory.path(), roles);
+            for (BuiltWorldPrograms.Build build : programs.builds()) {
+                ShaderProgram program = build.program();
+                WorldProgramInputs inputs = build.inputs();
+                if (program != null && inputs != null) {
+                    readSamplers(program, inputs);
+                }
+            }
+        }
+
+        // What the program really holds, read back from GL rather than taken from what Focalis meant to set.
+        private void readSamplers(ShaderProgram program, WorldProgramInputs inputs) {
+            QaReport.WorldPrograms world = report.worldPrograms;
+            StringBuilder held = new StringBuilder();
+            for (WorldSampler sampler : WorldSampler.values()) {
+                int location = inputs.location(sampler);
+                held.append(held.length() == 0 ? "" : " ").append(sampler.uniformName()).append('=');
+                if (location < 0) {
+                    held.append('-');
+                    continue;
+                }
+                IntBuffer value = BufferUtils.createIntBuffer(16);
+                GL20.glGetUniform(program.id(), location, value);
+                int unit = value.get(0);
+                held.append(unit);
+                world.samplerChecks++;
+                if (unit != sampler.unit()) {
+                    world.samplerMismatches++;
+                    QaReport.addCapped(world.problems, program.name() + " holds " + unit + " in "
+                            + sampler.uniformName() + " instead of " + sampler.unit());
+                }
+            }
+            world.samplers.put(program.name(), held.toString());
         }
 
         // Every check during the world pass compares with the programs selected for it.

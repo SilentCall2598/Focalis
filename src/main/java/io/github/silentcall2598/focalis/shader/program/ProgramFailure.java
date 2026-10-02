@@ -21,7 +21,9 @@ public final class ProgramFailure {
         /** A stage needs something this OpenGL context doesn't offer. */
         UNSUPPORTED_STAGE,
         COMPILE,
-        LINK
+        LINK,
+        /** The program declares an input Focalis provides in a way it can't provide it, like a sampler as a float. */
+        INPUTS
     }
 
     private final Kind kind;
@@ -62,6 +64,10 @@ public final class ProgramFailure {
 
     static ProgramFailure link(String program, String driverLog, List<DriverLogMessage> messages) {
         return new ProgramFailure(Kind.LINK, program, null, program + " failed to link", driverLog, messages);
+    }
+
+    static ProgramFailure inputs(String program, String summary) {
+        return new ProgramFailure(Kind.INPUTS, program, null, summary, "", Collections.<DriverLogMessage>emptyList());
     }
 
     public Kind kind() {

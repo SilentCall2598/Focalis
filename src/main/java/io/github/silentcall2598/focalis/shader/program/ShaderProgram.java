@@ -33,6 +33,10 @@ public final class ShaderProgram {
         return name;
     }
 
+    ShaderGl gl() {
+        return gl;
+    }
+
     /** Warnings the driver reported while building the program, grouped by file, or an empty string. */
     public String driverLog() {
         return driverLog;

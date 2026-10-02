@@ -30,7 +30,8 @@ public final class BuiltWorldPrograms {
     }
 
     /**
-     * Builds every unique program in {@code prepared}. Must run on the client thread with the OpenGL context current.
+     * Builds every unique program in {@code prepared} and connects its samplers. Must run on the client thread with
+     * the OpenGL context current and no Focalis program scope open.
      * A program the pack or driver can't build is recorded as a failure and the others are still built. Any other
      * exception deletes the programs built so far and is rethrown.
      */
@@ -58,7 +59,8 @@ public final class BuiltWorldPrograms {
             }
             return new BuiltWorldPrograms(Collections.unmodifiableList(builds), Collections.unmodifiableMap(entries));
         } catch (RuntimeException | LinkageError e) {
-            // ProgramBuilder already cleaned up the program that threw. The ones before it are still owned here.
+            // The program that threw was already deleted by ProgramBuilder or Build.attempt. The ones before it are
+            // still owned here.
             deleteNewestFirst(builds, e);
             throw e;
         }
@@ -125,26 +127,50 @@ public final class BuiltWorldPrograms {
         }
     }
 
-    /** The one build attempt for a unique prepared program. Exactly one of program and failure is set. */
+    /**
+     * The one build attempt for a unique prepared program. Exactly one of program and failure is set, and a built
+     * program always has its inputs.
+     */
     public static final class Build {
 
         private final PreparedProgram prepared;
         @Nullable
         private final ShaderProgram program;
         @Nullable
+        private final WorldProgramInputs inputs;
+        @Nullable
         private final ProgramFailure failure;
 
-        private Build(PreparedProgram prepared, @Nullable ShaderProgram program, @Nullable ProgramFailure failure) {
+        private Build(PreparedProgram prepared, @Nullable ShaderProgram program, @Nullable WorldProgramInputs inputs,
+                @Nullable ProgramFailure failure) {
             this.prepared = prepared;
             this.program = program;
+            this.inputs = inputs;
             this.failure = failure;
         }
 
+        // The program is only owned by the set once this returns it, so anything failing before that deletes it.
         static Build attempt(ProgramBuilder builder, PreparedProgram prepared) {
+            ShaderProgram program;
             try {
-                return new Build(prepared, builder.build(prepared), null);
+                program = builder.build(prepared);
             } catch (ProgramBuildException e) {
-                return new Build(prepared, null, e.failure());
+                return new Build(prepared, null, null, e.failure());
+            }
+            try {
+                return new Build(prepared, program, WorldProgramInputs.connect(program.gl(), program), null);
+            } catch (ProgramBuildException e) {
+                program.delete();
+                return new Build(prepared, null, null, e.failure());
+            } catch (RuntimeException | LinkageError e) {
+                // If the inputs couldn't put the previous program back and this one is still current, GL only flags it
+                // for deletion and frees it once something else is bound.
+                try {
+                    program.delete();
+                } catch (RuntimeException | LinkageError deleteFailure) {
+                    e.addSuppressed(deleteFailure);
+                }
+                throw e;
             }
         }
 
@@ -156,6 +182,12 @@ public final class BuiltWorldPrograms {
         @Nullable
         public ShaderProgram program() {
             return program;
+        }
+
+        /** The inputs Focalis set up for the built program, or null if the build failed. */
+        @Nullable
+        public WorldProgramInputs inputs() {
+            return inputs;
         }
 
         /** Why the pack or driver couldn't build the program, or null if it built. */

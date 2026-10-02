@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import java.util.List;
+
 /**
  * The OpenGL calls this package makes, nothing more. Every method needs a current context on the calling thread.
  * Tests swap in a recording version to check that failures never leak objects.
@@ -37,4 +39,18 @@ interface ShaderGl {
     String programLog(int program);
 
     void deleteProgram(int program);
+
+    /** Every active uniform of a linked program. Some drivers list built-in {@code gl_} uniforms too. */
+    List<ActiveUniform> activeUniforms(int program);
+
+    /** Returns -1 when the program has no active uniform with that name. */
+    int uniformLocation(int program, String name);
+
+    /** Sets an int or sampler uniform of the program that is current right now. */
+    void uniform1i(int location, int value);
+
+    /** The program name GL_CURRENT_PROGRAM reports, 0 when none is active. */
+    int currentProgram();
+
+    void useProgram(int program);
 }

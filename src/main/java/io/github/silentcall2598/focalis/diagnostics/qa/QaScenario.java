@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -528,6 +529,62 @@ public enum QaScenario {
         void evaluate(QaReport r) {
             checkDimensionPrograms(r, true);
         }
+    },
+
+    WORLD_PROGRAM_SAMPLERS("world-program-samplers",
+            "World target and world programs on, with the focalis-world-samplers pack, whose lit programs draw the"
+                    + " texture Minecraft bound times the lightmap. A red wool wall, a white sheep and a chest have to"
+                    + " show their own colors at the middle of the screen, and the wall has to darken at night.") {
+        @Override
+        List<QaStep> steps() {
+            return samplerScene("samplers");
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkFeatureActive(r, WORLD_PROGRAMS);
+            checkFeatureActive(r, WorldTargetFeature.ID);
+            checkSamplerColors(r);
+            QaReport.WorldPrograms programs = r.worldPrograms;
+            Map<String, String> held = new TreeMap<>();
+            for (String lit : Arrays.asList("gbuffers_terrain", "gbuffers_water", "gbuffers_entities",
+                    "gbuffers_textured_lit")) {
+                held.put(lit, "texture=0 lightmap=1");
+            }
+            for (String unlit : Arrays.asList("gbuffers_textured", "gbuffers_skytextured", "gbuffers_clouds")) {
+                held.put(unlit, "texture=0 lightmap=-");
+            }
+            // Declares the lightmap without using it. Drivers usually drop it, but they don't have to. Its
+            // gbuffers_basic twin is never picked, every role has something closer.
+            held.put("gbuffers_skybasic", "texture=- lightmap=-");
+            Map<String, String> built = new TreeMap<>(programs.samplers);
+            built.keySet().retainAll(held.keySet());
+            built.replace("gbuffers_skybasic", "texture=- lightmap=1", "texture=- lightmap=-");
+            r.check("samplers-held-by-each-program", built.equals(held) && programs.samplerMismatches == 0,
+                    "held " + programs.samplers);
+            r.check("sheep-and-chest-drew-with-own-texture-and-lightmap", programs.ownTextureChecks > 0
+                            && programs.lightmapChecks > 0 && programs.ownTextureMismatches == 0
+                            && programs.lightmapMismatches == 0,
+                    programs.ownTextureMismatches + " of " + programs.ownTextureChecks + " without their own"
+                            + " texture, " + programs.lightmapMismatches + " of " + programs.lightmapChecks
+                            + " without the lightmap");
+            r.check("screenshots", r.screenshots.size() == 4, r.screenshots.size() + " of 4 saved");
+        }
+    },
+
+    SAMPLERS_VANILLA_REFERENCE("samplers-vanilla-reference",
+            "The world-program-samplers scene with Focalis rendering nothing. Vanilla has to pass the same color"
+                    + " checks, so they are known to mean something.") {
+        @Override
+        List<QaStep> steps() {
+            return samplerScene("samplers-vanilla");
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkSamplerColors(r);
+            r.check("screenshots", r.screenshots.size() == 4, r.screenshots.size() + " of 4 saved");
+        }
     };
 
     static final String SHADERS = ShaderFeature.ID;
@@ -754,6 +811,76 @@ public enum QaScenario {
         steps.add(screenshot(screenshots + "-above-clouds"));
         steps.add(QaStep.waitTicks(20));
         return steps;
+    }
+
+    // Up at y 150, facing south and slightly down, on a stone floor with a red wool wall in front. Nothing shades it
+    // up there, since new players spawn at a random spot near the world spawn. Then a white sheep and a chest at the
+    // middle of the view, and the wall again at midnight. The HUD is hidden for every sample.
+    private static List<QaStep> samplerScene(String prefix) {
+        List<QaStep> steps = enterWorld();
+        steps.add(QaStep.action("fly", QaProbe::fly));
+        for (String command : Arrays.asList("/tp @p ~ 150 ~ 0 15", "/fill ~-3 ~-1 ~-1 ~3 ~-1 ~3 minecraft:stone",
+                "/fill ~-3 ~-1 ~4 ~3 ~4 ~4 minecraft:wool 14")) {
+            steps.add(QaStep.action("command " + command, probe -> probe.command(command)));
+        }
+        steps.add(QaStep.action("hide hud", probe -> probe.setHud(true, false)));
+        steps.add(QaStep.waitTicks(30));
+        steps.add(sample(prefix, "wall-day"));
+        steps.add(QaStep.action("command /summon sheep", probe -> probe.command(
+                "/summon sheep ~ ~ ~2.5 {NoAI:1b,Color:0b,Rotation:[90f,0f]}")));
+        steps.add(QaStep.waitTicks(30));
+        steps.add(sample(prefix, "sheep-day"));
+        for (String command : Arrays.asList("/kill @e[type=sheep]", "/kill @e[type=item]",
+                "/setblock ~ ~1 ~2 minecraft:chest 2")) {
+            steps.add(QaStep.action("command " + command, probe -> probe.command(command)));
+        }
+        steps.add(QaStep.waitTicks(30));
+        steps.add(sample(prefix, "chest-day"));
+        for (String command : Arrays.asList("/setblock ~ ~1 ~2 minecraft:air", "/time set 18000")) {
+            steps.add(QaStep.action("command " + command, probe -> probe.command(command)));
+        }
+        steps.add(QaStep.waitTicks(40));
+        steps.add(sample(prefix, "wall-night"));
+        steps.add(QaStep.action("hud reset", probe -> probe.setHud(false, false)));
+        steps.add(QaStep.waitTicks(10));
+        return steps;
+    }
+
+    private static QaStep sample(String prefix, String name) {
+        return QaStep.action("sample " + name, probe -> {
+            probe.sampleCenter(name);
+            probe.screenshot(prefix + "-" + name);
+        });
+    }
+
+    // Wool is red with little green and blue, the sheep's wool white, the chest's wood brown. At night the wall keeps
+    // its color but loses most of its light, which only the lightmap can do.
+    private static void checkSamplerColors(QaReport r) {
+        double[] wall = r.centerColors.get("wall-day");
+        double[] sheep = r.centerColors.get("sheep-day");
+        double[] chest = r.centerColors.get("chest-day");
+        double[] night = r.centerColors.get("wall-night");
+        if (wall == null || sheep == null || chest == null || night == null) {
+            r.check("center-colors-sampled", false, "sampled " + r.centerColors.keySet());
+            return;
+        }
+        r.check("wall-shows-red-wool", wall[0] > 0.3 && wall[1] < 0.45 * wall[0] && wall[2] < 0.45 * wall[0],
+                color(wall));
+        double sheepMin = Math.min(sheep[0], Math.min(sheep[1], sheep[2]));
+        double sheepMax = Math.max(sheep[0], Math.max(sheep[1], sheep[2]));
+        r.check("sheep-shows-white-wool", sheepMin > 0.45 && sheepMax < 1.35 * sheepMin, color(sheep));
+        r.check("chest-shows-wood", chest[0] > 0.2 && chest[1] > 0.5 * chest[0] && chest[1] < chest[0]
+                && chest[2] < 0.8 * chest[0], color(chest));
+        r.check("night-darkens-wall", luminance(night) < 0.6 * luminance(wall) && night[0] > night[1]
+                && night[0] > night[2], color(night) + " at night, " + color(wall) + " by day");
+    }
+
+    private static double luminance(double[] color) {
+        return 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2];
+    }
+
+    private static String color(double[] color) {
+        return String.format(Locale.ROOT, "rgb %.3f %.3f %.3f", color[0], color[1], color[2]);
     }
 
     // Overworld, Nether, End, overworld again and a rejoin, flying so nothing depends on where the player lands.

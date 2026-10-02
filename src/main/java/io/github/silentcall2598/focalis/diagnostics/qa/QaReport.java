@@ -51,6 +51,8 @@ final class QaReport {
     @Nullable
     InjectedFailure injectedFailure;
     final List<Screenshot> screenshots = new ArrayList<>();
+    // The average color of the middle of the screen at named moments, as red, green and blue from 0 to 1.
+    final Map<String, double[]> centerColors = new TreeMap<>();
     final List<StepRecord> steps = new ArrayList<>();
     final List<String> notes = new ArrayList<>();
     final List<String> probeErrors = new ArrayList<>();
@@ -370,6 +372,20 @@ final class QaReport {
         int blockEntityLeaksInjected;
         // Stages without a scope that still had a Focalis program current.
         int unboundLeaks;
+        // The sampler units each built program holds, read back from GL, like "texture=0 lightmap=1".
+        final Map<String, String> samplers = new TreeMap<>();
+        int samplerChecks;
+        int samplerMismatches;
+        // The active texture unit and its binding have to be the same right after a Focalis stage START or END as
+        // right before it.
+        int textureStateChecks;
+        int textureStateChanges;
+        // While entities and chests draw in a bound scope, unit 1 has to hold Minecraft's lightmap.
+        int lightmapChecks;
+        int lightmapMismatches;
+        // Right after a sheep or a chest drew in a bound scope, unit 0 has to hold its own texture.
+        int ownTextureChecks;
+        int ownTextureMismatches;
         final List<String> problems = new ArrayList<>();
         @Nullable
         String stopped;

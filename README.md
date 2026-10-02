@@ -47,10 +47,13 @@ skies, video settings, and compatibility tooling for large modpacks.
   read but not used yet. Each folder is built the first time a dimension needs it and kept, so changing dimension
   or rejoining doesn't build it again. The hand isn't bound, and vanilla's glowing entity outlines keep their own
   shaders. Entity and block entity renderers that use their own shaders can do so, and the program is bound again
-  after each one. No uniforms, textures or composite passes are set up, so regular shaderpacks won't render
-  correctly. Programs that fail to load or build are logged and those parts draw the vanilla way. It stays
-  unavailable when OptiFine is installed. The development test packs live in
-  `src/test/resources/shaderpacks/focalis-world-routes` and `focalis-dimension-routes`.
+  after each one. The legacy `texture` and `lightmap` samplers are set once per program to texture units 0 and 1,
+  where Minecraft already binds the texture of each draw and its lightmap, so Focalis never binds textures itself.
+  A program that declares one of them as anything but a `sampler2D` is refused. No other uniforms or composite
+  passes are set up, so regular shaderpacks won't render correctly. Programs that fail to load or build are logged
+  and those parts draw the vanilla way. It stays unavailable when OptiFine is installed. The development test packs
+  live in `src/test/resources/shaderpacks`: `focalis-world-routes`, `focalis-dimension-routes` and
+  `focalis-world-samplers`.
 
 ## Requirements
 

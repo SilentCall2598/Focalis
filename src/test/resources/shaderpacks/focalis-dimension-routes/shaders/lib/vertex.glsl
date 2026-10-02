@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Focalis contributors
 // SPDX-License-Identifier: LGPL-3.0-only
 
-// Only legacy built-ins, since Focalis doesn't set any uniforms or vertex attributes for world programs yet.
+// Only legacy built-ins, since Focalis sets no vertex attributes for world programs.
 
 varying vec4 color;
 varying vec2 texCoord;
