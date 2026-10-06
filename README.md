@@ -1,127 +1,137 @@
-# Focalis
 
-Focalis is an open-source graphics and optimization platform for Minecraft Forge 1.12.2. The long-term aim is a
-modular, compatibility-first alternative to OptiFine for large Forge modpacks.
+<div align="center">
 
-## Status
+# Focalis | A Minecraft 1.12.2 graphics and optimization project
 
-Focalis is in early development. The current version is mostly a foundation: it loads as a client-side Forge
-mod, reports diagnostic information, and provides the internal structure future rendering systems will build
-on. **With default settings it does not change what Minecraft renders.** Only the experimental `shaders` and
-`world_programs` features do, and both are off by default and described below.
+<br>
 
-Planned systems, none of which exist yet: OptiFine/Iris-compatible shader support, a high-performance
-renderer, rendering optimizations, dynamic lights, connected textures, emissive textures, CIT, CEM, custom
-skies, video settings, and compatibility tooling for large modpacks.
+[![status](https://img.shields.io/badge/status-experimental-4c6ef5)](https://github.com/SilentCall2598/Focalis)
+[![minecraft](https://img.shields.io/badge/Minecraft-1.12.2-3fa34d)](https://www.minecraft.net/)
+[![forge](https://img.shields.io/badge/Forge-14.23.5.2860-f08c00)](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.12.2.html)
+[![runtime](https://img.shields.io/badge/runtime-Java_8-1f6feb)](https://adoptium.net/)
+[![license](https://img.shields.io/badge/license-LGPL--3.0--only-6f42c1)](LICENSE)
+[![discord](https://img.shields.io/badge/Discord-Focalis-5865F2?logo=discord&logoColor=white)](https://discord.gg/wmJKKvkCMX)
 
-## What it does today
+<br>
 
-- Logs its version and the runtime environment (Java, OS, CPU, Forge, and other rendering-related mods present).
-- On the first rendered frame, logs the OpenGL driver, version, limits, video memory and the capabilities
-  future systems depend on.
-- Adds a Focalis line with feature states to crash reports.
-- Exposes precise world render stage boundaries to internal rendering systems: the world pass, sky, terrain,
-  entities, particles, translucent terrain, weather, clouds and the hand, with the terrain layer, entity pass or
-  particle kind being drawn. In the normal surface sky, the sun and moon are told apart from the rest of the sky,
-  and inside the entities, vanilla's glowing entity outlines are marked too. Mixins in `EntityRenderer` and `RenderGlobal` only report these boundaries and don't change what is drawn.
-  That context can be translated into Focalis shader program roles and matched to the programs of 1.12.2 era
-  shaderpacks, and the matched programs of one shader folder can be prepared and built. Only the experimental
-  `world_programs` feature binds them.
-- Provides an optional `frame_stats` diagnostic feature that periodically logs frame timing.
-- Provides an experimental, off-by-default `shaders` feature. It is the first step of shader support and
-  only runs Focalis's own test program (`shaders/focalis_post.vsh` and `.fsh`) as a single post-process pass
-  over the world image at the end of the world pass, before the hand and HUD are drawn. Regular OptiFine or Iris
-  shaderpacks are not supported, and a pack without that program is refused. If the pack or its program fails to
-  load or compile, the problem is logged and rendering stays vanilla. It stays unavailable when OptiFine is
-  installed.
-  The development test pack lives in `src/test/resources/shaderpacks/focalis-depth-view`.
-- Provides an experimental, off-by-default `world_target` feature that draws the world into a Focalis-owned
-  framebuffer and copies it back to Minecraft's, which looks the same as vanilla. It is groundwork for shaderpack
-  rendering and doesn't run shaderpack world programs itself. It needs OpenGL 3.0 and stays unavailable when
-  OptiFine is installed.
-- Provides an experimental, off-by-default `world_programs` feature for testing. It binds the matching program
-  from the selected pack while vanilla draws the sky, terrain, entities, particles, weather and clouds. Each
-  dimension uses the pack's `shaders/world<id>` folder for its numeric dimension id when there is one, like
-  `world-1` for the Nether, and the main `shaders` folder otherwise. A world folder replaces the main folder
-  completely, so an empty one or one whose programs fail leaves that dimension vanilla. `dimension.properties` is
-  read but not used yet. Each folder is built the first time a dimension needs it and kept, so changing dimension
-  or rejoining doesn't build it again. The hand isn't bound, and vanilla's glowing entity outlines keep their own
-  shaders. Entity and block entity renderers that use their own shaders can do so, and the program is bound again
-  after each one. The legacy `texture` and `lightmap` samplers are set once per program to texture units 0 and 1,
-  where Minecraft already binds the texture of each draw and its lightmap, so Focalis never binds textures itself.
-  A program that declares one of them as anything but a `sampler2D` is refused. The float uniforms `viewWidth`,
-  `viewHeight` and `aspectRatio` give the size of Minecraft's framebuffer in pixels. `frameCounter` is an int that
-  counts displayed frames from 0 to 720719 and then starts over, `frameTime` is the time between the start of the
-  last frame and this one in seconds, and `frameTimeCounter` is the seconds since the first frame, starting over
-  every hour. They're taken once at the start of each frame, so every program and world pass in a frame sees the
-  same values, and they keep running in menus, while paused and across dimensions and rejoins. A program that
-  declares one of them with another type or as an array is refused. No other uniforms or composite passes are set
-  up, so regular shaderpacks won't render correctly. Programs that fail to load or build are logged
-  and those parts draw the vanilla way. It stays unavailable when OptiFine is installed. The development test packs
-  live in `src/test/resources/shaderpacks`: `focalis-world-routes`, `focalis-dimension-routes` and
-  `focalis-world-samplers`.
+[Discord](https://discord.gg/wmJKKvkCMX) •
+[Issues](https://github.com/SilentCall2598/Focalis/issues) •
+[Releases](https://github.com/SilentCall2598/Focalis/releases) •
+[License](LICENSE)
+
+</div>
+
+---
+
+## About
+
+Focalis is a project focused on taking modern rendering features and performance improvements, and applying them to older versions of Minecraft
+
+The project is being designed to be modular for the Forge Version **1.12.2**, allowing more room for compatibility, features maintainability, and easy to understand rendering behavior in modded environments.
+
+As of **now**, Focalis **is not a capable replacemement for OptiFine or Iris**, Focalis is still in its early phases and a work in progress
+
+## Current State
+
+The current state of Focalis is building basic foundations for shader support and rendering, that means:
+
+- Shaderpack loading and program compilation
+- Render-stage handling and program routing
+- Framebuffer and OpenGL resource management
+- Texture, lightmap, and shader-input infrastructure
+- Compatibility with Minecraft's existing rendering systems
+
+Some of these rendering features are already functional and tested in developmental builds, however, are still experimental and a work in progress.
+
+## Project Direction
+
+Focalis is currently being designed around four main categories:
+
+**Shaders and Rendering**
+
+Shaderpack support, rendering targets, and improvements to Minecraft's rendering pipeline.
+
+**Optimization**
+
+Reducing unnecessary rendering work while improving performance where practical.
+
+**Visual Features**
+
+Lighting, textures, and other graphics used in modded Minecraft.
+
+**Compatibility**
+
+Keeping individual systems adaptable and minimizing conflicts with other Forge mods.
+
+The vision is to make the ares work together, while still remaining independent, and without requiring every feature to be enabled.
+
+Development is done in phases, each major addition is reviewed, tested extensively, and approved once it passes.
 
 ## Requirements
 
-- Minecraft 1.12.2
-- Forge 14.23.5.2860 recommended. Focalis currently accepts 14.23.5.2847 or newer.
-- [MixinBooter](https://github.com/CleanroomMC/MixinBooter) 10.7 or a later 10.x release, installed separately.
-  Only 10.7 is tested. Keep its release file name (`!mixinbooter-<version>.jar`) so Forge loads it before Focalis.
-- Java 8
-- Client only. Servers don't need Focalis installed.
+| Component | Requirement |
+| --- | --- |
+| Minecraft | 1.12.2 |
+| Forge | 14.23.5.2847 or newer |
+| Recommended Forge | 14.23.5.2860 |
+| Java runtime | Java 8 |
+| MixinBooter | [10.7](https://github.com/CleanroomMC/MixinBooter), installed separately |
+| Installation | Client-side only |
 
-## Configuration
+You have to keep MixinBooter's original release filename the same so it loads before Focalis.
 
-Settings live in `config/focalis.cfg`, created on first launch. Changes take effect after a restart.
+Some experimental rendering features will have additional OpenGL requirements.
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `diagnostics.logGlExtensions` | `false` | Also log every OpenGL extension the driver reports. |
-| `features.frame_stats.enabled` | `false` | Periodically log frame timing and render stage counts. |
-| `features.frame_stats.reportIntervalSeconds` | `10` | Seconds between frame statistics reports. |
-| `features.shaders.enabled` | `false` | Experimental. Run the Focalis test post-process program from the selected pack. |
-| `features.shaders.pack` | empty | Name of a folder or zip directly inside the `shaderpacks` folder. |
-| `features.world_target.enabled` | `false` | Experimental. Draw the world through a Focalis framebuffer. No visible change. |
-| `features.world_programs.enabled` | `false` | Experimental. Bind the selected pack's world programs while the world draws. |
-| `features.world_programs.pack` | empty | Name of a folder or zip directly inside the `shaderpacks` folder. |
+Focalis is a client-side mod, it doesn't require server installation.
 
 ## Building
 
-Start Gradle with **JDK 17 or newer**. The Gradle daemon itself runs on JDK 25, which
-[RetroFuturaGradle](https://github.com/GTNewHorizons/RetroFuturaGradle) (the maintained ForgeGradle fork used
-for 1.12.2) requires. The mod is compiled and tested with a Java 8 toolchain. Gradle finds both JDKs locally or
-downloads them automatically.
+Focalis uses Gradle and [RetroFuturaGradle](https://github.com/GTNewHorizons/RetroFuturaGradle).
 
-```sh
-./gradlew build        # compile, run unit tests, produce build/libs/focalis-<version>.jar
-./gradlew runClient    # launch a development client
+Use a modern JDK for the Gradle build environment, the mod itself is compiled for Java 8.
+
+Build the project:
+
+```bash
+./gradlew build
 ```
 
-The first build downloads and decompiles Minecraft, which takes a few minutes. The jar to install is
-`build/libs/focalis-<version>.jar`. The `-dev` and `-sources` jars are for development.
+The compiled JAR will be available in `build/libs`.
 
-Rendering changes can be checked in the development client with the graphics QA runner in
-[tools/qa](tools/qa/README.md).
+Launch the development client:
 
-## Project layout
+```bash
+./gradlew runClient
+```
 
-All code lives under `io.github.silentcall2598.focalis`:
+## Testing and Contributions
 
-| Package | Responsibility |
-| --- | --- |
-| `core` | Startup order, system wiring, shared logging and the coremod that hands the Mixin config to MixinBooter |
-| `config` | `config/focalis.cfg` access |
-| `feature` | Toggleable features, availability checks and failure isolation |
-| `compat` | Detection of other mods Focalis must coexist with |
-| `render` | Rendering subsystem |
-| `render.lifecycle` | Frame stage model and the hooks that dispatch it |
-| `render.target` | Focalis-owned framebuffers and the world target |
-| `mixin` | Mixins. They report render boundaries to `render.lifecycle`, and one points binds of Minecraft's framebuffer at the world target while it's in use |
-| `render.state` | OpenGL context information |
-| `shader` | Shader support. So far shaderpack loading (`shader.pack`), program compiling and world program binding (`shader.program`) and the experimental post pass (`shader.post`) |
-| `diagnostics` | Environment and OpenGL reports, crash report section, diagnostic features |
+Focalis is independently developed and maintained.
+
+I am not looking for an official development team, that said, community testing and contributions are welcome and recognized.
+
+If you encounter a bug or compatibility issue, please report it through [GitHub Issues](https://github.com/SilentCall2598/Focalis/issues) or the [Discord server](https://discord.gg/wmJKKvkCMX).
+
+If you are reporting an issue, try to include:
+
+- Minecraft and Forge versions
+- Modpack or mod list
+- Steps to reproduce the problem
+- Relevant logs or crash reports
+- Screenshots if available
+
+Pull requests to the GitHub for contributions are welcome for review. Changes are individually reviewed by the criteria of compatiblity, performance, maintainability, general code quality, and how it would fit into the project.
+
+## Community
+
+If you want to follow development, share feedback, or help test Focalis:
+
+**[Join the Focalis Discord](https://discord.gg/wmJKKvkCMX)**
+
+Development progress, announcements, and future testing opportunities will be posted in there.
 
 ## License
 
-Focalis is licensed under the GNU Lesser General Public License, version 3 only (SPDX: `LGPL-3.0-only`).
-See [LICENSE](LICENSE). LGPLv3 adds additional permissions on top of GPLv3, whose text is included in [COPYING](COPYING).
+Focalis is licensed under the **GNU Lesser General Public License, version 3 only** (`LGPL-3.0-only`).
+
+See [LICENSE](LICENSE) and [COPYING](COPYING) for the full license text.
