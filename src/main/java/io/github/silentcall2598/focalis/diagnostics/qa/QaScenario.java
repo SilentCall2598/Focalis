@@ -145,7 +145,7 @@ public enum QaScenario {
             }
             steps.add(resize(-1, -1));
             steps.add(screenshot("post-resize-restored"));
-            steps.add(fullscreenRoundTrip());
+            steps.add(fullscreenRoundTrip("post-resize-fullscreen"));
             steps.add(QaStep.waitTicks(20));
             return steps;
         }
@@ -572,6 +572,84 @@ public enum QaScenario {
         }
     },
 
+    WORLD_PROGRAM_FRAME_INPUTS("world-program-frame-inputs",
+            "World programs on, with focalis-world-routes, whose programs use every view and frame uniform. What GL"
+                    + " holds has to match the probe's own frame clock and the surface drawn into, through resizes,"
+                    + " fullscreen, anaglyph, a pause screen, the Nether and a rejoin.") {
+        @Override
+        List<QaStep> steps() {
+            List<QaStep> steps = enterWorld();
+            steps.add(QaStep.action("command /summon", probe -> probe.command("/summon pig ~2 ~ ~2 {NoAI:1b}")));
+            steps.add(QaStep.action("command /setblock chest", probe -> probe.command(
+                    "/setblock ~-3 ~ ~1 minecraft:chest")));
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("frame-inputs-start"));
+            // Another aspect ratio, then the first aspect ratio at another size.
+            for (int[] size : FRAME_INPUT_SIZES) {
+                steps.add(resize(size[0], size[1]));
+                steps.add(screenshot("frame-inputs-" + size[0] + "x" + size[1]));
+            }
+            steps.add(resize(-1, -1));
+            steps.add(fullscreenRoundTrip("frame-inputs-fullscreen"));
+            steps.add(QaStep.action("anaglyph on", probe -> probe.setAnaglyph(true)));
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("frame-inputs-anaglyph"));
+            steps.add(QaStep.action("anaglyph off", probe -> probe.setAnaglyph(false)));
+            steps.add(QaStep.action("open pause", probe -> probe.openScreen("pause")));
+            steps.add(QaStep.waitTicks(60));
+            steps.add(screenshot("frame-inputs-pause"));
+            steps.add(QaStep.action("close pause", probe -> probe.openScreen("none")));
+            steps.add(QaStep.waitTicks(20));
+            steps.addAll(changeDimension(-1, "0 100 0"));
+            steps.addAll(changeDimension(0, "0 120 0"));
+            steps.add(leaveWorld());
+            steps.add(QaStep.waitTicks(40));
+            steps.add(joinWorld());
+            steps.add(QaStep.waitTicks(40));
+            steps.add(screenshot("frame-inputs-rejoined"));
+            return steps;
+        }
+
+        @Override
+        void evaluate(QaReport r) {
+            checkFeatureActive(r, WORLD_PROGRAMS);
+            QaReport.FrameUniforms frame = r.frameUniforms;
+            r.check("frame-uniforms-read-back", frame.readbacks >= 1000 && frame.mismatches == 0
+                            && frame.inconsistencies == 0,
+                    frame.mismatches + " of " + frame.readbacks + " readbacks wrong, " + frame.inconsistencies
+                            + " of " + frame.consistencyChecks + " differed within a frame, problems "
+                            + frame.problems);
+            List<String> expected = new ArrayList<>();
+            expected.add(r.environment.initialWidth + "x" + r.environment.initialHeight);
+            for (int[] size : FRAME_INPUT_SIZES) {
+                expected.add(size[0] + "x" + size[1]);
+            }
+            int sizes = expected.size() + (r.environment.fullscreenAllowed ? 1 : 0);
+            r.check("frame-uniforms-follow-resizes", frame.viewSizes.containsAll(expected)
+                            && frame.viewSizes.size() >= sizes,
+                    "read " + frame.viewSizes + ", expected " + expected
+                            + (r.environment.fullscreenAllowed ? " and the fullscreen size" : ""));
+            r.check("frame-uniforms-shared-by-programs", frame.framesWithSeveralPrograms > 0,
+                    frame.framesWithSeveralPrograms + " frames read from two or more programs");
+            r.check("frame-uniforms-shared-by-world-passes", frame.framesWithSeveralPasses > 0,
+                    frame.framesWithSeveralPasses + " frames read in two world passes");
+            r.check("frame-counter-and-time-advanced", frame.lastCounter - frame.firstCounter > 500
+                            && frame.lastTimeCounter - frame.firstTimeCounter > 10,
+                    "frameCounter " + frame.firstCounter + " to " + frame.lastCounter + ", frameTimeCounter "
+                            + frame.firstTimeCounter + " to " + frame.lastTimeCounter + ", deviations up to "
+                            + frame.maxFrameTimeDeviationMs + " and " + frame.maxTimeCounterDeviationMs + " ms");
+            Map<String, Integer> dimensions = r.worldPrograms.scopesByDimension;
+            r.check("frame-uniforms-across-dimensions-and-rejoin", dimensions.containsKey("-1")
+                            && dimensions.containsKey("0") && frame.maxReadbackGapFrames > 20,
+                    "scopes per dimension " + dimensions + ", longest gap without readbacks "
+                            + frame.maxReadbackGapFrames + " frames");
+            r.check("samplers-kept-after-frame-updates", frame.samplerRechecks > 0 && frame.samplerMismatches == 0,
+                    frame.samplerMismatches + " of " + frame.samplerRechecks + " wrong");
+            int shots = r.environment.fullscreenAllowed ? 8 : 7;
+            r.check("screenshots", r.screenshots.size() == shots, r.screenshots.size() + " of " + shots + " saved");
+        }
+    },
+
     SAMPLERS_VANILLA_REFERENCE("samplers-vanilla-reference",
             "The world-program-samplers scene with Focalis rendering nothing. Vanilla has to pass the same color"
                     + " checks, so they are known to mean something.") {
@@ -591,6 +669,7 @@ public enum QaScenario {
     static final String WORLD_PROGRAMS = WorldProgramsFeature.ID;
     private static final String OUTLINES = "ENTITY_OUTLINES/DEFAULT";
 
+    private static final int[][] FRAME_INPUT_SIZES = {{1280, 720}, {1000, 750}, {1600, 900}};
     private static final List<String> SETUP_COMMANDS = Arrays.asList("/gamerule sendCommandFeedback false",
             "/gamerule doDaylightCycle false", "/gamerule doWeatherCycle false", "/gamerule doMobSpawning false",
             "/time set 6000", "/weather clear", "/tp @p ~ ~ ~ 90 15");
@@ -745,7 +824,7 @@ public enum QaScenario {
     }
 
     // Fullscreen takes over the whole screen, so the runner only allows it when asked to.
-    private static QaStep fullscreenRoundTrip() {
+    private static QaStep fullscreenRoundTrip(String screenshot) {
         return new QaStep("fullscreen round trip", 1200) {
             private int phase;
             private int width;
@@ -777,7 +856,7 @@ public enum QaScenario {
                 }
                 probe.expectCaptureSize(probe.mc().displayWidth, probe.mc().displayHeight);
                 if (phase == 1) {
-                    probe.screenshot("post-resize-fullscreen");
+                    probe.screenshot(screenshot);
                     phase = 2;
                     return false;
                 }

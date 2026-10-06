@@ -10,7 +10,8 @@ import java.util.List;
 
 /**
  * The inputs Focalis gives one built world program. Uniforms keep their values for as long as the program isn't
- * linked again, so the samplers are set once right after linking and nothing is set while the world draws.
+ * linked again, so the samplers are set once right after linking. The frame uniforms are set the first time the
+ * program is bound in a frame. Every location is looked up once, right after linking.
  */
 public final class WorldProgramInputs {
 
@@ -21,27 +22,44 @@ public final class WorldProgramInputs {
     private static final int GL_SAMPLER_3D = 0x8B5F;
     private static final int GL_SAMPLER_CUBE = 0x8B60;
     private static final int GL_SAMPLER_2D_SHADOW = 0x8B62;
+    // values() copies the array, and updates run every frame.
+    private static final FrameUniform[] FRAME_UNIFORMS = FrameUniform.values();
 
+    private final ShaderGl gl;
     private final int[] locations;
+    private final int[] frameLocations;
+    private final boolean anyFrameUniform;
     private final List<String> unprovided;
+    // The FrameInputs sequence the frame uniforms were last set for, 0 before the first time.
+    private long updatedFrame;
 
-    private WorldProgramInputs(int[] locations, List<String> unprovided) {
+    private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, List<String> unprovided) {
+        this.gl = gl;
         this.locations = locations;
+        this.frameLocations = frameLocations;
         this.unprovided = unprovided;
+        boolean any = false;
+        for (int location : frameLocations) {
+            any |= location >= 0;
+        }
+        this.anyFrameUniform = any;
     }
 
     /**
-     * Finds the samplers the program uses and points each at its texture unit. Must run on the client thread with
+     * Finds the samplers and frame uniforms the program uses and points each sampler at its texture unit. The frame
+     * uniforms are left for {@link #update}. Must run on the client thread with
      * the context current and no Focalis program scope open. The program is bound for a moment and whatever was
      * current before is bound again. That is tried even when something throws, and if putting it back fails while
      * the program is still current, no program is left bound instead.
      *
-     * @throws ProgramBuildException if the program declares a supported sampler with another type
+     * @throws ProgramBuildException if the program declares a supported uniform with another type or as an array
      */
     static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program) throws ProgramBuildException {
         int id = program.id();
         int[] locations = new int[WorldSampler.values().length];
         Arrays.fill(locations, -1);
+        int[] frameLocations = new int[FrameUniform.values().length];
+        Arrays.fill(frameLocations, -1);
         List<String> unprovided = new ArrayList<>();
         for (ActiveUniform uniform : gl.activeUniforms(id)) {
             // Drivers can report an array with only its first element used as name[0] with size 1.
@@ -52,18 +70,79 @@ public final class WorldProgramInputs {
                 continue;
             }
             WorldSampler sampler = WorldSampler.named(name);
-            if (sampler == null) {
-                unprovided.add(name);
+            if (sampler != null) {
+                check(program, uniform, name, array, GL_SAMPLER_2D, "a sampler2D");
+                locations[sampler.ordinal()] = gl.uniformLocation(id, name);
                 continue;
             }
-            if (uniform.type != GL_SAMPLER_2D || array) {
-                throw new ProgramBuildException(ProgramFailure.inputs(program.name(), program.name() + " declares "
-                        + name + " as " + describe(uniform, array) + ", but it has to be a sampler2D"));
+            FrameUniform frame = FrameUniform.named(name);
+            if (frame != null) {
+                check(program, uniform, name, array, frame.integer() ? GL_INT : GL_FLOAT,
+                        frame.integer() ? "an int" : "a float");
+                frameLocations[frame.ordinal()] = gl.uniformLocation(id, name);
+                continue;
             }
-            locations[sampler.ordinal()] = gl.uniformLocation(id, name);
+            unprovided.add(name);
         }
         assign(gl, id, locations);
-        return new WorldProgramInputs(locations, Collections.unmodifiableList(unprovided));
+        return new WorldProgramInputs(gl, locations, frameLocations, Collections.unmodifiableList(unprovided));
+    }
+
+    private static void check(ShaderProgram program, ActiveUniform uniform, String name, boolean array, int type,
+            String expected) throws ProgramBuildException {
+        if (uniform.type != type || array) {
+            throw new ProgramBuildException(ProgramFailure.inputs(program.name(), program.name() + " declares "
+                    + name + " as " + describe(uniform, array) + ", but it has to be " + expected));
+        }
+    }
+
+    /**
+     * Sets the frame uniforms to the values of the current frame, unless this program already got them. The program
+     * has to be current and the frame captured. Nothing else in GL changes.
+     */
+    void update(FrameInputs frame) {
+        long sequence = frame.sequence();
+        if (sequence == 0) {
+            throw new IllegalStateException("A world program needed the frame values before any frame was captured");
+        }
+        if (sequence == updatedFrame) {
+            return;
+        }
+        if (anyFrameUniform) {
+            for (FrameUniform uniform : FRAME_UNIFORMS) {
+                int location = frameLocations[uniform.ordinal()];
+                if (location >= 0) {
+                    set(uniform, location, frame);
+                }
+            }
+        }
+        // Only marked once every value is in, so a failed update is never taken for a finished one.
+        updatedFrame = sequence;
+    }
+
+    private void set(FrameUniform uniform, int location, FrameInputs frame) {
+        switch (uniform) {
+            case VIEW_WIDTH:
+                gl.uniform1f(location, frame.viewWidth());
+                break;
+            case VIEW_HEIGHT:
+                gl.uniform1f(location, frame.viewHeight());
+                break;
+            case ASPECT_RATIO:
+                gl.uniform1f(location, frame.aspectRatio());
+                break;
+            case FRAME_COUNTER:
+                gl.uniform1i(location, frame.frameCounter());
+                break;
+            case FRAME_TIME:
+                gl.uniform1f(location, frame.frameTime());
+                break;
+            case FRAME_TIME_COUNTER:
+                gl.uniform1f(location, frame.frameTimeCounter());
+                break;
+            default:
+                throw new IllegalStateException("No value for " + uniform);
+        }
     }
 
     // Uniforms can only be set on the current program, and GL 2.1 has no way around that.
@@ -159,6 +238,16 @@ public final class WorldProgramInputs {
     /** The uniform location of a sampler in this program, or -1 when the program doesn't use it. */
     public int location(WorldSampler sampler) {
         return locations[sampler.ordinal()];
+    }
+
+    /** The uniform location of a frame uniform in this program, or -1 when the program doesn't use it. */
+    public int location(FrameUniform uniform) {
+        return frameLocations[uniform.ordinal()];
+    }
+
+    /** The FrameInputs sequence the frame uniforms were last set for, or 0 if they never were. */
+    long updatedFrame() {
+        return updatedFrame;
     }
 
     /** Active uniforms Focalis doesn't set yet. They keep the zero they got when the program was linked. */

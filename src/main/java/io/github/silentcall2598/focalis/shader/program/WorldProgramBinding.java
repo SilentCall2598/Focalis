@@ -38,11 +38,13 @@ public final class WorldProgramBinding {
             EnumSet.of(RenderStage.ENTITY_OUTLINES));
 
     private final ScopedProgramBinding scopes;
+    private final FrameInputs frame;
     @Nullable
     private BuiltWorldPrograms programs;
 
-    WorldProgramBinding(ScopedProgramBinding scopes) {
+    WorldProgramBinding(ScopedProgramBinding scopes, FrameInputs frame) {
         this.scopes = Objects.requireNonNull(scopes, "scopes");
+        this.frame = Objects.requireNonNull(frame, "frame");
     }
 
     /**
@@ -65,8 +67,8 @@ public final class WorldProgramBinding {
     }
 
     /**
-     * Opens the program scope of a stage. Like {@link ScopedProgramBinding}, every open scope is unwound before
-     * anything is thrown.
+     * Opens the program scope of a stage. A program bound for the first time in the current frame gets that frame's
+     * values first. Like {@link ScopedProgramBinding}, every open scope is unwound before anything is thrown.
      *
      * @throws IllegalArgumentException for a stage that isn't bound yet, like HAND
      */
@@ -75,7 +77,24 @@ public final class WorldProgramBinding {
             scopes.abort();
             throw new IllegalArgumentException("World programs aren't bound for render stage " + stage);
         }
-        scopes.start(stage, drawKind, program(ShaderProgramRouter.route(stage, drawKind)));
+        BuiltWorldPrograms.Build build = readyBuild(ShaderProgramRouter.route(stage, drawKind));
+        ShaderProgram program = build == null ? null : build.program();
+        scopes.start(stage, drawKind, program);
+        if (build == null) {
+            return;
+        }
+        // The scope just bound the program or found it current already. Either way it's current now. Programs
+        // bound again later in the frame, like after a renderer or outlines, still hold these values.
+        try {
+            build.inputs().update(frame);
+        } catch (RuntimeException | LinkageError e) {
+            try {
+                scopes.abort();
+            } catch (RuntimeException | LinkageError abortFailure) {
+                e.addSuppressed(abortFailure);
+            }
+            throw e;
+        }
     }
 
     public void end(RenderStage stage, RenderDrawKind drawKind) {
@@ -119,12 +138,18 @@ public final class WorldProgramBinding {
      */
     @Nullable
     public ShaderProgram program(ShaderProgramRole role) {
+        BuiltWorldPrograms.Build build = readyBuild(role);
+        return build == null ? null : build.program();
+    }
+
+    @Nullable
+    private BuiltWorldPrograms.Build readyBuild(ShaderProgramRole role) {
         BuiltWorldPrograms selected = programs;
         if (selected == null) {
             return null;
         }
         BuiltWorldPrograms.Entry entry = selected.forRole(role);
-        return entry.ready() ? entry.program() : null;
+        return entry.ready() ? entry.build() : null;
     }
 
     public boolean isEmpty() {

@@ -13,9 +13,13 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Tracks which shader and program objects are alive, so tests can prove nothing leaks. */
-final class RecordingShaderGl implements ShaderGl {
+/**
+ * Tracks which shader and program objects are alive, so tests can prove nothing leaks. It can bind programs for
+ * {@link ScopedProgramBinding} too, so uniforms set by the binding land on the program it made current.
+ */
+final class RecordingShaderGl implements ShaderGl, ProgramBindingGl {
 
+    private static final int FLOAT = 0x1406;
     private static final Pattern UNIFORM = Pattern.compile("uniform\\s+(\\w+)\\s+(\\w+)\\s*(?:\\[(\\d+)\\])?\\s*;");
 
     final Set<Integer> liveShaders = new HashSet<>();
@@ -63,11 +67,14 @@ final class RecordingShaderGl implements ShaderGl {
     // Thrown by the currentProgram call with this number, counting from 1.
     final Map<Integer, Throwable> currentThrowsOnCall = new HashMap<>();
     private int currentQueries;
+    // Thrown by every uniform call from the one with this number on, counting from 1.
     @Nullable
     Throwable uniformThrows;
+    int uniformThrowsFromCall = 1;
+    int uniformCalls;
 
     private final Map<Integer, List<ActiveUniform>> linkedUniforms = new HashMap<>();
-    private final Map<Integer, Map<Integer, Integer>> uniformValues = new HashMap<>();
+    private final Map<Integer, Map<Integer, Number>> uniformValues = new HashMap<>();
 
     private final Map<Integer, String> sources = new HashMap<>();
     private int nextId = 1;
@@ -155,7 +162,7 @@ final class RecordingShaderGl implements ShaderGl {
             }
         }
         linkedUniforms.put(program, new ArrayList<>(uniforms.values()));
-        uniformValues.put(program, new HashMap<Integer, Integer>());
+        uniformValues.put(program, new HashMap<Integer, Number>());
     }
 
     @Override
@@ -210,8 +217,19 @@ final class RecordingShaderGl implements ShaderGl {
 
     @Override
     public void uniform1i(int location, int value) {
+        set(location, value, false);
+    }
+
+    @Override
+    public void uniform1f(int location, float value) {
+        set(location, value, true);
+    }
+
+    // Like GL, an int goes into an int or a sampler and a float only into a float.
+    private void set(int location, Number value, boolean isFloat) {
         calls++;
-        if (uniformThrows != null) {
+        uniformCalls++;
+        if (uniformThrows != null && uniformCalls >= uniformThrowsFromCall) {
             throwUnchecked(uniformThrows);
         }
         if (location == -1) {
@@ -219,7 +237,8 @@ final class RecordingShaderGl implements ShaderGl {
         }
         List<ActiveUniform> uniforms = current == 0 ? null : linkedUniforms.get(current);
         int index = location - location(current, 0);
-        if (uniforms == null || index < 0 || index >= uniforms.size()) {
+        if (uniforms == null || index < 0 || index >= uniforms.size()
+                || (uniforms.get(index).type == FLOAT) != isFloat) {
             uniformErrors++;
             return;
         }
@@ -255,8 +274,13 @@ final class RecordingShaderGl implements ShaderGl {
 
     /** The value a uniform of a program holds, 0 until something set it, like after a real link. */
     int uniformValue(int program, String name) {
-        Integer value = uniformValues.get(program).get(find(program, name));
-        return value == null ? 0 : value;
+        Number value = uniformValues.get(program).get(find(program, name));
+        return value == null ? 0 : value.intValue();
+    }
+
+    float floatValue(int program, String name) {
+        Number value = uniformValues.get(program).get(find(program, name));
+        return value == null ? 0 : value.floatValue();
     }
 
     // Locations are per program here, so one used with the wrong program is caught.

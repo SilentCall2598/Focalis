@@ -45,25 +45,30 @@ public final class LiveWorldPrograms {
     private boolean deleted;
 
     private LiveWorldPrograms(ShaderPack pack, Function<PreparedWorldPrograms, BuiltWorldPrograms> builder,
-            BuildListener listener, ScopedProgramBinding scopes) {
+            BuildListener listener, ScopedProgramBinding scopes, FrameInputs frame) {
         this.pack = Objects.requireNonNull(pack, "pack");
         this.builder = builder;
         this.listener = Objects.requireNonNull(listener, "listener");
-        this.binding = new WorldProgramBinding(scopes);
+        this.binding = new WorldProgramBinding(scopes, frame);
     }
 
-    /** Nothing is built until a world pass needs it. */
-    public static LiveWorldPrograms create(ShaderPack pack, ShaderCapabilities capabilities,
-            BuildListener listener) {
+    /**
+     * Nothing is built until a world pass needs it.
+     *
+     * @param frame the frame values every program of the session gets. The caller captures it at the start of each
+     *     frame, and before the first world pass.
+     */
+    public static LiveWorldPrograms create(ShaderPack pack, ShaderCapabilities capabilities, BuildListener listener,
+            FrameInputs frame) {
         Objects.requireNonNull(capabilities, "capabilities");
         return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, capabilities), listener,
-                new ScopedProgramBinding());
+                new ScopedProgramBinding(), frame);
     }
 
     static LiveWorldPrograms create(ShaderPack pack, ProgramBuilder builder, BuildListener listener,
-            ScopedProgramBinding scopes) {
+            ScopedProgramBinding scopes, FrameInputs frame) {
         return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, builder), listener,
-                scopes);
+                scopes, frame);
     }
 
     /**

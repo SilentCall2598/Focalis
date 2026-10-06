@@ -19,6 +19,7 @@ import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.DirectoryPrograms;
+import io.github.silentcall2598.focalis.shader.program.FrameInputs;
 import io.github.silentcall2598.focalis.shader.program.LiveWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.PreparedWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.ProgramFailure;
@@ -29,6 +30,7 @@ import io.github.silentcall2598.focalis.shader.program.WorldProgramInputs;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.WorldClient;
+import net.minecraft.client.shader.Framebuffer;
 import org.apache.logging.log4j.Logger;
 
 import javax.annotation.Nullable;
@@ -44,9 +46,9 @@ import java.util.function.Supplier;
 /**
  * Experimental. Binds the pack program of each world stage while vanilla draws it. Each dimension takes its programs
  * from the pack's {@code world<id>} folder for it when there is one and from the main shaders folder otherwise.
- * The legacy texture and lightmap samplers read the units Minecraft binds those textures on. Nothing else a
- * shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its programs leave
- * rendering vanilla. Only a Focalis bug fails the feature.
+ * The legacy texture and lightmap samplers read the units Minecraft binds those textures on, and the view size and
+ * frame timing uniforms are set every frame. Nothing else a shaderpack expects is set up, so regular packs won't look
+ * right. Problems with the pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -58,6 +60,8 @@ public final class WorldProgramsFeature extends Feature {
     private Logger logger;
     @Nullable
     private LiveWorldPrograms live;
+    // Shared by every program in every dimension, and never reset, since a turned off feature stays off.
+    private final FrameInputs frame = new FrameInputs();
     private boolean stopped;
     // What the last world pass selected, so a change of dimension or folder is noticed once.
     @Nullable
@@ -82,7 +86,7 @@ public final class WorldProgramsFeature extends Feature {
     protected void loadConfig(ConfigSection config) {
         packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. A world<id> folder"
                 + " in its shaders folder replaces the main one in that dimension. Only the texture and lightmap"
-                + " samplers are set, and no composite passes run.");
+                + " samplers and the view size and frame timing uniforms are set, and no composite passes run.");
     }
 
     @Override
@@ -138,6 +142,10 @@ public final class WorldProgramsFeature extends Feature {
 
     // The dimension is read once per world pass, here. Nothing during the pass looks it up again.
     private void worldStart(ShaderPack pack) {
+        // Only when no FRAME START came first, which Minecraft doesn't do but a mod drawing the world could.
+        if (!frame.captured()) {
+            captureFrame();
+        }
         LiveWorldPrograms current = live;
         if (current == null && !stopped) {
             current = start(pack);
@@ -167,7 +175,7 @@ public final class WorldProgramsFeature extends Feature {
             return null;
         }
         // Owned right away, so cleanup deletes whatever it builds even if something throws later.
-        live = LiveWorldPrograms.create(pack, ShaderCapabilities.from(gl), this::folderBuilt);
+        live = LiveWorldPrograms.create(pack, ShaderCapabilities.from(gl), this::folderBuilt, frame);
         return live;
     }
 
@@ -296,11 +304,23 @@ public final class WorldProgramsFeature extends Feature {
         }
     }
 
+    // Every displayed frame counts, also the ones without a world, like in menus.
     private void onFrame(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
+        if (phase == RenderPhase.START) {
+            captureFrame();
+            return;
+        }
         LiveWorldPrograms current = live;
-        if (phase == RenderPhase.END && current != null) {
+        if (current != null) {
             current.frameEnd();
         }
+    }
+
+    // Minecraft only resizes its framebuffer after a frame or in a tick, never between FRAME START and the world
+    // pass. The world target is always the same size as this framebuffer.
+    private void captureFrame() {
+        Framebuffer framebuffer = Minecraft.getMinecraft().getFramebuffer();
+        frame.capture(System.nanoTime(), framebuffer.framebufferWidth, framebuffer.framebufferHeight);
     }
 
     // Without GL information nothing can be built in any dimension. That isn't a Focalis bug, so the feature stays

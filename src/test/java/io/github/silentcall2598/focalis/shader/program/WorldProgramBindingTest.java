@@ -42,11 +42,13 @@ class WorldProgramBindingTest {
 
     private final RecordingShaderGl shaderGl = new RecordingShaderGl();
     private final RecordingProgramBindingGl gl = new RecordingProgramBindingGl(EXTERNAL);
+    private final FrameInputs frame = new FrameInputs();
     private BuiltWorldPrograms programs;
     private WorldProgramBinding binding;
 
     WorldProgramBindingTest() {
         shaderGl.failCompileWhenSourceContains = "BROKEN";
+        frame.capture(0, 854, 480);
     }
 
     // A plain vertex and fragment shader for each program, like "gbuffers_terrain".
@@ -63,7 +65,7 @@ class WorldProgramBindingTest {
         PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, pack.root(),
                 StandardMacros.environment(), ShaderMacros.empty());
         programs = BuiltWorldPrograms.build(prepared, new ProgramBuilder(EVERYTHING, shaderGl));
-        binding = new WorldProgramBinding(new ScopedProgramBinding(gl));
+        binding = new WorldProgramBinding(new ScopedProgramBinding(gl), frame);
         binding.select(programs);
     }
 
@@ -390,7 +392,7 @@ class WorldProgramBindingTest {
 
     @Test
     void withNothingSelectedEveryScopeBindsNothing() {
-        binding = new WorldProgramBinding(new ScopedProgramBinding(gl));
+        binding = new WorldProgramBinding(new ScopedProgramBinding(gl), frame);
 
         binding.start(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);
         binding.end(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID);

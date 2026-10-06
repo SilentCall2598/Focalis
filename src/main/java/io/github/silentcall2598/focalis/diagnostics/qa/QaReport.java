@@ -6,7 +6,9 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * Everything a QA run records, written as probe.json. Field names are the JSON keys. Lists of individual events are
@@ -44,6 +46,7 @@ final class QaReport {
     final Resources resources = new Resources();
     final WorldTarget worldTarget = new WorldTarget();
     final WorldPrograms worldPrograms = new WorldPrograms();
+    final FrameUniforms frameUniforms = new FrameUniforms();
     @Nullable
     Map<String, Integer> perturbations;
     @Nullable
@@ -389,6 +392,36 @@ final class QaReport {
         final List<String> problems = new ArrayList<>();
         @Nullable
         String stopped;
+    }
+
+    // The view and frame uniforms of the program current right after each bound stage START, read back from GL and
+    // compared with the probe's own frame clock and the surface the pass draws into.
+    static final class FrameUniforms {
+        // Readbacks of programs with frame uniforms, and how many disagreed with the probe.
+        int readbacks;
+        int mismatches;
+        // Later readbacks in the same frame, which have to hold exactly what the first one held.
+        int consistencyChecks;
+        int inconsistencies;
+        // Frames where two different programs were read, and where two world passes were.
+        int framesWithSeveralPrograms;
+        int framesWithSeveralPasses;
+        // Every view size read, like "1280x720".
+        final Set<String> viewSizes = new TreeSet<>();
+        int firstCounter = -1;
+        int lastCounter = -1;
+        double firstTimeCounter = -1;
+        double lastTimeCounter = -1;
+        double maxFrameTimeDeviationMs;
+        double maxTimeCounterDeviationMs;
+        // The most probe frames between two frames with readbacks, like while the world was left.
+        int maxReadbackGapFrames;
+        // The texture and lightmap units read again at the same points, after frame updates.
+        int samplerRechecks;
+        int samplerMismatches;
+        // Raw readbacks, the first of each view size and then every 500th.
+        final List<String> samples = new ArrayList<>();
+        final List<String> problems = new ArrayList<>();
     }
 
     static final class BuiltProgram {
