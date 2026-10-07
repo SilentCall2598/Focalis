@@ -3,8 +3,8 @@
 package io.github.silentcall2598.focalis.shader.post;
 
 /**
- * Lets development QA tooling watch the post pass. Every method does nothing by default, and normal play only ever
- * uses {@link #NONE}. Client thread only.
+ * Lets an optional development probe watch the post pass. Every method does nothing by default, and normal play only
+ * ever uses {@link #NONE}. Client thread only.
  */
 public interface PostPassMonitor {
 

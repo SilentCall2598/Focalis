@@ -75,6 +75,15 @@ public final class WorldProgramsFeature extends Feature {
     private final FloatBuffer matrixBuffer = BufferUtils.createFloatBuffer(16);
     private final float[] modelView = new float[16];
     private final float[] projection = new float[16];
+    private final float[] stageProjection = new float[16];
+    // The camera read at CAMERA END, until the pass's first world stage turns it into a snapshot. Null otherwise, so
+    // it never holds on to a world.
+    @Nullable
+    private CameraStream pendingStream;
+    private RenderDrawKind pendingKind = RenderDrawKind.DEFAULT;
+    private double pendingX;
+    private double pendingY;
+    private double pendingZ;
     private boolean loggedSingularCamera;
     private boolean stopped;
     // What the last world pass selected, so a change of dimension or folder is noticed once.
@@ -87,7 +96,7 @@ public final class WorldProgramsFeature extends Feature {
 
     /**
      * @param glContext returns null until the first frame has captured the context
-     * @param monitor {@link WorldProgramMonitor#NONE} except in development QA runs
+     * @param monitor {@link WorldProgramMonitor#NONE} unless a development probe is attached
      */
     public WorldProgramsFeature(Supplier<GlContextInfo> glContext, WorldProgramMonitor monitor) {
         super(ID, "Experimental. Binds the world programs of a shaderpack while the world draws. For testing only,"
@@ -163,6 +172,7 @@ public final class WorldProgramsFeature extends Feature {
             captureFrame();
         }
         camera.worldPassStarted();
+        pendingStream = null;
         LiveWorldPrograms current = live;
         if (current == null && !stopped) {
             current = start(pack);
@@ -293,7 +303,12 @@ public final class WorldProgramsFeature extends Feature {
         }
         if (phase == RenderPhase.END) {
             current.stageEnd(stage, drawKind);
-        } else if (current.stageStart(stage, drawKind)) {
+            return;
+        }
+        if (pendingStream != null) {
+            finishCamera();
+        }
+        if (current.stageStart(stage, drawKind)) {
             monitor.scopeStarted(stage, drawKind);
         }
     }
@@ -322,7 +337,8 @@ public final class WorldProgramsFeature extends Feature {
     }
 
     // At the END vanilla has just set up the pass's projection and model-view, before the sky and clouds swap in their
-    // own projections and before anything draws. The only GL work is reading them back, once per pass.
+    // own projections and before anything draws. The only GL work is reading them back, once per pass. The snapshot
+    // waits for the first world stage, see finishCamera.
     private void onCamera(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         if (phase != RenderPhase.END || live == null) {
             return;
@@ -339,10 +355,24 @@ public final class WorldProgramsFeature extends Feature {
         double x = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks;
         double y = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks;
         double z = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks;
-        CameraStream stream = new CameraStream(world, world.provider.getDimension(), entity,
+        pendingStream = new CameraStream(world, world.provider.getDimension(), entity,
                 mc.gameSettings.thirdPersonView, mc.displayWidth, mc.displayHeight);
-        CameraSnapshot snapshot = camera.capture(lane(drawKind), frame.sequence(), stream, x, y, z, modelView,
-                projection);
+        pendingKind = drawKind;
+        pendingX = x;
+        pendingY = y;
+        pendingZ = z;
+    }
+
+    // Right before the pass's first world stage binds anything. The projection set up for that stage is what the world
+    // draws with, which at 4 or more chunks of render distance has lost anaglyph's eye offset again. CameraInputs
+    // takes the x and y rows from it. One more read, once per pass.
+    private void finishCamera() {
+        CameraStream stream = pendingStream;
+        pendingStream = null;
+        readMatrix(GL11.GL_PROJECTION_MATRIX, stageProjection);
+        RenderDrawKind drawKind = pendingKind;
+        CameraSnapshot snapshot = camera.capture(lane(drawKind), frame.sequence(), stream, pendingX, pendingY,
+                pendingZ, modelView, projection, stageProjection);
         if (!(snapshot.modelViewInvertible() && snapshot.projectionInvertible()) && !loggedSingularCamera) {
             loggedSingularCamera = true;
             logger.warn("The camera's {} matrix has no inverse, so programs that use it draw the normal way until it"
@@ -379,6 +409,7 @@ public final class WorldProgramsFeature extends Feature {
             // Leaving a world lets go of it here, so no camera history can reach into the next one either.
             if (Minecraft.getMinecraft().world == null) {
                 camera.clear();
+                pendingStream = null;
             }
             return;
         }
@@ -415,6 +446,7 @@ public final class WorldProgramsFeature extends Feature {
         justBuilt = null;
         loggedDimensions.clear();
         camera.clear();
+        pendingStream = null;
         if (current != null) {
             current.delete();
         }

@@ -57,7 +57,7 @@ public final class FocalisCore {
 
         // Hooks first, so features see which render stages are dispatched when they register listeners.
         render.install();
-        // Listeners run in registration order, so this puts the probe's checks on both sides of the features' work.
+        // Listeners run in registration order, so this puts the probe's listeners on both sides of the features' work.
         if (probe != null) {
             probe.installBefore(render.lifecycle());
         }

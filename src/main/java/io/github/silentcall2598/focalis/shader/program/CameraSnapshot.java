@@ -5,8 +5,8 @@ package io.github.silentcall2598.focalis.shader.program;
 import javax.annotation.Nullable;
 
 /**
- * The camera of one world pass, taken once right after vanilla set up its camera, together with the previous capture
- * of the same camera lane. Never changes after it's made. Matrices are stored column by column like OpenGL keeps
+ * The camera of one world pass, taken once before any of its stages draws, together with the previous capture of the
+ * same camera lane. Never changes after it's made. Matrices are stored column by column like OpenGL keeps
  * them, and the getters hand out copies.
  */
 public final class CameraSnapshot {

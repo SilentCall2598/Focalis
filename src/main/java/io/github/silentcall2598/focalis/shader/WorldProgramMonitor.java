@@ -9,8 +9,8 @@ import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
 
 /**
- * Lets development QA tooling watch the world programs. Every method does nothing by default, and normal play only
- * ever uses {@link #NONE}. Client thread only.
+ * Lets an optional development probe watch the world programs. Every method does nothing by default, and normal play
+ * only ever uses {@link #NONE}. Client thread only.
  */
 public interface WorldProgramMonitor {
 
@@ -28,7 +28,7 @@ public interface WorldProgramMonitor {
     default void programsSelected(int dimension, ProgramDirectory directory, BuiltWorldPrograms programs) {
     }
 
-    /** The camera of a world pass was just captured, at the END of its CAMERA stage. */
+    /** The camera of a world pass was just captured, right before its first world stage binds anything. */
     default void cameraCaptured(RenderDrawKind drawKind, CameraSnapshot snapshot) {
     }
 

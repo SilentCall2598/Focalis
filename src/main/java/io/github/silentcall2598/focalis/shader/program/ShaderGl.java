@@ -6,7 +6,6 @@ import java.util.List;
 
 /**
  * The OpenGL calls this package makes, nothing more. Every method needs a current context on the calling thread.
- * Tests swap in a recording version to check that failures never leak objects.
  */
 interface ShaderGl {
 

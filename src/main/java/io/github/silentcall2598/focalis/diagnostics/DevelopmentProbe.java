@@ -15,9 +15,9 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * Development tooling that watches Focalis from inside the game. It isn't part of Focalis, and only a launch with
- * {@code -Dfocalis.probe=<class>} gets one. That class needs a public constructor taking the feature statuses and
- * the GL context, both as suppliers. Normal play never has a probe.
+ * An optional instrumentation hook for local development. Only a launch with {@code -Dfocalis.probe=<class>} gets
+ * one, and that class needs a public constructor taking the feature statuses and the GL context, both as
+ * suppliers. Normal play never has a probe.
  */
 public interface DevelopmentProbe {
 
