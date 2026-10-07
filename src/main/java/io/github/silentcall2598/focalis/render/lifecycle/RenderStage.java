@@ -12,6 +12,11 @@ public enum RenderStage {
     FRAME,
     /** One whole world pass, from the start of EntityRenderer.renderWorldPass to right before the hand. */
     WORLD,
+    /**
+     * Vanilla setting up the camera at the start of each world pass, once per pass. At its END the pass's projection
+     * and model-view are in place and nothing has drawn with them yet. The draw kind says which world pass it is.
+     */
+    CAMERA,
     /** Sky, sun, moon and stars. Skipped below 4 chunks of render distance. */
     SKY,
     /** Solid and cutout chunk layers, one pair per layer with the layer as draw kind. */

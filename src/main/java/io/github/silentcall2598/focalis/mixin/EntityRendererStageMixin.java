@@ -26,6 +26,21 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererStageMixin {
 
+    // The camera of each world pass. Its END comes right after vanilla set the pass's projection and model-view, before
+    // the sky and clouds swap in their own projections.
+    @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/EntityRenderer;setupCameraTransform(FI)V"), require = 0,
+            expect = 1)
+    private void focalis$camera(EntityRenderer renderer, float partialTicks, int pass, Operation<Void> original) {
+        RenderDrawKind kind = RenderHooks.cameraKind(pass);
+        RenderHooks.stageStart(RenderStage.CAMERA, kind, partialTicks);
+        try {
+            original.call(renderer, partialTicks, pass);
+        } finally {
+            RenderHooks.stageEnd(RenderStage.CAMERA, kind, partialTicks);
+        }
+    }
+
     // The sun and moon inside it are reported by RenderGlobalSkyMixin.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderSky(FI)V"), require = 0, expect = 1)

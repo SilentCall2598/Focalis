@@ -52,6 +52,15 @@ interface ShaderGl {
     /** Sets a float uniform of the program that is current right now. */
     void uniform1f(int location, float value);
 
+    /** Sets a vec3 uniform of the program that is current right now. */
+    void uniform3f(int location, float x, float y, float z);
+
+    /**
+     * Sets a mat4 uniform of the program that is current right now. The 16 values are column by column, the order
+     * OpenGL returns matrices in, and are sent without transposing.
+     */
+    void uniformMatrix4(int location, float[] columns);
+
     /** The program name GL_CURRENT_PROGRAM reports, 0 when none is active. */
     int currentProgram();
 
