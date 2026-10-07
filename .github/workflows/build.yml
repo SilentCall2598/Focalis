@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # RetroFuturaGradle needs Gradle to run on Java 25. The mod itself builds and tests on Java 8.
+      # RetroFuturaGradle needs Gradle to run on Java 25. The mod itself builds on Java 8.
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

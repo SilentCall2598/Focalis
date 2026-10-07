@@ -4,12 +4,11 @@ package io.github.silentcall2598.focalis.core;
 
 import io.github.silentcall2598.focalis.compat.CompatibilityReport;
 import io.github.silentcall2598.focalis.config.FocalisConfig;
+import io.github.silentcall2598.focalis.diagnostics.DevelopmentProbe;
 import io.github.silentcall2598.focalis.diagnostics.EnvironmentReport;
 import io.github.silentcall2598.focalis.diagnostics.FocalisCrashSection;
 import io.github.silentcall2598.focalis.diagnostics.FrameStatsFeature;
 import io.github.silentcall2598.focalis.diagnostics.OpenGlReport;
-import io.github.silentcall2598.focalis.diagnostics.qa.QaProbe;
-import io.github.silentcall2598.focalis.diagnostics.qa.QaSettings;
 import io.github.silentcall2598.focalis.feature.FeatureManager;
 import io.github.silentcall2598.focalis.render.RenderSubsystem;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
@@ -28,23 +27,23 @@ public final class FocalisCore {
 
     private final RenderSubsystem render;
     private final FeatureManager features;
-    // Only set in development QA runs from tools/qa.
+    // Only set when a development launch asks for a probe.
     @Nullable
-    private final QaProbe qa;
+    private final DevelopmentProbe probe;
     private FocalisConfig config;
 
     public FocalisCore() {
         render = new RenderSubsystem(this::onGlContextReady);
         features = new FeatureManager(render.lifecycle());
-        QaSettings qaSettings = QaSettings.fromSystemProperties();
-        qa = qaSettings == null ? null : new QaProbe(qaSettings, features::statuses, render::glContext);
+        probe = DevelopmentProbe.fromSystemProperty(features::statuses, render::glContext);
         features.register(new FrameStatsFeature());
         // Before the shader feature, since listeners run in registration order and the post pass needs the world
         // copied back to Minecraft's framebuffer first.
-        features.register(new WorldTargetFeature(qa == null ? WorldTargetMonitor.NONE : qa.worldTargetMonitor()));
+        features.register(new WorldTargetFeature(
+                probe == null ? WorldTargetMonitor.NONE : probe.worldTargetMonitor()));
         features.register(new WorldProgramsFeature(render::glContext,
-                qa == null ? WorldProgramMonitor.NONE : qa.worldProgramMonitor()));
-        PostPassMonitor postPassMonitor = qa == null ? PostPassMonitor.NONE : qa.postPassMonitor();
+                probe == null ? WorldProgramMonitor.NONE : probe.worldProgramMonitor()));
+        PostPassMonitor postPassMonitor = probe == null ? PostPassMonitor.NONE : probe.postPassMonitor();
         features.register(new ShaderFeature(render::glContext, postPassMonitor));
     }
 
@@ -58,13 +57,13 @@ public final class FocalisCore {
 
         // Hooks first, so features see which render stages are dispatched when they register listeners.
         render.install();
-        // Listeners run in registration order, so this puts the QA checks on both sides of the features' work.
-        if (qa != null) {
-            qa.installBefore(render.lifecycle());
+        // Listeners run in registration order, so this puts the probe's checks on both sides of the features' work.
+        if (probe != null) {
+            probe.installBefore(render.lifecycle());
         }
         features.initialize(config, compat);
-        if (qa != null) {
-            qa.installAfter(render.lifecycle());
+        if (probe != null) {
+            probe.installAfter(render.lifecycle());
         }
         config.saveIfChanged();
     }
