@@ -10,8 +10,9 @@ import java.util.List;
 
 /**
  * The inputs Focalis gives one built world program. Uniforms keep their values for as long as the program isn't
- * linked again, so the samplers are set once right after linking. The frame uniforms are set the first time the
- * program is bound in a frame, and the camera uniforms the first time it's bound with a new camera snapshot. Every
+ * linked again, so the samplers are set once right after linking. The frame uniforms and the world values are set the
+ * first time the program is bound in a frame, and the camera uniforms and the values in eye space the first time it's
+ * bound with a new camera snapshot. The fog is draw state, so it's set every time a stage binds the program. Every
  * location is looked up once, right after linking.
  */
 public final class WorldProgramInputs {
@@ -36,29 +37,42 @@ public final class WorldProgramInputs {
     // values() copies the array, and updates run every frame.
     private static final FrameUniform[] FRAME_UNIFORMS = FrameUniform.values();
     private static final CameraUniform[] CAMERA_UNIFORMS = CameraUniform.values();
+    private static final EnvironmentUniform[] ENVIRONMENT_UNIFORMS = EnvironmentUniform.values();
 
     private final ShaderGl gl;
     private final int[] locations;
     private final int[] frameLocations;
     private final int[] cameraLocations;
+    private final int[] environmentLocations;
     private final boolean anyFrameUniform;
     private final boolean anyCameraUniform;
+    private final boolean anyWorldValue;
+    private final boolean anyPassValue;
+    private final boolean anyFogValue;
     private final List<String> unprovided;
     // The FrameInputs sequence the frame uniforms were last set for, 0 before the first time.
     private long updatedFrame;
     // The CameraSnapshot sequence the camera uniforms were last set for, 0 before the first time.
     private long updatedCamera;
     private long cameraUpdates;
+    // The EnvironmentInputs frame and pass the world and eye space values were last set for, 0 before the first time.
+    private long updatedWorldValues;
+    private long updatedPassValues;
+    private long fogUpdates;
 
     private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, int[] cameraLocations,
-            List<String> unprovided) {
+            int[] environmentLocations, List<String> unprovided) {
         this.gl = gl;
         this.locations = locations;
         this.frameLocations = frameLocations;
         this.cameraLocations = cameraLocations;
+        this.environmentLocations = environmentLocations;
         this.unprovided = unprovided;
         this.anyFrameUniform = any(frameLocations);
         this.anyCameraUniform = any(cameraLocations);
+        this.anyWorldValue = any(environmentLocations, EnvironmentUniform.Update.FRAME);
+        this.anyPassValue = any(environmentLocations, EnvironmentUniform.Update.PASS);
+        this.anyFogValue = any(environmentLocations, EnvironmentUniform.Update.BIND);
     }
 
     private static boolean any(int[] locations) {
@@ -70,9 +84,18 @@ public final class WorldProgramInputs {
         return false;
     }
 
+    private static boolean any(int[] locations, EnvironmentUniform.Update update) {
+        for (EnvironmentUniform uniform : ENVIRONMENT_UNIFORMS) {
+            if (uniform.update() == update && locations[uniform.ordinal()] >= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
-     * Finds the samplers, frame and camera uniforms the program uses and points each sampler at its texture unit. The
-     * frame and camera uniforms are left for {@link #update}. Must run on the client thread with
+     * Finds the samplers and the frame, camera and environment uniforms the program uses and points each sampler at
+     * its texture unit. Everything but the samplers is left for {@link #update}. Must run on the client thread with
      * the context current and no Focalis program scope open. The program is bound for a moment and whatever was
      * current before is bound again. That is tried even when something throws, and if putting it back fails while
      * the program is still current, no program is left bound instead.
@@ -87,6 +110,8 @@ public final class WorldProgramInputs {
         Arrays.fill(frameLocations, -1);
         int[] cameraLocations = new int[CAMERA_UNIFORMS.length];
         Arrays.fill(cameraLocations, -1);
+        int[] environmentLocations = new int[ENVIRONMENT_UNIFORMS.length];
+        Arrays.fill(environmentLocations, -1);
         List<String> unprovided = new ArrayList<>();
         for (ActiveUniform uniform : gl.activeUniforms(id)) {
             // Drivers can report an array with only its first element used as name[0] with size 1.
@@ -116,10 +141,16 @@ public final class WorldProgramInputs {
                 cameraLocations[camera.ordinal()] = gl.uniformLocation(id, name);
                 continue;
             }
+            EnvironmentUniform environment = EnvironmentUniform.named(name);
+            if (environment != null) {
+                check(program, uniform, name, array, environment.type().glType, environment.type().description);
+                environmentLocations[environment.ordinal()] = gl.uniformLocation(id, name);
+                continue;
+            }
             unprovided.add(name);
         }
         assign(gl, id, locations);
-        return new WorldProgramInputs(gl, locations, frameLocations, cameraLocations,
+        return new WorldProgramInputs(gl, locations, frameLocations, cameraLocations, environmentLocations,
                 Collections.unmodifiableList(unprovided));
     }
 
@@ -132,11 +163,19 @@ public final class WorldProgramInputs {
     }
 
     /**
-     * Whether this program can draw with {@code camera}. A program that uses no camera uniform always can. One that
-     * does needs a snapshot, and one with the inverse matrices it reads. Otherwise its stage draws the vanilla way,
-     * since the values it would get are missing or would belong to another camera.
+     * Whether this program can draw with {@code camera}, the environment values and the fog. A program that uses no
+     * camera uniform always can as far as the camera goes. One that does needs a snapshot, and one with the inverse
+     * matrices it reads. A program with environment values needs the ones of {@code camera}'s world pass, and one
+     * with fog values needs fog that can be read. Otherwise its stage draws the vanilla way, since the values it would
+     * get are missing or would belong to another camera.
      */
-    boolean accepts(@Nullable CameraSnapshot camera) {
+    boolean accepts(@Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog) {
+        if ((anyWorldValue || anyPassValue) && !environment.readyFor(camera)) {
+            return false;
+        }
+        if (anyFogValue && !fog.available()) {
+            return false;
+        }
         if (!anyCameraUniform) {
             return true;
         }
@@ -150,17 +189,19 @@ public final class WorldProgramInputs {
     }
 
     /**
-     * Sets the frame uniforms to the values of the current frame and the camera uniforms to those of
-     * {@code camera}, each unless this program already got them. The program has to be current, the frame captured
-     * and {@code camera} {@link #accepts accepted}. Nothing else in GL changes.
+     * Sets the frame uniforms and world values to the ones of the current frame, and the camera uniforms and values
+     * in eye space to those of {@code camera}, each unless this program already got them. The fog is set every time.
+     * The program has to be current, the frame captured and everything {@link #accepts accepted}. Nothing else in GL
+     * changes.
      */
-    void update(FrameInputs frame, @Nullable CameraSnapshot camera) {
+    void update(FrameInputs frame, @Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog) {
         long sequence = frame.sequence();
         if (sequence == 0) {
             throw new IllegalStateException("A world program needed the frame values before any frame was captured");
         }
-        if (!accepts(camera)) {
-            throw new IllegalStateException("A world program was bound with camera values it can't use");
+        if (!accepts(camera, environment, fog)) {
+            throw new IllegalStateException("A world program was bound with camera, environment or fog values it"
+                    + " can't use");
         }
         if (sequence != updatedFrame) {
             if (anyFrameUniform) {
@@ -184,6 +225,93 @@ public final class WorldProgramInputs {
             updatedCamera = camera.sequence();
             cameraUpdates++;
         }
+        if (anyWorldValue && environment.frame() != updatedWorldValues) {
+            setEnvironment(EnvironmentUniform.Update.FRAME, environment, fog);
+            updatedWorldValues = environment.frame();
+        }
+        if (anyPassValue && environment.pass() != updatedPassValues) {
+            setEnvironment(EnvironmentUniform.Update.PASS, environment, fog);
+            updatedPassValues = environment.pass();
+        }
+        if (anyFogValue) {
+            setEnvironment(EnvironmentUniform.Update.BIND, environment, fog);
+            fogUpdates++;
+        }
+    }
+
+    private void setEnvironment(EnvironmentUniform.Update update, EnvironmentInputs environment, FogSource fog) {
+        for (EnvironmentUniform uniform : ENVIRONMENT_UNIFORMS) {
+            int location = environmentLocations[uniform.ordinal()];
+            if (location >= 0 && uniform.update() == update) {
+                set(uniform, location, environment, fog);
+            }
+        }
+    }
+
+    private void set(EnvironmentUniform uniform, int location, EnvironmentInputs environment, FogSource fog) {
+        switch (uniform) {
+            case WORLD_TIME:
+                gl.uniform1i(location, environment.worldTime());
+                break;
+            case WORLD_DAY:
+                gl.uniform1i(location, environment.worldDay());
+                break;
+            case MOON_PHASE:
+                gl.uniform1i(location, environment.moonPhase());
+                break;
+            case SUN_ANGLE:
+                gl.uniform1f(location, environment.sunAngle());
+                break;
+            case SHADOW_ANGLE:
+                gl.uniform1f(location, environment.shadowAngle());
+                break;
+            case RAIN_STRENGTH:
+                gl.uniform1f(location, environment.rainStrength());
+                break;
+            case SKY_COLOR:
+                gl.uniform3f(location, environment.skyRed(), environment.skyGreen(), environment.skyBlue());
+                break;
+            case EYE_BRIGHTNESS:
+                gl.uniform2i(location, environment.blockBrightness(), environment.skyBrightness());
+                break;
+            case SUN_POSITION:
+                set3(location, environment.sunPosition());
+                break;
+            case MOON_POSITION:
+                set3(location, environment.moonPosition());
+                break;
+            case SHADOW_LIGHT_POSITION:
+                set3(location, environment.sunUp() ? environment.sunPosition() : environment.moonPosition());
+                break;
+            case UP_POSITION:
+                set3(location, environment.upPosition());
+                break;
+            case IS_EYE_IN_WATER:
+                gl.uniform1i(location, environment.medium());
+                break;
+            case FOG_MODE:
+                // With fog off nothing is fogged, and 0 is no GL fog mode.
+                gl.uniform1i(location, fog.enabled() ? fog.mode() : 0);
+                break;
+            case FOG_START:
+                gl.uniform1f(location, fog.start());
+                break;
+            case FOG_END:
+                gl.uniform1f(location, fog.end());
+                break;
+            case FOG_DENSITY:
+                gl.uniform1f(location, fog.density());
+                break;
+            case FOG_COLOR:
+                gl.uniform3f(location, fog.red(), fog.green(), fog.blue());
+                break;
+            default:
+                throw new IllegalStateException("No value for " + uniform);
+        }
+    }
+
+    private void set3(int location, float[] value) {
+        gl.uniform3f(location, value[0], value[1], value[2]);
     }
 
     // The positions stay doubles until here, since a vec3 only holds floats.
@@ -377,6 +505,26 @@ public final class WorldProgramInputs {
     /** The uniform location of a camera uniform in this program, or -1 when the program doesn't use it. */
     public int location(CameraUniform uniform) {
         return cameraLocations[uniform.ordinal()];
+    }
+
+    /** The uniform location of an environment uniform in this program, or -1 when the program doesn't use it. */
+    public int location(EnvironmentUniform uniform) {
+        return environmentLocations[uniform.ordinal()];
+    }
+
+    /** The EnvironmentInputs frame the world values were last set for, or 0 if they never were. */
+    public long updatedWorldValues() {
+        return updatedWorldValues;
+    }
+
+    /** The EnvironmentInputs pass the values in eye space were last set for, or 0 if they never were. */
+    public long updatedPassValues() {
+        return updatedPassValues;
+    }
+
+    /** How many times the fog values were set, once for every bind of a program that uses them. */
+    public long fogUpdates() {
+        return fogUpdates;
     }
 
     /** The FrameInputs sequence the frame uniforms were last set for, or 0 if they never were. */

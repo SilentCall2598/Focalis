@@ -45,11 +45,12 @@ public final class LiveWorldPrograms {
     private boolean deleted;
 
     private LiveWorldPrograms(ShaderPack pack, Function<PreparedWorldPrograms, BuiltWorldPrograms> builder,
-            BuildListener listener, ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera) {
+            BuildListener listener, ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera,
+            EnvironmentInputs environment, FogSource fog) {
         this.pack = Objects.requireNonNull(pack, "pack");
         this.builder = builder;
         this.listener = Objects.requireNonNull(listener, "listener");
-        this.binding = new WorldProgramBinding(scopes, frame, camera);
+        this.binding = new WorldProgramBinding(scopes, frame, camera, environment, fog);
     }
 
     /**
@@ -59,18 +60,22 @@ public final class LiveWorldPrograms {
      *     frame, and before the first world pass.
      * @param camera the camera values every program of the session gets. The caller starts every world pass on it
      *     and captures the pass's camera before its first world stage binds anything.
+     * @param environment the world and environment values every program of the session gets. The caller takes them
+     *     right after the camera of each world pass.
+     * @param fog read whenever a stage binds a program that uses fog values
      */
     public static LiveWorldPrograms create(ShaderPack pack, ShaderCapabilities capabilities, BuildListener listener,
-            FrameInputs frame, CameraInputs camera) {
+            FrameInputs frame, CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
         Objects.requireNonNull(capabilities, "capabilities");
         return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, capabilities), listener,
-                new ScopedProgramBinding(), frame, camera);
+                new ScopedProgramBinding(), frame, camera, environment, fog);
     }
 
     static LiveWorldPrograms create(ShaderPack pack, ProgramBuilder builder, BuildListener listener,
-            ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera) {
+            ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
+            FogSource fog) {
         return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, builder), listener,
-                scopes, frame, camera);
+                scopes, frame, camera, environment, fog);
     }
 
     /**

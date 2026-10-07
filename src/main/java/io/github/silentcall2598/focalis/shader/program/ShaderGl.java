@@ -48,6 +48,9 @@ interface ShaderGl {
     /** Sets an int or sampler uniform of the program that is current right now. */
     void uniform1i(int location, int value);
 
+    /** Sets an ivec2 uniform of the program that is current right now. */
+    void uniform2i(int location, int x, int y);
+
     /** Sets a float uniform of the program that is current right now. */
     void uniform1f(int location, float value);
 

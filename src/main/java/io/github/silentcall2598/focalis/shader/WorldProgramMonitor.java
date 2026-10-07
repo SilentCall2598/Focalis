@@ -7,6 +7,7 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
+import io.github.silentcall2598.focalis.shader.program.EnvironmentInputs;
 
 /**
  * Lets an optional development probe watch the world programs. Every method does nothing by default, and normal play
@@ -30,6 +31,10 @@ public interface WorldProgramMonitor {
 
     /** The camera of a world pass was just captured, right before its first world stage binds anything. */
     default void cameraCaptured(RenderDrawKind drawKind, CameraSnapshot snapshot) {
+    }
+
+    /** The environment values of a world pass were just taken, right after its camera. */
+    default void environmentCaptured(CameraSnapshot snapshot, EnvironmentInputs environment) {
     }
 
     /** Runs right after a stage's program scope opened, before vanilla draws. */
