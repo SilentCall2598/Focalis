@@ -77,6 +77,14 @@ final class FirstPassStages {
     // Required stages and kinds whose count isn't vanilla's, like ENTITIES/ENTITY_PASS_1 0 instead of 1.
     List<String> mismatches() {
         List<String> wrong = new ArrayList<>();
+        // The camera's kind depends on whether anaglyph 3D is on, so only its total is checked.
+        int cameras = 0;
+        for (RenderDrawKind kind : RenderDrawKind.values()) {
+            cameras += counts[index(RenderStage.CAMERA, kind)];
+        }
+        if (cameras != 1) {
+            wrong.add(RenderStage.CAMERA + " " + cameras + " instead of 1");
+        }
         for (RenderStage stage : RenderStage.values()) {
             if (!checked(stage)) {
                 continue;

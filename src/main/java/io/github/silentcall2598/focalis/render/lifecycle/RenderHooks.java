@@ -17,9 +17,10 @@ import java.util.Set;
 public final class RenderHooks {
 
     /** Stages the Mixins wrap around vanilla calls inside the world pass. Read only. */
-    public static final Set<RenderStage> PRECISE_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.SKY,
-            RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.ENTITY_OUTLINES, RenderStage.PARTICLES,
-            RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS, RenderStage.HAND));
+    public static final Set<RenderStage> PRECISE_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.CAMERA,
+            RenderStage.SKY, RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.ENTITY_OUTLINES,
+            RenderStage.PARTICLES, RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS,
+            RenderStage.HAND));
 
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
@@ -123,6 +124,21 @@ public final class RenderHooks {
             return RenderDrawKind.DEFAULT;
         }
         return RenderDrawKind.SKY_BASIC;
+    }
+
+    // renderWorld numbers its passes 0 and 1 for anaglyph 3D and 2 otherwise. Anything else comes from a mod calling
+    // renderWorldPass itself.
+    public static RenderDrawKind cameraKind(int pass) {
+        switch (pass) {
+            case 0:
+                return RenderDrawKind.CAMERA_ANAGLYPH_FIRST;
+            case 1:
+                return RenderDrawKind.CAMERA_ANAGLYPH_SECOND;
+            case 2:
+                return RenderDrawKind.CAMERA_SINGLE;
+            default:
+                return RenderDrawKind.DEFAULT;
+        }
     }
 
     private static void reportFirstPass() {

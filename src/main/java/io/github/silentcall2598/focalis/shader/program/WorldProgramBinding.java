@@ -39,12 +39,14 @@ public final class WorldProgramBinding {
 
     private final ScopedProgramBinding scopes;
     private final FrameInputs frame;
+    private final CameraInputs camera;
     @Nullable
     private BuiltWorldPrograms programs;
 
-    WorldProgramBinding(ScopedProgramBinding scopes, FrameInputs frame) {
+    WorldProgramBinding(ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera) {
         this.scopes = Objects.requireNonNull(scopes, "scopes");
         this.frame = Objects.requireNonNull(frame, "frame");
+        this.camera = Objects.requireNonNull(camera, "camera");
     }
 
     /**
@@ -68,7 +70,11 @@ public final class WorldProgramBinding {
 
     /**
      * Opens the program scope of a stage. A program bound for the first time in the current frame gets that frame's
-     * values first. Like {@link ScopedProgramBinding}, every open scope is unwound before anything is thrown.
+     * values first, and the camera values the first time it's bound with the current pass's camera. A program that
+     * can't use the current camera, like one reading the camera before this world pass captured it, binds nothing,
+     * the same as a role without a ready program. The stage then draws the vanilla way, or with the program of the
+     * scope around it, like the sun inside the sky. Like {@link ScopedProgramBinding}, every open scope is unwound
+     * before anything is thrown.
      *
      * @throws IllegalArgumentException for a stage that isn't bound yet, like HAND
      */
@@ -78,6 +84,10 @@ public final class WorldProgramBinding {
             throw new IllegalArgumentException("World programs aren't bound for render stage " + stage);
         }
         BuiltWorldPrograms.Build build = readyBuild(ShaderProgramRouter.route(stage, drawKind));
+        CameraSnapshot snapshot = camera.current();
+        if (build != null && !build.inputs().accepts(snapshot)) {
+            build = null;
+        }
         ShaderProgram program = build == null ? null : build.program();
         scopes.start(stage, drawKind, program);
         if (build == null) {
@@ -86,7 +96,7 @@ public final class WorldProgramBinding {
         // The scope just bound the program or found it current already. Either way it's current now. Programs
         // bound again later in the frame, like after a renderer or outlines, still hold these values.
         try {
-            build.inputs().update(frame);
+            build.inputs().update(frame, snapshot);
         } catch (RuntimeException | LinkageError e) {
             try {
                 scopes.abort();

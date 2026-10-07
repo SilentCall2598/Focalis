@@ -3,8 +3,8 @@
 package io.github.silentcall2598.focalis.render.target;
 
 /**
- * Lets development QA tooling watch the world target. Every method does nothing by default, and normal play only
- * ever uses {@link #NONE}. Client thread only.
+ * Lets an optional development probe watch the world target. Every method does nothing by default, and normal play
+ * only ever uses {@link #NONE}. Client thread only.
  */
 public interface WorldTargetMonitor {
 

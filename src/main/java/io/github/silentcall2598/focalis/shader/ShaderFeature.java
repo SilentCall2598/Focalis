@@ -54,7 +54,7 @@ public final class ShaderFeature extends Feature {
 
     /**
      * @param glContext returns null until the first frame has captured the context
-     * @param monitor {@link PostPassMonitor#NONE} except in development QA runs
+     * @param monitor {@link PostPassMonitor#NONE} unless a development probe is attached
      */
     public ShaderFeature(Supplier<GlContextInfo> glContext, PostPassMonitor monitor) {
         super(ID, "Experimental. Runs a Focalis test program from a shaderpack over the world image."

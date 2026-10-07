@@ -26,6 +26,9 @@ public final class ShaderProgramRouter {
             // Vanilla draws the outlines with its own shaders.
             case ENTITY_OUTLINES:
                 return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.NONE);
+            // Setting up the camera draws nothing, whichever world pass it's for.
+            case CAMERA:
+                return ShaderProgramRole.NONE;
             case SKY:
                 if (kind == RenderDrawKind.SKY_BASIC) {
                     return ShaderProgramRole.SKY_BASIC;

@@ -9,6 +9,12 @@ package io.github.silentcall2598.focalis.render.lifecycle;
 public enum RenderDrawKind {
     /** The stage has no finer classification. */
     DEFAULT,
+    /** The camera of a normal world pass, which Minecraft numbers 2. */
+    CAMERA_SINGLE,
+    /** The camera of the first world pass of an anaglyph 3D frame, number 0, which draws green and blue. */
+    CAMERA_ANAGLYPH_FIRST,
+    /** The camera of the second world pass of an anaglyph 3D frame, number 1, which draws red. */
+    CAMERA_ANAGLYPH_SECOND,
     /** The whole vanilla surface sky. Its sun and moon draws nest inside it as {@link #SKY_TEXTURED}. */
     SKY_BASIC,
     /** The sun or moon draw of the vanilla surface sky. */

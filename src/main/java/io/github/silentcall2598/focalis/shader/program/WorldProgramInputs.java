@@ -11,12 +11,23 @@ import java.util.List;
 /**
  * The inputs Focalis gives one built world program. Uniforms keep their values for as long as the program isn't
  * linked again, so the samplers are set once right after linking. The frame uniforms are set the first time the
- * program is bound in a frame. Every location is looked up once, right after linking.
+ * program is bound in a frame, and the camera uniforms the first time it's bound with a new camera snapshot. Every
+ * location is looked up once, right after linking.
  */
 public final class WorldProgramInputs {
 
     private static final int GL_FLOAT = 0x1406;
     private static final int GL_INT = 0x1404;
+    private static final int GL_BOOL = 0x8B56;
+    private static final int GL_FLOAT_VEC2 = 0x8B50;
+    private static final int GL_FLOAT_VEC3 = 0x8B51;
+    private static final int GL_FLOAT_VEC4 = 0x8B52;
+    private static final int GL_INT_VEC2 = 0x8B53;
+    private static final int GL_INT_VEC3 = 0x8B54;
+    private static final int GL_INT_VEC4 = 0x8B55;
+    private static final int GL_FLOAT_MAT2 = 0x8B5A;
+    private static final int GL_FLOAT_MAT3 = 0x8B5B;
+    private static final int GL_FLOAT_MAT4 = 0x8B5C;
     private static final int GL_SAMPLER_1D = 0x8B5D;
     private static final int GL_SAMPLER_2D = 0x8B5E;
     private static final int GL_SAMPLER_3D = 0x8B5F;
@@ -24,30 +35,44 @@ public final class WorldProgramInputs {
     private static final int GL_SAMPLER_2D_SHADOW = 0x8B62;
     // values() copies the array, and updates run every frame.
     private static final FrameUniform[] FRAME_UNIFORMS = FrameUniform.values();
+    private static final CameraUniform[] CAMERA_UNIFORMS = CameraUniform.values();
 
     private final ShaderGl gl;
     private final int[] locations;
     private final int[] frameLocations;
+    private final int[] cameraLocations;
     private final boolean anyFrameUniform;
+    private final boolean anyCameraUniform;
     private final List<String> unprovided;
     // The FrameInputs sequence the frame uniforms were last set for, 0 before the first time.
     private long updatedFrame;
+    // The CameraSnapshot sequence the camera uniforms were last set for, 0 before the first time.
+    private long updatedCamera;
+    private long cameraUpdates;
 
-    private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, List<String> unprovided) {
+    private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, int[] cameraLocations,
+            List<String> unprovided) {
         this.gl = gl;
         this.locations = locations;
         this.frameLocations = frameLocations;
+        this.cameraLocations = cameraLocations;
         this.unprovided = unprovided;
-        boolean any = false;
-        for (int location : frameLocations) {
-            any |= location >= 0;
+        this.anyFrameUniform = any(frameLocations);
+        this.anyCameraUniform = any(cameraLocations);
+    }
+
+    private static boolean any(int[] locations) {
+        for (int location : locations) {
+            if (location >= 0) {
+                return true;
+            }
         }
-        this.anyFrameUniform = any;
+        return false;
     }
 
     /**
-     * Finds the samplers and frame uniforms the program uses and points each sampler at its texture unit. The frame
-     * uniforms are left for {@link #update}. Must run on the client thread with
+     * Finds the samplers, frame and camera uniforms the program uses and points each sampler at its texture unit. The
+     * frame and camera uniforms are left for {@link #update}. Must run on the client thread with
      * the context current and no Focalis program scope open. The program is bound for a moment and whatever was
      * current before is bound again. That is tried even when something throws, and if putting it back fails while
      * the program is still current, no program is left bound instead.
@@ -60,6 +85,8 @@ public final class WorldProgramInputs {
         Arrays.fill(locations, -1);
         int[] frameLocations = new int[FrameUniform.values().length];
         Arrays.fill(frameLocations, -1);
+        int[] cameraLocations = new int[CAMERA_UNIFORMS.length];
+        Arrays.fill(cameraLocations, -1);
         List<String> unprovided = new ArrayList<>();
         for (ActiveUniform uniform : gl.activeUniforms(id)) {
             // Drivers can report an array with only its first element used as name[0] with size 1.
@@ -82,10 +109,18 @@ public final class WorldProgramInputs {
                 frameLocations[frame.ordinal()] = gl.uniformLocation(id, name);
                 continue;
             }
+            CameraUniform camera = CameraUniform.named(name);
+            if (camera != null) {
+                check(program, uniform, name, array, camera.matrix() ? GL_FLOAT_MAT4 : GL_FLOAT_VEC3,
+                        camera.matrix() ? "a mat4" : "a vec3");
+                cameraLocations[camera.ordinal()] = gl.uniformLocation(id, name);
+                continue;
+            }
             unprovided.add(name);
         }
         assign(gl, id, locations);
-        return new WorldProgramInputs(gl, locations, frameLocations, Collections.unmodifiableList(unprovided));
+        return new WorldProgramInputs(gl, locations, frameLocations, cameraLocations,
+                Collections.unmodifiableList(unprovided));
     }
 
     private static void check(ShaderProgram program, ActiveUniform uniform, String name, boolean array, int type,
@@ -97,27 +132,91 @@ public final class WorldProgramInputs {
     }
 
     /**
-     * Sets the frame uniforms to the values of the current frame, unless this program already got them. The program
-     * has to be current and the frame captured. Nothing else in GL changes.
+     * Whether this program can draw with {@code camera}. A program that uses no camera uniform always can. One that
+     * does needs a snapshot, and one with the inverse matrices it reads. Otherwise its stage draws the vanilla way,
+     * since the values it would get are missing or would belong to another camera.
      */
-    void update(FrameInputs frame) {
+    boolean accepts(@Nullable CameraSnapshot camera) {
+        if (!anyCameraUniform) {
+            return true;
+        }
+        if (camera == null) {
+            return false;
+        }
+        if (location(CameraUniform.MODEL_VIEW_INVERSE) >= 0 && camera.modelViewInverse == null) {
+            return false;
+        }
+        return location(CameraUniform.PROJECTION_INVERSE) < 0 || camera.projectionInverse != null;
+    }
+
+    /**
+     * Sets the frame uniforms to the values of the current frame and the camera uniforms to those of
+     * {@code camera}, each unless this program already got them. The program has to be current, the frame captured
+     * and {@code camera} {@link #accepts accepted}. Nothing else in GL changes.
+     */
+    void update(FrameInputs frame, @Nullable CameraSnapshot camera) {
         long sequence = frame.sequence();
         if (sequence == 0) {
             throw new IllegalStateException("A world program needed the frame values before any frame was captured");
         }
-        if (sequence == updatedFrame) {
-            return;
+        if (!accepts(camera)) {
+            throw new IllegalStateException("A world program was bound with camera values it can't use");
         }
-        if (anyFrameUniform) {
-            for (FrameUniform uniform : FRAME_UNIFORMS) {
-                int location = frameLocations[uniform.ordinal()];
-                if (location >= 0) {
-                    set(uniform, location, frame);
+        if (sequence != updatedFrame) {
+            if (anyFrameUniform) {
+                for (FrameUniform uniform : FRAME_UNIFORMS) {
+                    int location = frameLocations[uniform.ordinal()];
+                    if (location >= 0) {
+                        set(uniform, location, frame);
+                    }
                 }
             }
+            // Only marked once every value is in, so a failed update is never taken for a finished one.
+            updatedFrame = sequence;
         }
-        // Only marked once every value is in, so a failed update is never taken for a finished one.
-        updatedFrame = sequence;
+        if (anyCameraUniform && camera.sequence() != updatedCamera) {
+            for (CameraUniform uniform : CAMERA_UNIFORMS) {
+                int location = cameraLocations[uniform.ordinal()];
+                if (location >= 0) {
+                    set(uniform, location, camera);
+                }
+            }
+            updatedCamera = camera.sequence();
+            cameraUpdates++;
+        }
+    }
+
+    // The positions stay doubles until here, since a vec3 only holds floats.
+    private void set(CameraUniform uniform, int location, CameraSnapshot camera) {
+        switch (uniform) {
+            case CAMERA_POSITION:
+                gl.uniform3f(location, (float) camera.x(), (float) camera.y(), (float) camera.z());
+                break;
+            case PREVIOUS_CAMERA_POSITION:
+                gl.uniform3f(location, (float) camera.previousX(), (float) camera.previousY(),
+                        (float) camera.previousZ());
+                break;
+            case MODEL_VIEW:
+                gl.uniformMatrix4(location, camera.modelView);
+                break;
+            case MODEL_VIEW_INVERSE:
+                gl.uniformMatrix4(location, camera.modelViewInverse);
+                break;
+            case PREVIOUS_MODEL_VIEW:
+                gl.uniformMatrix4(location, camera.previousModelView);
+                break;
+            case PROJECTION:
+                gl.uniformMatrix4(location, camera.projection);
+                break;
+            case PROJECTION_INVERSE:
+                gl.uniformMatrix4(location, camera.projectionInverse);
+                break;
+            case PREVIOUS_PROJECTION:
+                gl.uniformMatrix4(location, camera.previousProjection);
+                break;
+            default:
+                throw new IllegalStateException("No value for " + uniform);
+        }
     }
 
     private void set(FrameUniform uniform, int location, FrameInputs frame) {
@@ -214,6 +313,36 @@ public final class WorldProgramInputs {
             case GL_INT:
                 type = "an int";
                 break;
+            case GL_BOOL:
+                type = "a bool";
+                break;
+            case GL_FLOAT_VEC2:
+                type = "a vec2";
+                break;
+            case GL_FLOAT_VEC3:
+                type = "a vec3";
+                break;
+            case GL_FLOAT_VEC4:
+                type = "a vec4";
+                break;
+            case GL_INT_VEC2:
+                type = "an ivec2";
+                break;
+            case GL_INT_VEC3:
+                type = "an ivec3";
+                break;
+            case GL_INT_VEC4:
+                type = "an ivec4";
+                break;
+            case GL_FLOAT_MAT2:
+                type = "a mat2";
+                break;
+            case GL_FLOAT_MAT3:
+                type = "a mat3";
+                break;
+            case GL_FLOAT_MAT4:
+                type = "a mat4";
+                break;
             case GL_SAMPLER_1D:
                 type = "a sampler1D";
                 break;
@@ -245,9 +374,24 @@ public final class WorldProgramInputs {
         return frameLocations[uniform.ordinal()];
     }
 
+    /** The uniform location of a camera uniform in this program, or -1 when the program doesn't use it. */
+    public int location(CameraUniform uniform) {
+        return cameraLocations[uniform.ordinal()];
+    }
+
     /** The FrameInputs sequence the frame uniforms were last set for, or 0 if they never were. */
     long updatedFrame() {
         return updatedFrame;
+    }
+
+    /** The CameraSnapshot sequence the camera uniforms were last set for, or 0 if they never were. */
+    public long updatedCamera() {
+        return updatedCamera;
+    }
+
+    /** How many times the camera uniforms were set, which can only grow by one per camera snapshot. */
+    public long cameraUpdates() {
+        return cameraUpdates;
     }
 
     /** Active uniforms Focalis doesn't set yet. They keep the zero they got when the program was linked. */

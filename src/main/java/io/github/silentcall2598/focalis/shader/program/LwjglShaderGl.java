@@ -6,6 +6,7 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
+import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,9 @@ import java.util.List;
 final class LwjglShaderGl implements ShaderGl {
 
     static final LwjglShaderGl INSTANCE = new LwjglShaderGl();
+
+    // Reused for every matrix upload, which is fine since everything here runs on the client thread.
+    private final FloatBuffer matrix = BufferUtils.createFloatBuffer(16);
 
     private LwjglShaderGl() {
     }
@@ -111,6 +115,20 @@ final class LwjglShaderGl implements ShaderGl {
     @Override
     public void uniform1f(int location, float value) {
         GL20.glUniform1f(location, value);
+    }
+
+    @Override
+    public void uniform3f(int location, float x, float y, float z) {
+        GL20.glUniform3f(location, x, y, z);
+    }
+
+    @Override
+    public void uniformMatrix4(int location, float[] columns) {
+        FloatBuffer buffer = matrix;
+        buffer.clear();
+        buffer.put(columns, 0, 16);
+        buffer.flip();
+        GL20.glUniformMatrix4(location, false, buffer);
     }
 
     @Override

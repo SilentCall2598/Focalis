@@ -45,11 +45,11 @@ public final class LiveWorldPrograms {
     private boolean deleted;
 
     private LiveWorldPrograms(ShaderPack pack, Function<PreparedWorldPrograms, BuiltWorldPrograms> builder,
-            BuildListener listener, ScopedProgramBinding scopes, FrameInputs frame) {
+            BuildListener listener, ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera) {
         this.pack = Objects.requireNonNull(pack, "pack");
         this.builder = builder;
         this.listener = Objects.requireNonNull(listener, "listener");
-        this.binding = new WorldProgramBinding(scopes, frame);
+        this.binding = new WorldProgramBinding(scopes, frame, camera);
     }
 
     /**
@@ -57,18 +57,20 @@ public final class LiveWorldPrograms {
      *
      * @param frame the frame values every program of the session gets. The caller captures it at the start of each
      *     frame, and before the first world pass.
+     * @param camera the camera values every program of the session gets. The caller starts every world pass on it
+     *     and captures the pass's camera before its first world stage binds anything.
      */
     public static LiveWorldPrograms create(ShaderPack pack, ShaderCapabilities capabilities, BuildListener listener,
-            FrameInputs frame) {
+            FrameInputs frame, CameraInputs camera) {
         Objects.requireNonNull(capabilities, "capabilities");
         return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, capabilities), listener,
-                new ScopedProgramBinding(), frame);
+                new ScopedProgramBinding(), frame, camera);
     }
 
     static LiveWorldPrograms create(ShaderPack pack, ProgramBuilder builder, BuildListener listener,
-            ScopedProgramBinding scopes, FrameInputs frame) {
+            ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera) {
         return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, builder), listener,
-                scopes, frame);
+                scopes, frame, camera);
     }
 
     /**

@@ -96,39 +96,15 @@ tasks.named<Copy>("prepareObfModsFolder") {
     rename("^(mixinbooter-.+\\.jar)$", "!$1")
 }
 
-// tools/qa/run-qa.ps1 sets these. QA runs get their own game folder, so the normal run folder is never touched.
-val qaScenario = providers.gradleProperty("qaScenario")
-if (qaScenario.isPresent) {
-    val qaGameDir = file(providers.gradleProperty("qaGameDir").get())
-    val qaOutputDir = file(providers.gradleProperty("qaOutputDir").get())
-    val qaFullscreen = providers.gradleProperty("qaFullscreen").getOrElse("false")
-    tasks.withType<JavaExec>().matching { it.name == "runClient" || it.name == "runObfClient" }.configureEach {
-        workingDir = qaGameDir
-        systemProperty("focalis.qa.scenario", qaScenario.get())
-        systemProperty("focalis.qa.output", qaOutputDir.absolutePath)
-        systemProperty("focalis.qa.fullscreen", qaFullscreen)
-    }
-    // runObfClient loads the release jar from the mods folder of its game folder.
-    tasks.withType<Copy>().matching { it.name == "prepareObfModsFolder" }.configureEach {
-        into(qaGameDir.resolve("mods"))
-    }
-}
-
 dependencies {
     implementation(mixinBooter)
     // The annotation processor needs ASM, which MixinBooter doesn't include. 5.2 is what Forge 1.12.2 ships.
     annotationProcessor(mixinBooter)
     annotationProcessor("org.ow2.asm:asm-debug-all:5.2")
-
-    testImplementation(platform("org.junit:junit-bom:5.14.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-tasks.test {
-    useJUnitPlatform()
-    // Optional local pack for ShaderPackSmokeTest, e.g. ./gradlew test -PsmokeTestShaderPack=<folder or zip>
-    providers.gradleProperty("smokeTestShaderPack").orNull?.let {
-        systemProperty("focalis.smokeTestShaderPack", file(it).absolutePath)
-    }
+// Additions for one local checkout that aren't part of the project, kept in an untracked file next to this one.
+val localBuild = file("local.gradle.kts")
+if (localBuild.exists()) {
+    apply(from = localBuild)
 }

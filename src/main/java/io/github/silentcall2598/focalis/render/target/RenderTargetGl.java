@@ -4,7 +4,6 @@ package io.github.silentcall2598.focalis.render.target;
 
 /**
  * The OpenGL calls render targets make, nothing more. Every method needs a current context on the calling thread.
- * Tests swap in a recording version to check that nothing leaks and no binding is left changed.
  */
 interface RenderTargetGl {
 

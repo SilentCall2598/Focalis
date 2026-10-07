@@ -34,7 +34,7 @@ public final class WorldTargetFeature extends Feature {
     private boolean loggedFramebuffersOff;
     private boolean loggedOtherTarget;
 
-    /** @param monitor {@link WorldTargetMonitor#NONE} except in development QA runs */
+    /** @param monitor {@link WorldTargetMonitor#NONE} unless a development probe is attached */
     public WorldTargetFeature(WorldTargetMonitor monitor) {
         super(ID, "Experimental. Draws the world into a Focalis framebuffer and copies it back, which looks the"
                 + " same as vanilla. Groundwork for shaderpack rendering.", false);
