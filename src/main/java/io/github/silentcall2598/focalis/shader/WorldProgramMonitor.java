@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.shader;
 
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
@@ -17,6 +18,10 @@ public interface WorldProgramMonitor {
 
     WorldProgramMonitor NONE = new WorldProgramMonitor() {
     };
+
+    /** The pack's configuration was worked out, right after the pack loaded and before anything is prepared. */
+    default void packConfigured(PackConfiguration configuration) {
+    }
 
     /** The programs of one folder were built, which happens once per folder and session. */
     default void programsBuilt(ProgramDirectory directory, BuiltWorldPrograms programs) {

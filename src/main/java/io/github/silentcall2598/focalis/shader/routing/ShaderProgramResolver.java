@@ -5,10 +5,12 @@ package io.github.silentcall2598.focalis.shader.routing;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Picks the pack program for a role in one program folder, using the program names and fallbacks of 1.12.2 era
@@ -17,7 +19,7 @@ import java.util.Objects;
  */
 public final class ShaderProgramResolver {
 
-    // The legacy fallback order. A program falls back when the pack doesn't have it at all.
+    // The legacy fallback order. A program falls back when the pack doesn't have it or has it disabled.
     private static final List<String> SKY_BASIC = chain("gbuffers_skybasic", "gbuffers_basic");
     private static final List<String> SKY_TEXTURED = chain("gbuffers_skytextured", "gbuffers_textured",
             "gbuffers_basic");
@@ -41,10 +43,19 @@ public final class ShaderProgramResolver {
     private ShaderProgramResolver() {
     }
 
-    // Programs that shaders.properties turns off would count as missing, but those settings aren't read yet, so the
-    // folder is taken as loaded.
+    /** Resolves with every program in the folder enabled. */
     public static ProgramResolution resolve(ProgramDirectory directory, ShaderProgramRole role) {
+        return resolve(directory, role, program -> true);
+    }
+
+    /**
+     * Resolves with some programs disabled. A disabled program counts as missing, so the role falls back past it,
+     * which is what the format documents for programs that shaders.properties turns off.
+     */
+    public static ProgramResolution resolve(ProgramDirectory directory, ShaderProgramRole role,
+            Predicate<ProgramSource> enabled) {
         Objects.requireNonNull(directory, "directory");
+        Objects.requireNonNull(enabled, "enabled");
         ShaderProgramRole resolved = role == null ? ShaderProgramRole.UNCLASSIFIED : role;
         if (resolved == ShaderProgramRole.NONE) {
             return new ProgramResolution(resolved, ResolutionState.NOT_APPLICABLE, null, NO_CHAIN, -1);
@@ -53,14 +64,19 @@ public final class ShaderProgramResolver {
         if (candidates.isEmpty()) {
             return new ProgramResolution(resolved, ResolutionState.NEEDS_MORE_CONTEXT, null, NO_CHAIN, -1);
         }
+        List<String> disabled = new ArrayList<>(0);
         for (int i = 0; i < candidates.size(); i++) {
             // A program that exists wins even if it failed to load. Falling past it would hide a pack error.
             ProgramSource program = directory.find(candidates.get(i));
-            if (program != null) {
-                return new ProgramResolution(resolved, ResolutionState.RESOLVED, program, candidates, i);
+            if (program != null && !enabled.test(program)) {
+                disabled.add(program.name());
+            } else if (program != null) {
+                return new ProgramResolution(resolved, ResolutionState.RESOLVED, program, candidates, i,
+                        frozen(disabled));
             }
         }
-        return new ProgramResolution(resolved, ResolutionState.MISSING, null, candidates, -1);
+        return new ProgramResolution(resolved, disabled.isEmpty() ? ResolutionState.MISSING
+                : ResolutionState.DISABLED, null, candidates, -1, frozen(disabled));
     }
 
     /** The program names that can draw a role, most specific first. Empty for roles that can't be resolved. */
@@ -94,6 +110,10 @@ public final class ShaderProgramResolver {
             default:
                 return NO_CHAIN;
         }
+    }
+
+    private static List<String> frozen(List<String> names) {
+        return names.isEmpty() ? Collections.<String>emptyList() : Collections.unmodifiableList(names);
     }
 
     private static List<String> chain(String... names) {

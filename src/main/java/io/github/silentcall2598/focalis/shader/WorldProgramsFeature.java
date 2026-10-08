@@ -12,11 +12,15 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
+import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
+import io.github.silentcall2598.focalis.shader.pack.PackIssue;
+import io.github.silentcall2598.focalis.shader.pack.PackSettings;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
+import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.CameraInputs;
 import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
@@ -32,6 +36,7 @@ import io.github.silentcall2598.focalis.shader.program.ShaderCapabilities;
 import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramBinding;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramInputs;
+import io.github.silentcall2598.focalis.shader.routing.ResolutionState;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
@@ -70,7 +75,10 @@ public final class WorldProgramsFeature extends Feature {
     private final Supplier<GlContextInfo> glContext;
     private final WorldProgramMonitor monitor;
     private String packName = "";
+    private String profileName = "";
+    private String optionEntries = "";
     private Logger logger;
+    private PackConfiguration configuration;
     @Nullable
     private LiveWorldPrograms live;
     // Shared by every program in every dimension, and never reset, since a turned off feature stays off.
@@ -121,6 +129,11 @@ public final class WorldProgramsFeature extends Feature {
                 + " samplers, the view size and frame timing uniforms, the camera position and matrices, and the"
                 + " time, sun and moon, rain, sky and fog, eye brightness and water or lava uniforms are set, and no"
                 + " composite passes run.");
+        profileName = config.getString("profile", "", "A profile from the pack's shaders.properties, like HIGH. Empty"
+                + " keeps the pack's own defaults.");
+        optionEntries = config.getString("options", "", "Option values applied after the profile, separated by"
+                + " spaces, like SHADOW_QUALITY=3 BLOOM !SSAO. NAME=value or NAME:value sets a value, NAME turns a"
+                + " switch on and !NAME turns it off. Only values the pack allows are used.");
     }
 
     @Override
@@ -152,6 +165,7 @@ public final class WorldProgramsFeature extends Feature {
         }
         logger.info("Binding the world programs of shaderpack '{}', with dimension folders {}", packName,
                 pack.dimensionDirectories().keySet());
+        configure(pack);
         context.addRenderListener(RenderStage.WORLD, (stage, phase, drawKind, partialTicks) -> onWorld(phase, pack));
         context.addRenderListener(RenderStage.FRAME, this::onFrame);
         context.addRenderListener(RenderStage.CAMERA, this::onCamera);
@@ -162,6 +176,20 @@ public final class WorldProgramsFeature extends Feature {
             context.addRenderListener(stage, this::onVanillaPrograms);
         }
         context.addCheckpointListener(this::onRendererReturned);
+    }
+
+    // Settings that don't fit the pack are skipped and logged, so a typo never turns the programs off.
+    private void configure(ShaderPack pack) {
+        configuration = PackConfiguration.resolve(pack, PackSettings.of(profileName, optionEntries),
+                StandardMacros.environment());
+        for (PackIssue issue : configuration.issues()) {
+            logger.warn("Shaderpack configuration: {}", issue);
+        }
+        logger.info("Shaderpack '{}' uses profile {} with {} of {} options changed {}, and these programs disabled {}",
+                packName, configuration.profile() == null ? "<none>" : configuration.profile(),
+                configuration.changed().size(), pack.options().all().size(), configuration.changed(),
+                configuration.disabledPrograms());
+        monitor.packConfigured(configuration);
     }
 
     private void onWorld(RenderPhase phase, ShaderPack pack) {
@@ -185,7 +213,7 @@ public final class WorldProgramsFeature extends Feature {
         pendingStream = null;
         LiveWorldPrograms current = live;
         if (current == null && !stopped) {
-            current = start(pack);
+            current = start();
         }
         if (current == null) {
             return;
@@ -205,14 +233,14 @@ public final class WorldProgramsFeature extends Feature {
     }
 
     @Nullable
-    private LiveWorldPrograms start(ShaderPack pack) {
+    private LiveWorldPrograms start() {
         GlContextInfo gl = glContext.get();
         if (gl == null) {
             stop("OpenGL information isn't available.");
             return null;
         }
         // Owned right away, so cleanup deletes whatever it builds even if something throws later.
-        live = LiveWorldPrograms.create(pack, ShaderCapabilities.from(gl), this::folderBuilt, frame, camera,
+        live = LiveWorldPrograms.create(configuration, ShaderCapabilities.from(gl), this::folderBuilt, frame, camera,
                 environment, fog);
         if (!fog.available()) {
             logger.warn("Minecraft's fog can't be read in this session, so programs that use the fog uniforms draw"
@@ -227,8 +255,22 @@ public final class WorldProgramsFeature extends Feature {
         ProgramDirectory directory = programs.directory();
         logPreparationProblems(programs.prepared());
         logBuildResults(programs.programs());
+        List<ShaderProgramRole> disabled = new ArrayList<>();
+        for (PreparedWorldPrograms.Entry entry : programs.prepared().entries().values()) {
+            if (entry.resolution().state() == ResolutionState.DISABLED) {
+                disabled.add(entry.role());
+            }
+        }
+        if (!disabled.isEmpty()) {
+            logger.info("The pack configuration disabled every program {} could use in {}, so they draw the normal"
+                    + " way.", disabled, directory.path());
+        }
         if (directory.programs().isEmpty()) {
             logger.info("{} has no programs, so dimensions using it draw the normal way.", directory.path());
+        } else if (!programs.usable() && !disabled.isEmpty() && programs.programs().builds().isEmpty()) {
+            // Nothing failed here, the pack just turned everything off.
+            logger.info("Nothing in {} is left to build under the pack configuration, so dimensions using it draw the"
+                    + " normal way.", directory.path());
         } else if (!programs.usable()) {
             logger.error("None of the world programs in {} could be built, so dimensions using it draw the normal"
                     + " way for this session.", directory.path());

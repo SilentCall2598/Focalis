@@ -24,7 +24,7 @@ public final class ShaderPackLoader {
 
     // Kept as text for later work. Nothing in them is interpreted yet.
     private static final List<String> UNINTERPRETED_METADATA = Arrays.asList(
-            "shaders.properties", "block.properties", "item.properties", "entity.properties");
+            "block.properties", "item.properties", "entity.properties");
 
     private ShaderPackLoader() {
     }
@@ -67,6 +67,7 @@ public final class ShaderPackLoader {
         }
 
         IncludeResolver resolver = new IncludeResolver(reader);
+        OptionScanner options = new OptionScanner(reader);
         ProgramDirectory root = new ProgramDirectory("", Collections.<String, ProgramSource>emptyMap());
         Map<String, ProgramDirectory> dimensionDirectories = new TreeMap<>();
         for (Map.Entry<String, Map<String, Map<ProgramStage, ShaderPath>>> folder : found.entrySet()) {
@@ -75,7 +76,7 @@ public final class ShaderPackLoader {
                 String name = program.getKey();
                 String label = folder.getKey().isEmpty() ? name : folder.getKey() + "/" + name;
                 reportMissingStages(label, program.getValue(), issues);
-                String problem = checkIncludes(label, program.getValue(), resolver, issues);
+                String problem = checkIncludes(label, program.getValue(), resolver, options, issues);
                 programs.put(name, new ProgramSource(name, folder.getKey(), program.getValue(), problem));
             }
             ProgramDirectory directory = new ProgramDirectory(folder.getKey(), programs);
@@ -104,6 +105,8 @@ public final class ShaderPackLoader {
             }
         }
 
+        // Read now so configurations can use it later without touching the pack again.
+        reader.read(ShaderPath.of(ShaderProperties.FILE_NAME));
         Set<ShaderPath> uninterpreted = new TreeSet<>();
         for (String name : UNINTERPRETED_METADATA) {
             ShaderPath path = ShaderPath.of(name);
@@ -114,7 +117,7 @@ public final class ShaderPackLoader {
 
         return new ShaderPack(source.name(), Collections.unmodifiableSet(new TreeSet<>(source.files())),
                 Collections.unmodifiableMap(new HashMap<>(texts)), root,
-                Collections.unmodifiableMap(dimensionDirectories), dimensions,
+                Collections.unmodifiableMap(dimensionDirectories), dimensions, options.finish(issues),
                 Collections.unmodifiableSet(uninterpreted), Collections.unmodifiableList(issues));
     }
 
@@ -151,16 +154,24 @@ public final class ShaderPackLoader {
         }
     }
 
+    // Options only come from .vsh and .fsh sources, like the format documents.
     @Nullable
     private static String checkIncludes(String label, Map<ProgramStage, ShaderPath> stages, IncludeResolver resolver,
-            List<PackIssue> issues) {
-        for (ShaderPath file : stages.values()) {
+            OptionScanner options, List<PackIssue> issues) throws IOException {
+        List<ResolvedSource> scanned = new ArrayList<>();
+        for (Map.Entry<ProgramStage, ShaderPath> stage : stages.entrySet()) {
             try {
-                resolver.resolve(file);
+                ResolvedSource source = resolver.resolve(stage.getValue());
+                if (stage.getKey() == ProgramStage.VERTEX || stage.getKey() == ProgramStage.FRAGMENT) {
+                    scanned.add(source);
+                }
             } catch (IncludeException e) {
                 issues.add(new PackIssue(e.location(), label + " can't be used: " + e.reason()));
                 return e.getMessage();
             }
+        }
+        for (ResolvedSource source : scanned) {
+            options.addProgram(source);
         }
         return null;
     }

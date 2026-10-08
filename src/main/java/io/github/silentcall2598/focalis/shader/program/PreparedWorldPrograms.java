@@ -3,6 +3,7 @@
 package io.github.silentcall2598.focalis.shader.program;
 
 import io.github.silentcall2598.focalis.shader.pack.IncludeException;
+import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
 import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
@@ -36,29 +37,35 @@ public final class PreparedWorldPrograms {
     }
 
     /**
-     * Resolves every role in {@code directory} and prepares the programs they select. Only that folder is used, so
-     * picking the folder for a dimension is up to the caller. A program that fails to prepare is recorded on the
-     * roles that selected it and doesn't stop the others.
+     * Resolves every role in {@code directory} under the configuration and prepares the programs they select. Only
+     * that folder is used, so picking the folder for a dimension is up to the caller. Programs the configuration
+     * disables count as missing. A program that fails to prepare is recorded on the roles that selected it and
+     * doesn't stop the others.
      *
-     * @throws IllegalArgumentException if {@code directory} isn't one of {@code pack}'s own folders
+     * @throws IllegalArgumentException if {@code directory} isn't one of {@code pack}'s own folders or the
+     *     configuration is for another pack
      */
     public static PreparedWorldPrograms prepare(ShaderPack pack, ProgramDirectory directory, ShaderMacros environment,
-            ShaderMacros options) {
+            PackConfiguration configuration) {
         Objects.requireNonNull(pack, "pack");
         Objects.requireNonNull(directory, "directory");
         Objects.requireNonNull(environment, "environment");
-        Objects.requireNonNull(options, "options");
+        Objects.requireNonNull(configuration, "configuration");
         if (!ownsDirectory(pack, directory)) {
             String folder = directory.name().isEmpty() ? "shaders" : "shaders/" + directory.name();
             throw new IllegalArgumentException("Program folder '" + folder + "' doesn't belong to shaderpack '"
                     + pack.name() + "'");
+        }
+        if (configuration.pack() != pack) {
+            throw new IllegalArgumentException("The configuration belongs to shaderpack '"
+                    + configuration.pack().name() + "', not '" + pack.name() + "'");
         }
         // ProgramSource has no equals, and each one is a distinct program the pack owns.
         Map<ProgramSource, Outcome> outcomes = new IdentityHashMap<>();
         Map<ShaderProgramRole, Entry> entries = new EnumMap<>(ShaderProgramRole.class);
         List<PreparedProgram> unique = new ArrayList<>();
         for (ShaderProgramRole role : ShaderProgramRole.values()) {
-            ProgramResolution resolution = ShaderProgramResolver.resolve(directory, role);
+            ProgramResolution resolution = ShaderProgramResolver.resolve(directory, role, configuration::isEnabled);
             ProgramSource source = resolution.program();
             if (resolution.state() != ResolutionState.RESOLVED || source == null) {
                 entries.put(role, new Entry(role, resolution, null, null));
@@ -66,7 +73,7 @@ public final class PreparedWorldPrograms {
             }
             Outcome outcome = outcomes.get(source);
             if (outcome == null) {
-                outcome = Outcome.prepare(pack, source, environment, options);
+                outcome = Outcome.prepare(pack, source, environment, configuration);
                 outcomes.put(source, outcome);
                 if (outcome.program != null) {
                     unique.add(outcome.program);
@@ -138,7 +145,10 @@ public final class PreparedWorldPrograms {
             return program;
         }
 
-        /** Why the selected program couldn't be prepared, or null when nothing was selected or it worked. */
+        /**
+         * Why the selected program couldn't be prepared, or null when nothing was selected or it worked. A role whose
+         * programs are all disabled has no problem, its resolution says DISABLED instead.
+         */
         @Nullable
         public String problem() {
             return problem;
@@ -169,9 +179,9 @@ public final class PreparedWorldPrograms {
 
         // A broken include only fails this program. Anything else propagates.
         static Outcome prepare(ShaderPack pack, ProgramSource source, ShaderMacros environment,
-                ShaderMacros options) {
+                PackConfiguration configuration) {
             try {
-                return new Outcome(PreparedProgram.prepare(pack, source, environment, options), null);
+                return new Outcome(PreparedProgram.prepare(pack, source, environment, configuration), null);
             } catch (IncludeException e) {
                 return new Outcome(null, e.getMessage());
             }
