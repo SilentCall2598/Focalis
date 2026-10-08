@@ -9,8 +9,11 @@
     "defaultRequire": 1
   },
   "client": [
+    "EntityRendererFogAccessor",
     "EntityRendererMixin",
     "EntityRendererStageMixin",
+    "GlStateManagerBooleanStateMixin",
+    "GlStateManagerFogStateMixin",
     "OpenGlHelperMixin",
     "RenderGlobalOutlineMixin",
     "RenderGlobalSkyMixin",

@@ -22,6 +22,8 @@ import io.github.silentcall2598.focalis.shader.program.CameraInputs;
 import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
 import io.github.silentcall2598.focalis.shader.program.CameraStream;
 import io.github.silentcall2598.focalis.shader.program.DirectoryPrograms;
+import io.github.silentcall2598.focalis.shader.program.EnvironmentInputs;
+import io.github.silentcall2598.focalis.shader.program.FogSource;
 import io.github.silentcall2598.focalis.shader.program.FrameInputs;
 import io.github.silentcall2598.focalis.shader.program.LiveWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.PreparedWorldPrograms;
@@ -31,10 +33,13 @@ import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramBinding;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramInputs;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
+import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.WorldClient;
+import net.minecraft.client.renderer.ActiveRenderInfo;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.Vec3d;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -53,10 +58,10 @@ import java.util.function.Supplier;
 /**
  * Experimental. Binds the pack program of each world stage while vanilla draws it. Each dimension takes its programs
  * from the pack's {@code world<id>} folder for it when there is one and from the main shaders folder otherwise.
- * The legacy texture and lightmap samplers read the units Minecraft binds those textures on, the view size and frame
- * timing uniforms are set every frame, and the camera position and matrices every world pass. Nothing else a
- * shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its programs leave
- * rendering vanilla. Only a Focalis bug fails the feature.
+ * The legacy texture and lightmap samplers read the units Minecraft binds those textures on, the view size, frame
+ * timing and world values are set every frame, the camera position, matrices and values in eye space every world pass,
+ * and the fog whenever a stage binds its program. Nothing else a shaderpack expects is set up, so regular packs won't
+ * look right. Problems with the pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -72,6 +77,9 @@ public final class WorldProgramsFeature extends Feature {
     private final FrameInputs frame = new FrameInputs();
     // Also shared, but its history is dropped whenever there is no world, so it never keeps one alive.
     private final CameraInputs camera = new CameraInputs();
+    // Only plain values, taken again every frame and pass, so nothing in it outlives a world.
+    private final EnvironmentInputs environment = new EnvironmentInputs();
+    private final FogSource fog = new MinecraftFog();
     private final FloatBuffer matrixBuffer = BufferUtils.createFloatBuffer(16);
     private final float[] modelView = new float[16];
     private final float[] projection = new float[16];
@@ -81,6 +89,7 @@ public final class WorldProgramsFeature extends Feature {
     @Nullable
     private CameraStream pendingStream;
     private RenderDrawKind pendingKind = RenderDrawKind.DEFAULT;
+    private float pendingPartialTicks;
     private double pendingX;
     private double pendingY;
     private double pendingZ;
@@ -109,8 +118,9 @@ public final class WorldProgramsFeature extends Feature {
     protected void loadConfig(ConfigSection config) {
         packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. A world<id> folder"
                 + " in its shaders folder replaces the main one in that dimension. Only the texture and lightmap"
-                + " samplers, the view size and frame timing uniforms and the camera position and matrices are set,"
-                + " and no composite passes run.");
+                + " samplers, the view size and frame timing uniforms, the camera position and matrices, and the"
+                + " time, sun and moon, rain, sky and fog, eye brightness and water or lava uniforms are set, and no"
+                + " composite passes run.");
     }
 
     @Override
@@ -202,7 +212,12 @@ public final class WorldProgramsFeature extends Feature {
             return null;
         }
         // Owned right away, so cleanup deletes whatever it builds even if something throws later.
-        live = LiveWorldPrograms.create(pack, ShaderCapabilities.from(gl), this::folderBuilt, frame, camera);
+        live = LiveWorldPrograms.create(pack, ShaderCapabilities.from(gl), this::folderBuilt, frame, camera,
+                environment, fog);
+        if (!fog.available()) {
+            logger.warn("Minecraft's fog can't be read in this session, so programs that use the fog uniforms draw"
+                    + " the normal way. Messages about mixins.focalis.json earlier in the log may say why.");
+        }
         return live;
     }
 
@@ -358,6 +373,7 @@ public final class WorldProgramsFeature extends Feature {
         pendingStream = new CameraStream(world, world.provider.getDimension(), entity,
                 mc.gameSettings.thirdPersonView, mc.displayWidth, mc.displayHeight);
         pendingKind = drawKind;
+        pendingPartialTicks = partialTicks;
         pendingX = x;
         pendingY = y;
         pendingZ = z;
@@ -380,6 +396,40 @@ public final class WorldProgramsFeature extends Feature {
                     snapshot.modelViewInvertible() ? "projection" : "model-view");
         }
         monitor.cameraCaptured(drawKind, snapshot);
+        captureEnvironment(snapshot, pendingPartialTicks);
+    }
+
+    // The world values once per frame, at the first pass's camera, and the rest for every pass. Vanilla has updated
+    // where the camera is by now, which the medium needs. Without a world or view entity nothing is taken, and
+    // programs that use these values draw the normal way in that pass.
+    private void captureEnvironment(CameraSnapshot snapshot, float partialTicks) {
+        Minecraft mc = Minecraft.getMinecraft();
+        WorldClient world = mc.world;
+        Entity entity = mc.getRenderViewEntity();
+        if (world == null || entity == null) {
+            return;
+        }
+        if (!environment.hasFrame(snapshot.frame())) {
+            Vec3d sky = world.getSkyColor(entity, partialTicks);
+            environment.captureFrame(snapshot.frame(), world.getWorldTime(), world.getMoonPhase(),
+                    world.getCelestialAngle(partialTicks), world.getRainStrength(partialTicks), (float) sky.x,
+                    (float) sky.y, (float) sky.z, entity.getBrightnessForRender());
+        }
+        environment.capturePass(snapshot, medium(world, entity, partialTicks));
+        monitor.environmentCaptured(snapshot, environment);
+    }
+
+    // The block vanilla's setupFog checks for water and lava fog, at the camera and not at the player's eyes, so this
+    // always agrees with the fog. Forge fluids count when their material is water or lava, like for the fog.
+    private static int medium(WorldClient world, Entity entity, float partialTicks) {
+        Material material = ActiveRenderInfo.getBlockStateAtEntityViewpoint(world, entity, partialTicks).getMaterial();
+        if (material == Material.WATER) {
+            return EnvironmentInputs.MEDIUM_WATER;
+        }
+        if (material == Material.LAVA) {
+            return EnvironmentInputs.MEDIUM_LAVA;
+        }
+        return EnvironmentInputs.MEDIUM_AIR;
     }
 
     private void readMatrix(int matrix, float[] into) {
@@ -409,6 +459,7 @@ public final class WorldProgramsFeature extends Feature {
             // Leaving a world lets go of it here, so no camera history can reach into the next one either.
             if (Minecraft.getMinecraft().world == null) {
                 camera.clear();
+                environment.clear();
                 pendingStream = null;
             }
             return;
@@ -446,6 +497,7 @@ public final class WorldProgramsFeature extends Feature {
         justBuilt = null;
         loggedDimensions.clear();
         camera.clear();
+        environment.clear();
         pendingStream = null;
         if (current != null) {
             current.delete();
