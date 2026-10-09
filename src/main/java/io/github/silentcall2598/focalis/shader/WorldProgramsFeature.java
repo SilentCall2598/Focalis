@@ -12,6 +12,7 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
+import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.PackIssue;
 import io.github.silentcall2598.focalis.shader.pack.PackSettings;
@@ -65,7 +66,8 @@ import java.util.function.Supplier;
  * from the pack's {@code world<id>} folder for it when there is one and from the main shaders folder otherwise.
  * The legacy texture and lightmap samplers read the units Minecraft binds those textures on, the view size, frame
  * timing and world values are set every frame, the camera position, matrices and values in eye space every world pass,
- * and the fog whenever a stage binds its program. Nothing else a shaderpack expects is set up, so regular packs won't
+ * and the fog whenever a stage binds its program. Custom uniforms from shaders.properties are computed once per world
+ * pass from those same values. Nothing else a shaderpack expects is set up, so regular packs won't
  * look right. Problems with the pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
@@ -127,8 +129,8 @@ public final class WorldProgramsFeature extends Feature {
         packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. A world<id> folder"
                 + " in its shaders folder replaces the main one in that dimension. Only the texture and lightmap"
                 + " samplers, the view size and frame timing uniforms, the camera position and matrices, and the"
-                + " time, sun and moon, rain, sky and fog, eye brightness and water or lava uniforms are set, and no"
-                + " composite passes run.");
+                + " time, sun and moon, rain, sky and fog, eye brightness and water or lava uniforms are set, along"
+                + " with the pack's custom uniforms that only use those, and no composite passes run.");
         profileName = config.getString("profile", "", "A profile from the pack's shaders.properties, like HIGH. Empty"
                 + " keeps the pack's own defaults.");
         optionEntries = config.getString("options", "", "Option values applied after the profile, separated by"
@@ -189,6 +191,11 @@ public final class WorldProgramsFeature extends Feature {
                 packName, configuration.profile() == null ? "<none>" : configuration.profile(),
                 configuration.changed().size(), pack.options().all().size(), configuration.changed(),
                 configuration.disabledPrograms());
+        CustomUniforms custom = configuration.customUniforms();
+        if (!custom.declarations().isEmpty()) {
+            logger.info("Shaderpack '{}' has {} custom uniforms and variables, {} of them usable, with uniforms {}",
+                    packName, custom.declarations().size(), custom.evaluatedCount(), custom.uniforms().keySet());
+        }
         monitor.packConfigured(configuration);
     }
 

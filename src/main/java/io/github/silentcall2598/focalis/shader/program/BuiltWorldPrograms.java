@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 
 import javax.annotation.Nullable;
@@ -48,7 +49,7 @@ public final class BuiltWorldPrograms {
             // PreparedProgram has no equals, and roles that share a pack program share the exact object.
             Map<PreparedProgram, Build> byProgram = new IdentityHashMap<>();
             for (PreparedProgram program : prepared.uniquePrograms()) {
-                Build build = Build.attempt(builder, program);
+                Build build = Build.attempt(builder, program, prepared.customUniforms());
                 builds.add(build);
                 byProgram.put(program, build);
             }
@@ -150,7 +151,7 @@ public final class BuiltWorldPrograms {
         }
 
         // The program is only owned by the set once this returns it, so anything failing before that deletes it.
-        static Build attempt(ProgramBuilder builder, PreparedProgram prepared) {
+        static Build attempt(ProgramBuilder builder, PreparedProgram prepared, CustomUniforms customs) {
             ShaderProgram program;
             try {
                 program = builder.build(prepared);
@@ -158,7 +159,7 @@ public final class BuiltWorldPrograms {
                 return new Build(prepared, null, null, e.failure());
             }
             try {
-                return new Build(prepared, program, WorldProgramInputs.connect(program.gl(), program), null);
+                return new Build(prepared, program, WorldProgramInputs.connect(program.gl(), program, customs), null);
             } catch (ProgramBuildException e) {
                 program.delete();
                 return new Build(prepared, null, null, e.failure());

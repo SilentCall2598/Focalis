@@ -44,6 +44,8 @@ public final class WorldProgramBinding {
     private final FogSource fog;
     @Nullable
     private BuiltWorldPrograms programs;
+    @Nullable
+    private CustomUniformValues customValues;
 
     WorldProgramBinding(ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera,
             EnvironmentInputs environment, FogSource fog) {
@@ -65,6 +67,11 @@ public final class WorldProgramBinding {
                     + " suspended");
         }
         programs = selected;
+    }
+
+    /** The custom uniform values the programs of this binding get, or null when there are none. */
+    void customValues(@Nullable CustomUniformValues values) {
+        customValues = values;
     }
 
     /** The programs the stages bind, or null when none are selected. */
@@ -101,7 +108,7 @@ public final class WorldProgramBinding {
         // The scope just bound the program or found it current already. Either way it's current now. Programs
         // bound again later in the frame, like after a renderer or outlines, still hold these values.
         try {
-            build.inputs().update(frame, snapshot, environment, fog);
+            build.inputs().update(frame, snapshot, environment, fog, customValues);
         } catch (RuntimeException | LinkageError e) {
             try {
                 scopes.abort();

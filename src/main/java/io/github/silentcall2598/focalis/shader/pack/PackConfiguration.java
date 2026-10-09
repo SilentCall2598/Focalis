@@ -41,17 +41,19 @@ public final class PackConfiguration {
     private final Map<String, String> changed;
     private final Map<String, String> disabled;
     private final Map<ShaderPath, String> texts;
+    private final CustomUniforms customUniforms;
     private final List<PackIssue> issues;
 
     private PackConfiguration(ShaderPack pack, @Nullable String profile, Map<String, String> values,
             Map<String, String> changed, Map<String, String> disabled, Map<ShaderPath, String> texts,
-            List<PackIssue> issues) {
+            CustomUniforms customUniforms, List<PackIssue> issues) {
         this.pack = pack;
         this.profile = profile;
         this.values = values;
         this.changed = changed;
         this.disabled = disabled;
         this.texts = texts;
+        this.customUniforms = customUniforms;
         this.issues = issues;
     }
 
@@ -97,6 +99,8 @@ public final class PackConfiguration {
                 : ShaderProperties.read(PROPERTIES, properties, optionMacros(options, resolution.values, environment),
                         conditionIssues);
         resolution.applyConditions(conditions);
+        // Custom uniforms see the option macros like every other setting that isn't a profile.
+        CustomUniforms customUniforms = CustomUniforms.compile(PROPERTIES, conditions, resolution.issues);
 
         // Both reads see the same file, so its problems would mostly show up twice.
         List<PackIssue> issues = new ArrayList<>(resolution.issues);
@@ -120,7 +124,8 @@ public final class PackConfiguration {
         }
         return new PackConfiguration(pack, profile, Collections.unmodifiableMap(resolution.values),
                 Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled),
-                Collections.unmodifiableMap(rewrite(pack, changed)), Collections.unmodifiableList(issues));
+                Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms,
+                Collections.unmodifiableList(issues));
     }
 
     // Value options become macros with their value and switches that are on become empty macros. Ambiguous options
@@ -185,6 +190,14 @@ public final class PackConfiguration {
 
     public boolean isEnabled(ProgramSource program) {
         return !disabled.containsKey(label(program));
+    }
+
+    /**
+     * The custom uniforms and variables, compiled once for this configuration. Equal configurations have the same
+     * declarations, since both come from the same pack and option values.
+     */
+    public CustomUniforms customUniforms() {
+        return customUniforms;
     }
 
     /** Settings and pack lines that were ignored, and why. */

@@ -34,6 +34,8 @@ public final class LiveWorldPrograms {
 
     private final ShaderPack pack;
     private PackConfiguration configuration;
+    // Belongs to the configuration, so smoothing never carries over into another one.
+    private CustomUniformValues customValues;
     private final Function<PreparedWorldPrograms, BuiltWorldPrograms> builder;
     private final BuildListener listener;
     private final WorldProgramBinding binding;
@@ -55,6 +57,8 @@ public final class LiveWorldPrograms {
         this.builder = builder;
         this.listener = Objects.requireNonNull(listener, "listener");
         this.binding = new WorldProgramBinding(scopes, frame, camera, environment, fog);
+        this.customValues = new CustomUniformValues(configuration.customUniforms());
+        binding.customValues(customValues);
     }
 
     /**
@@ -88,6 +92,11 @@ public final class LiveWorldPrograms {
         return configuration;
     }
 
+    /** The custom uniform values of the current configuration. */
+    public CustomUniformValues customValues() {
+        return customValues;
+    }
+
     /**
      * Switches to another configuration of the same pack, between world passes. An equal configuration changes
      * nothing. Any other deletes every folder built so far, and each builds again under the new configuration the
@@ -109,6 +118,8 @@ public final class LiveWorldPrograms {
             return false;
         }
         configuration = next;
+        customValues = new CustomUniformValues(next.customUniforms());
+        binding.customValues(customValues);
         rethrow(deleteFolders(null));
         return true;
     }

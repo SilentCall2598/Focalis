@@ -32,6 +32,7 @@ public final class CameraInputs {
     @Nullable
     private CameraStream stream;
     private long sequence;
+    private long world;
     // The capture of the current world pass, null until it was taken.
     @Nullable
     private CameraSnapshot current;
@@ -60,6 +61,9 @@ public final class CameraInputs {
                 || stageProjection.length != Matrix4.SIZE) {
             throw new IllegalArgumentException("Camera matrices need 16 values");
         }
+        if (!stream.sameWorld(this.stream)) {
+            world++;
+        }
         String streamBreak = stream.breakFrom(this.stream);
         if (streamBreak != null) {
             clearLanes();
@@ -68,7 +72,7 @@ public final class CameraInputs {
         CameraSnapshot earlier = lane == NO_LANE ? null : lanes[lane];
         boolean sameFrame = earlier != null && earlier.frame() == frame;
         String historyBreak = historyBreak(lane, frame, streamBreak, earlier);
-        CameraSnapshot snapshot = new CameraSnapshot(++sequence, lane, frame, historyBreak, x, y, z,
+        CameraSnapshot snapshot = new CameraSnapshot(++sequence, world, lane, frame, historyBreak, x, y, z,
                 modelView.clone(), drawProjection(projection, stageProjection), historyBreak == null ? earlier : null,
                 sameFrame);
         // Only a lane's first capture in a frame becomes its history. A later one in the same frame shares the

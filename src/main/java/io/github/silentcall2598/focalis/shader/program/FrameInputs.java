@@ -72,6 +72,11 @@ public final class FrameInputs {
         return frameTime;
     }
 
+    /** Nanoseconds from the start of the first captured frame to the start of this one. Never wraps or goes back. */
+    public long runNanos() {
+        return lastNanos - originNanos;
+    }
+
     /** Seconds since the first captured frame, starting at 0 again every hour. */
     public float frameTimeCounter() {
         return frameTimeCounter;
