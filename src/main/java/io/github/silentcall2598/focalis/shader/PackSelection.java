@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader;
 
+import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
-import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
@@ -47,7 +47,8 @@ final class PackSelection {
             throw new ShaderPackException("'" + loaded.name() + "' has no shaders/" + programName + " program."
                     + " Focalis can only run its own test program so far, not regular shaderpacks.");
         }
-        return PreparedProgram.prepare(loaded, program, StandardMacros.environment(), ShaderMacros.empty());
+        return PreparedProgram.prepare(loaded, program, StandardMacros.environment(),
+                PackConfiguration.defaults(loaded));
     }
 
     private static ShaderPackException notAPackName(String name) {

@@ -4,8 +4,8 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
-import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 
@@ -19,9 +19,10 @@ import java.util.function.Function;
 
 /**
  * The world programs of one session and their binding, driven by the world pass. Each world pass binds the programs
- * of the folder its dimension selects. A folder's programs are prepared and built the first time a dimension needs
- * them and kept for the rest of the session, failures included, so going back to a dimension or rejoining never
- * builds again. Owns every program it built. Client thread only, with the GL context current.
+ * of the folder its dimension selects. A folder's programs are prepared under the session's pack configuration and
+ * built the first time a dimension needs them. They're kept, failures included, until the session ends or switches
+ * to a configuration that prepares other sources or picks other programs, so going back to a dimension or rejoining
+ * never builds again. Owns every program it built. Client thread only, with the GL context current.
  */
 public final class LiveWorldPrograms {
 
@@ -32,6 +33,7 @@ public final class LiveWorldPrograms {
     }
 
     private final ShaderPack pack;
+    private PackConfiguration configuration;
     private final Function<PreparedWorldPrograms, BuiltWorldPrograms> builder;
     private final BuildListener listener;
     private final WorldProgramBinding binding;
@@ -44,10 +46,12 @@ public final class LiveWorldPrograms {
     private boolean worldOpen;
     private boolean deleted;
 
-    private LiveWorldPrograms(ShaderPack pack, Function<PreparedWorldPrograms, BuiltWorldPrograms> builder,
-            BuildListener listener, ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera,
-            EnvironmentInputs environment, FogSource fog) {
-        this.pack = Objects.requireNonNull(pack, "pack");
+    private LiveWorldPrograms(PackConfiguration configuration,
+            Function<PreparedWorldPrograms, BuiltWorldPrograms> builder, BuildListener listener,
+            ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
+            FogSource fog) {
+        this.configuration = Objects.requireNonNull(configuration, "configuration");
+        this.pack = configuration.pack();
         this.builder = builder;
         this.listener = Objects.requireNonNull(listener, "listener");
         this.binding = new WorldProgramBinding(scopes, frame, camera, environment, fog);
@@ -56,6 +60,7 @@ public final class LiveWorldPrograms {
     /**
      * Nothing is built until a world pass needs it.
      *
+     * @param configuration the pack, with the option values and program states its programs are prepared with
      * @param frame the frame values every program of the session gets. The caller captures it at the start of each
      *     frame, and before the first world pass.
      * @param camera the camera values every program of the session gets. The caller starts every world pass on it
@@ -64,18 +69,48 @@ public final class LiveWorldPrograms {
      *     right after the camera of each world pass.
      * @param fog read whenever a stage binds a program that uses fog values
      */
-    public static LiveWorldPrograms create(ShaderPack pack, ShaderCapabilities capabilities, BuildListener listener,
-            FrameInputs frame, CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
+    public static LiveWorldPrograms create(PackConfiguration configuration, ShaderCapabilities capabilities,
+            BuildListener listener, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
+            FogSource fog) {
         Objects.requireNonNull(capabilities, "capabilities");
-        return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, capabilities), listener,
-                new ScopedProgramBinding(), frame, camera, environment, fog);
+        return new LiveWorldPrograms(configuration, prepared -> BuiltWorldPrograms.build(prepared, capabilities),
+                listener, new ScopedProgramBinding(), frame, camera, environment, fog);
     }
 
-    static LiveWorldPrograms create(ShaderPack pack, ProgramBuilder builder, BuildListener listener,
+    static LiveWorldPrograms create(PackConfiguration configuration, ProgramBuilder builder, BuildListener listener,
             ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
             FogSource fog) {
-        return new LiveWorldPrograms(pack, prepared -> BuiltWorldPrograms.build(prepared, builder), listener,
-                scopes, frame, camera, environment, fog);
+        return new LiveWorldPrograms(configuration, prepared -> BuiltWorldPrograms.build(prepared, builder),
+                listener, scopes, frame, camera, environment, fog);
+    }
+
+    public PackConfiguration configuration() {
+        return configuration;
+    }
+
+    /**
+     * Switches to another configuration of the same pack, between world passes. An equal configuration changes
+     * nothing. Any other deletes every folder built so far, and each builds again under the new configuration the
+     * next time a world pass needs it.
+     *
+     * @return whether the built programs were dropped
+     */
+    public boolean applyConfiguration(PackConfiguration next) {
+        Objects.requireNonNull(next, "configuration");
+        checkNotDeleted();
+        if (next.pack() != pack) {
+            throw new IllegalArgumentException("The configuration belongs to shaderpack '" + next.pack().name()
+                    + "', not '" + pack.name() + "'");
+        }
+        if (worldOpen) {
+            throw new IllegalStateException("The pack configuration can't change during a world pass");
+        }
+        if (next.equals(configuration)) {
+            return false;
+        }
+        configuration = next;
+        rethrow(deleteFolders(null));
+        return true;
     }
 
     /**
@@ -114,7 +149,7 @@ public final class LiveWorldPrograms {
             return programs;
         }
         PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, StandardMacros.environment(),
-                ShaderMacros.empty());
+                configuration);
         programs = new DirectoryPrograms(directory, prepared, builder.apply(prepared));
         folders.put(directory, programs);
         listener.built(programs);
@@ -218,7 +253,14 @@ public final class LiveWorldPrograms {
         } catch (RuntimeException | LinkageError e) {
             failure = e;
         }
-        // Aborting always empties the scopes, so nothing can refuse this.
+        rethrow(deleteFolders(failure));
+    }
+
+    // Aborting always empties the scopes, and a configuration only changes outside a world pass, so nothing can
+    // refuse the select.
+    @Nullable
+    private Throwable deleteFolders(@Nullable Throwable earlier) {
+        Throwable failure = earlier;
         binding.select(null);
         selected = null;
         for (DirectoryPrograms programs : folders.values()) {
@@ -229,6 +271,10 @@ public final class LiveWorldPrograms {
             }
         }
         folders.clear();
+        return failure;
+    }
+
+    private static void rethrow(@Nullable Throwable failure) {
         if (failure instanceof RuntimeException) {
             throw (RuntimeException) failure;
         }

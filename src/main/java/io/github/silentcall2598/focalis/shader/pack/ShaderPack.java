@@ -19,18 +19,20 @@ public final class ShaderPack {
     private final ProgramDirectory root;
     private final Map<String, ProgramDirectory> dimensionDirectories;
     private final DimensionProperties dimensionProperties;
+    private final ShaderOptions options;
     private final Set<ShaderPath> uninterpretedMetadata;
     private final List<PackIssue> issues;
 
     ShaderPack(String name, Set<ShaderPath> files, Map<ShaderPath, String> texts, ProgramDirectory root,
             Map<String, ProgramDirectory> dimensionDirectories, DimensionProperties dimensionProperties,
-            Set<ShaderPath> uninterpretedMetadata, List<PackIssue> issues) {
+            ShaderOptions options, Set<ShaderPath> uninterpretedMetadata, List<PackIssue> issues) {
         this.name = name;
         this.files = files;
         this.texts = texts;
         this.root = root;
         this.dimensionDirectories = dimensionDirectories;
         this.dimensionProperties = dimensionProperties;
+        this.options = options;
         this.uninterpretedMetadata = uninterpretedMetadata;
         this.issues = issues;
     }
@@ -70,9 +72,14 @@ public final class ShaderPack {
         return dimensionProperties;
     }
 
+    /** The options the pack's .vsh and .fsh sources define, including the files they include. */
+    public ShaderOptions options() {
+        return options;
+    }
+
     /**
-     * Metadata files the pack has but Focalis doesn't interpret yet, such as {@code shaders.properties}. Their
-     * text is kept and available from {@link #text}.
+     * Metadata files the pack has but Focalis doesn't interpret yet, such as {@code block.properties}. Their text is
+     * kept and available from {@link #text}.
      */
     public Set<ShaderPath> uninterpretedMetadata() {
         return uninterpretedMetadata;
@@ -89,12 +96,29 @@ public final class ShaderPack {
         return texts.get(file);
     }
 
-    /** Expands the includes of one stage of a program. */
+    /** Expands the includes of one stage of a program, with the sources as written. */
     public ResolvedSource resolve(ProgramSource program, ProgramStage stage) throws IncludeException {
+        return new IncludeResolver(texts::get).resolve(stageFile(program, stage));
+    }
+
+    /** Expands the includes of one stage of a program, with the configuration's option values written in. */
+    public ResolvedSource resolve(ProgramSource program, ProgramStage stage, PackConfiguration configuration)
+            throws IncludeException {
+        if (configuration.pack() != this) {
+            throw new IllegalArgumentException("The configuration belongs to shaderpack '"
+                    + configuration.pack().name() + "', not '" + name + "'");
+        }
+        return new IncludeResolver(path -> {
+            String text = configuration.text(path);
+            return text != null ? text : texts.get(path);
+        }).resolve(stageFile(program, stage));
+    }
+
+    private static ShaderPath stageFile(ProgramSource program, ProgramStage stage) {
         ShaderPath file = program.file(stage);
         if (file == null) {
             throw new IllegalArgumentException(program.name() + " has no " + stage + " stage");
         }
-        return new IncludeResolver(texts::get).resolve(file);
+        return file;
     }
 }

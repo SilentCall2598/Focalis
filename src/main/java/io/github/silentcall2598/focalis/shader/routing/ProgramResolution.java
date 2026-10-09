@@ -5,6 +5,7 @@ package io.github.silentcall2598.focalis.shader.routing;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
 import java.util.List;
 
 /** Which pack program one role got in one program folder. Immutable. */
@@ -16,14 +17,21 @@ public final class ProgramResolution {
     private final ProgramSource program;
     private final List<String> candidates;
     private final int fallbackDepth;
+    private final List<String> disabled;
 
     ProgramResolution(ShaderProgramRole role, ResolutionState state, @Nullable ProgramSource program,
             List<String> candidates, int fallbackDepth) {
+        this(role, state, program, candidates, fallbackDepth, Collections.<String>emptyList());
+    }
+
+    ProgramResolution(ShaderProgramRole role, ResolutionState state, @Nullable ProgramSource program,
+            List<String> candidates, int fallbackDepth, List<String> disabled) {
         this.role = role;
         this.state = state;
         this.program = program;
         this.candidates = candidates;
         this.fallbackDepth = fallbackDepth;
+        this.disabled = disabled;
     }
 
     public ShaderProgramRole role() {
@@ -55,8 +63,14 @@ public final class ProgramResolution {
         return candidates;
     }
 
+    /** Programs the folder has for this role that were skipped because the pack configuration disabled them. */
+    public List<String> disabled() {
+        return disabled;
+    }
+
     @Override
     public String toString() {
-        return role + " " + state + (program == null ? "" : " " + program.name() + " at depth " + fallbackDepth);
+        return role + " " + state + (program == null ? "" : " " + program.name() + " at depth " + fallbackDepth)
+                + (disabled.isEmpty() ? "" : " past disabled " + disabled);
     }
 }

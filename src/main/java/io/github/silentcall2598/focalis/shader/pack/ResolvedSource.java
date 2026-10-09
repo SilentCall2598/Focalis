@@ -5,8 +5,10 @@ package io.github.silentcall2598.focalis.shader.pack;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Shader source with every {@code #include} expanded. Each output line remembers which pack file and line it
@@ -39,6 +41,17 @@ public final class ResolvedSource {
         }
         ShaderPath file = fileByLine[line - 1];
         return file == null ? SourceLocation.ADDED_BY_FOCALIS : new SourceLocation(file, lineByLine[line - 1]);
+    }
+
+    /** Every pack file that contributed a line, in the order they first appear. */
+    Set<ShaderPath> files() {
+        Set<ShaderPath> files = new LinkedHashSet<>();
+        for (ShaderPath file : fileByLine) {
+            if (file != null) {
+                files.add(file);
+            }
+        }
+        return files;
     }
 
     /**
