@@ -35,9 +35,9 @@ public final class CustomUniforms {
             "shadowLightPosition", "upPosition", "gbufferModelView", "gbufferModelViewInverse",
             "gbufferPreviousModelView", "gbufferProjection", "gbufferProjectionInverse", "gbufferPreviousProjection",
             "shadowProjection", "shadowProjectionInverse", "shadowModelView", "shadowModelViewInverse", "wetness",
-            "eyeAltitude", "eyeBrightnessSmooth", "terrainTextureSize", "terrainIconSize", "nightVision", "blindness",
+            "eyeBrightnessSmooth", "terrainTextureSize", "terrainIconSize", "nightVision", "blindness",
             "screenBrightness", "hideGUI", "centerDepthSmooth", "atlasSize", "playerMood", "biome", "biome_category",
-            "biome_precipitation", "temperature", "rainfall", "is_alive", "is_burning", "is_child", "is_glowing",
+            "temperature", "rainfall", "is_alive", "is_burning", "is_child", "is_glowing",
             "is_hurt", "is_in_lava", "is_in_water", "is_invisible", "is_on_ground", "is_ridden", "is_riding",
             "is_sneaking", "is_sprinting", "is_wet"));
     // These change many times per program, so the format keeps them out of expressions.
@@ -198,7 +198,8 @@ public final class CustomUniforms {
     }
 
     private static boolean isBuiltInName(String name) {
-        return name.equals("pi") || name.equals("true") || name.equals("false") || CustomInput.isBaseName(name)
+        return name.equals("pi") || name.equals("true") || name.equals("false") || name.startsWith("PPT_")
+                || CustomInput.isBaseName(name)
                 || UNAVAILABLE.contains(name) || PER_DRAW.contains(name);
     }
 
@@ -224,6 +225,13 @@ public final class CustomUniforms {
         switch (name) {
             case "pi":
                 return new CustomExpression.Number((float) Math.PI);
+            // The documented numbers of biome_precipitation.
+            case "PPT_NONE":
+                return new CustomExpression.Number(0);
+            case "PPT_RAIN":
+                return new CustomExpression.Number(1);
+            case "PPT_SNOW":
+                return new CustomExpression.Number(2);
             case "true":
                 return new CustomExpression.Truth(true);
             case "false":

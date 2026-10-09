@@ -10,9 +10,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The built-in values custom uniform expressions can read, all as floats like the format documents. Only values
- * Focalis already has for its standard uniforms are here, read from the same inputs, and never the per draw fog
- * values the format excludes. A vector is read one component at a time, like {@code eyeBrightness.y}.
+ * The built-in values custom uniform expressions can read, all as floats like the format documents. These are the
+ * values Focalis has for its standard uniforms, read from the same inputs, plus the documented biome_precipitation
+ * parameter, and never the per draw fog values the format excludes. A vector is read one component at a time, like
+ * {@code eyeBrightness.y}.
  */
 public enum CustomInput {
     VIEW_WIDTH("viewWidth"),
@@ -28,6 +29,8 @@ public enum CustomInput {
     SHADOW_ANGLE("shadowAngle"),
     RAIN_STRENGTH("rainStrength"),
     IS_EYE_IN_WATER("isEyeInWater"),
+    EYE_ALTITUDE("eyeAltitude"),
+    BIOME_PRECIPITATION("biome_precipitation"),
     EYE_BRIGHTNESS_X("eyeBrightness", "x"),
     EYE_BRIGHTNESS_Y("eyeBrightness", "y"),
     SKY_COLOR_R("skyColor", "r", "x"),

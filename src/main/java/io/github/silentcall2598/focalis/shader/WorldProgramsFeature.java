@@ -45,7 +45,9 @@ import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.renderer.ActiveRenderInfo;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.biome.Biome;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -129,8 +131,8 @@ public final class WorldProgramsFeature extends Feature {
         packName = config.getString("pack", "", "Name of a folder or zip in the shaderpacks folder. A world<id> folder"
                 + " in its shaders folder replaces the main one in that dimension. Only the texture and lightmap"
                 + " samplers, the view size and frame timing uniforms, the camera position and matrices, and the"
-                + " time, sun and moon, rain, sky and fog, eye brightness and water or lava uniforms are set, along"
-                + " with the pack's custom uniforms that only use those, and no composite passes run.");
+                + " time, sun and moon, rain, sky and fog, eye brightness and altitude and water or lava uniforms are"
+                + " set, along with the pack's custom uniforms that only use those, and no composite passes run.");
         profileName = config.getString("profile", "", "A profile from the pack's shaders.properties, like HIGH. Empty"
                 + " keeps the pack's own defaults.");
         optionEntries = config.getString("options", "", "Option values applied after the profile, separated by"
@@ -464,8 +466,18 @@ public final class WorldProgramsFeature extends Feature {
                     world.getCelestialAngle(partialTicks), world.getRainStrength(partialTicks), (float) sky.x,
                     (float) sky.y, (float) sky.z, entity.getBrightnessForRender());
         }
-        environment.capturePass(snapshot, medium(world, entity, partialTicks));
+        environment.capturePass(snapshot, medium(world, entity, partialTicks), precipitation(world, snapshot));
         monitor.environmentCaptured(snapshot, environment);
+    }
+
+    // The biome's own kind of weather, the way 1.12.2 sorts biomes. Snowy biomes snow, the others rain unless rain is
+    // turned off for them. One lookup per world pass, at the block the view entity stands in.
+    private static int precipitation(WorldClient world, CameraSnapshot camera) {
+        Biome biome = world.getBiome(new BlockPos(camera.x(), camera.y(), camera.z()));
+        if (biome.getEnableSnow()) {
+            return EnvironmentInputs.PRECIPITATION_SNOW;
+        }
+        return biome.canRain() ? EnvironmentInputs.PRECIPITATION_RAIN : EnvironmentInputs.PRECIPITATION_NONE;
     }
 
     // The block vanilla's setupFog checks for water and lava fog, at the camera and not at the player's eyes, so this

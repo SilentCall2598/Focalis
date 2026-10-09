@@ -369,6 +369,9 @@ public final class WorldProgramInputs {
             case IS_EYE_IN_WATER:
                 gl.uniform1i(location, environment.medium());
                 break;
+            case EYE_ALTITUDE:
+                gl.uniform1f(location, environment.eyeAltitude());
+                break;
             case FOG_MODE:
                 // With fog off nothing is fogged, and 0 is no GL fog mode.
                 gl.uniform1i(location, fog.enabled() ? fog.mode() : 0);

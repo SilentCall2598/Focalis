@@ -22,6 +22,10 @@ public final class EnvironmentInputs {
     public static final int MEDIUM_AIR = 0;
     public static final int MEDIUM_WATER = 1;
     public static final int MEDIUM_LAVA = 2;
+    /** The biome precipitation types, with the numbers of the format's PPT_NONE, PPT_RAIN and PPT_SNOW. */
+    public static final int PRECIPITATION_NONE = 0;
+    public static final int PRECIPITATION_RAIN = 1;
+    public static final int PRECIPITATION_SNOW = 2;
 
     // Vanilla draws the sun quad this far out and the moon quad the same distance the other way.
     private static final double SKY_DISTANCE = 100;
@@ -48,6 +52,8 @@ public final class EnvironmentInputs {
     private final float[] moonPosition = new float[3];
     private final float[] upPosition = new float[3];
     private int medium;
+    private float eyeAltitude;
+    private int precipitation;
 
     /** Whether the world values of the displayed frame with this FrameInputs sequence were taken already. */
     public boolean hasFrame(long frame) {
@@ -94,14 +100,18 @@ public final class EnvironmentInputs {
      *
      * @param medium {@link #MEDIUM_WATER} or {@link #MEDIUM_LAVA} when vanilla fogs the camera as being in one,
      *     otherwise {@link #MEDIUM_AIR}
+     * @param precipitation one of the PRECIPITATION constants, for the biome the camera's view entity is in
      */
-    public void capturePass(CameraSnapshot camera, int medium) {
+    public void capturePass(CameraSnapshot camera, int medium, int precipitation) {
         Objects.requireNonNull(camera, "camera");
         if (!hasFrame(camera.frame())) {
             throw new IllegalStateException("The world values of frame " + camera.frame() + " weren't taken yet");
         }
         if (medium < MEDIUM_AIR || medium > MEDIUM_LAVA) {
             throw new IllegalArgumentException("No medium " + medium);
+        }
+        if (precipitation < PRECIPITATION_NONE || precipitation > PRECIPITATION_SNOW) {
+            throw new IllegalArgumentException("No precipitation " + precipitation);
         }
         // The sky turns -90 degrees around y and then by the celestial angle around x, both in degrees as floats.
         double radians = Math.toRadians(celestialAngle * 360.0f);
@@ -112,6 +122,9 @@ public final class EnvironmentInputs {
         transform(modelView, -x, -y, 0, 1, moonPosition);
         transform(modelView, 0, SKY_DISTANCE, 0, 0, upPosition);
         this.medium = medium;
+        // The view entity's height, which is where the camera snapshot stands.
+        eyeAltitude = (float) camera.y();
+        this.precipitation = precipitation;
         passFrame = camera.frame();
         pass = camera.sequence();
     }
@@ -214,6 +227,16 @@ public final class EnvironmentInputs {
 
     float[] upPosition() {
         return upPosition;
+    }
+
+    /** The Y of the view entity the pass was drawn for, as eyeAltitude. */
+    public float eyeAltitude() {
+        return eyeAltitude;
+    }
+
+    /** The precipitation type of the biome the pass's view entity is in, one of the PRECIPITATION constants. */
+    public int precipitation() {
+        return precipitation;
     }
 
     public int medium() {

@@ -77,6 +77,8 @@ public final class CustomUniformValues implements CustomContext {
         in[CustomInput.SHADOW_ANGLE.ordinal()] = environment.shadowAngle();
         in[CustomInput.RAIN_STRENGTH.ordinal()] = environment.rainStrength();
         in[CustomInput.IS_EYE_IN_WATER.ordinal()] = environment.medium();
+        in[CustomInput.EYE_ALTITUDE.ordinal()] = environment.eyeAltitude();
+        in[CustomInput.BIOME_PRECIPITATION.ordinal()] = environment.precipitation();
         in[CustomInput.EYE_BRIGHTNESS_X.ordinal()] = environment.blockBrightness();
         in[CustomInput.EYE_BRIGHTNESS_Y.ordinal()] = environment.skyBrightness();
         in[CustomInput.SKY_COLOR_R.ordinal()] = environment.skyRed();

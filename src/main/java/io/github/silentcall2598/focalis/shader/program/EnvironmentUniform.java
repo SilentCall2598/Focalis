@@ -23,6 +23,7 @@ public enum EnvironmentUniform {
     SHADOW_LIGHT_POSITION("shadowLightPosition", Type.VEC3, Update.PASS),
     UP_POSITION("upPosition", Type.VEC3, Update.PASS),
     IS_EYE_IN_WATER("isEyeInWater", Type.INT, Update.PASS),
+    EYE_ALTITUDE("eyeAltitude", Type.FLOAT, Update.PASS),
     FOG_MODE("fogMode", Type.INT, Update.BIND),
     FOG_START("fogStart", Type.FLOAT, Update.BIND),
     FOG_END("fogEnd", Type.FLOAT, Update.BIND),
