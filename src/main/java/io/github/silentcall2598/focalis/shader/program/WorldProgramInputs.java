@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
+
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,7 +14,8 @@ import java.util.List;
  * The inputs Focalis gives one built world program. Uniforms keep their values for as long as the program isn't
  * linked again, so the samplers are set once right after linking. The frame uniforms and the world values are set the
  * first time the program is bound in a frame, and the camera uniforms and the values in eye space the first time it's
- * bound with a new camera snapshot. The fog is draw state, so it's set every time a stage binds the program. Every
+ * bound with a new camera snapshot. The fog is draw state, so it's set every time a stage binds the program. Custom
+ * uniforms are set the first time the program is bound after the session's values were computed again. Every
  * location is looked up once, right after linking.
  */
 public final class WorldProgramInputs {
@@ -49,7 +52,16 @@ public final class WorldProgramInputs {
     private final boolean anyWorldValue;
     private final boolean anyPassValue;
     private final boolean anyFogValue;
+    // Each used custom uniform's location, its slot in the session's values and whether it's a bool.
+    private final int[] customLocations;
+    private final int[] customSlots;
+    private final boolean[] customBools;
     private final List<String> unprovided;
+    // The values and the generation of them the custom uniforms were last set from.
+    @Nullable
+    private CustomUniformValues updatedCustomValues;
+    private long updatedCustom;
+    private long customUpdates;
     // The FrameInputs sequence the frame uniforms were last set for, 0 before the first time.
     private long updatedFrame;
     // The CameraSnapshot sequence the camera uniforms were last set for, 0 before the first time.
@@ -61,12 +73,16 @@ public final class WorldProgramInputs {
     private long fogUpdates;
 
     private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, int[] cameraLocations,
-            int[] environmentLocations, List<String> unprovided) {
+            int[] environmentLocations, int[] customLocations, int[] customSlots, boolean[] customBools,
+            List<String> unprovided) {
         this.gl = gl;
         this.locations = locations;
         this.frameLocations = frameLocations;
         this.cameraLocations = cameraLocations;
         this.environmentLocations = environmentLocations;
+        this.customLocations = customLocations;
+        this.customSlots = customSlots;
+        this.customBools = customBools;
         this.unprovided = unprovided;
         this.anyFrameUniform = any(frameLocations);
         this.anyCameraUniform = any(cameraLocations);
@@ -103,6 +119,16 @@ public final class WorldProgramInputs {
      * @throws ProgramBuildException if the program declares a supported uniform with another type or as an array
      */
     static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program) throws ProgramBuildException {
+        return connect(gl, program, CustomUniforms.NONE);
+    }
+
+    /**
+     * Like {@link #connect(ShaderGl, ShaderProgram)}, and also finds the usable custom uniforms the program declares.
+     * One declared with another type than its custom declaration is left unset and counted as unprovided, since
+     * that's a pack mistake and not a reason to drop the whole program.
+     */
+    static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program, CustomUniforms customs)
+            throws ProgramBuildException {
         int id = program.id();
         int[] locations = new int[WorldSampler.values().length];
         Arrays.fill(locations, -1);
@@ -113,6 +139,8 @@ public final class WorldProgramInputs {
         int[] environmentLocations = new int[ENVIRONMENT_UNIFORMS.length];
         Arrays.fill(environmentLocations, -1);
         List<String> unprovided = new ArrayList<>();
+        List<CustomUniforms.Declaration> custom = new ArrayList<>();
+        List<Integer> customLocations = new ArrayList<>();
         for (ActiveUniform uniform : gl.activeUniforms(id)) {
             // Drivers can report an array with only its first element used as name[0] with size 1.
             boolean array = uniform.name.endsWith("[0]") || uniform.size != 1;
@@ -147,11 +175,31 @@ public final class WorldProgramInputs {
                 environmentLocations[environment.ordinal()] = gl.uniformLocation(id, name);
                 continue;
             }
+            CustomUniforms.Declaration declaration = customs.uniforms().get(name);
+            if (declaration != null) {
+                int type = declaration.bool() ? GL_BOOL : GL_FLOAT;
+                if (uniform.type != type || array) {
+                    unprovided.add(name + " (declared as " + describe(uniform, array) + ", but its custom uniform is a "
+                            + declaration.type() + ")");
+                } else {
+                    custom.add(declaration);
+                    customLocations.add(gl.uniformLocation(id, name));
+                }
+                continue;
+            }
             unprovided.add(name);
         }
         assign(gl, id, locations);
+        int[] customLocationArray = new int[custom.size()];
+        int[] customSlots = new int[custom.size()];
+        boolean[] customBools = new boolean[custom.size()];
+        for (int i = 0; i < custom.size(); i++) {
+            customLocationArray[i] = customLocations.get(i);
+            customSlots[i] = custom.get(i).index();
+            customBools[i] = custom.get(i).bool();
+        }
         return new WorldProgramInputs(gl, locations, frameLocations, cameraLocations, environmentLocations,
-                Collections.unmodifiableList(unprovided));
+                customLocationArray, customSlots, customBools, Collections.unmodifiableList(unprovided));
     }
 
     private static void check(ShaderProgram program, ActiveUniform uniform, String name, boolean array, int type,
@@ -170,7 +218,11 @@ public final class WorldProgramInputs {
      * get are missing or would belong to another camera.
      */
     boolean accepts(@Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog) {
-        if ((anyWorldValue || anyPassValue) && !environment.readyFor(camera)) {
+        if ((anyWorldValue || anyPassValue || customLocations.length > 0) && !environment.readyFor(camera)) {
+            return false;
+        }
+        // Custom values read the camera of the pass.
+        if (customLocations.length > 0 && camera == null) {
             return false;
         }
         if (anyFogValue && !fog.available()) {
@@ -195,6 +247,15 @@ public final class WorldProgramInputs {
      * changes.
      */
     void update(FrameInputs frame, @Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog) {
+        update(frame, camera, environment, fog, null);
+    }
+
+    /**
+     * Like {@link #update(FrameInputs, CameraSnapshot, EnvironmentInputs, FogSource)}, and also sets the custom
+     * uniforms from {@code custom}, computing them for this world pass first if no program did yet.
+     */
+    void update(FrameInputs frame, @Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog,
+            @Nullable CustomUniformValues custom) {
         long sequence = frame.sequence();
         if (sequence == 0) {
             throw new IllegalStateException("A world program needed the frame values before any frame was captured");
@@ -236,6 +297,25 @@ public final class WorldProgramInputs {
         if (anyFogValue) {
             setEnvironment(EnvironmentUniform.Update.BIND, environment, fog);
             fogUpdates++;
+        }
+        if (customLocations.length > 0) {
+            if (custom == null) {
+                throw new IllegalStateException("A world program with custom uniforms was bound without their values");
+            }
+            custom.prepare(frame, camera, environment);
+            if (custom != updatedCustomValues || custom.generation() != updatedCustom) {
+                for (int i = 0; i < customLocations.length; i++) {
+                    float value = custom.value(customSlots[i]);
+                    if (customBools[i]) {
+                        gl.uniform1i(customLocations[i], value != 0 ? 1 : 0);
+                    } else {
+                        gl.uniform1f(customLocations[i], value);
+                    }
+                }
+                updatedCustomValues = custom;
+                updatedCustom = custom.generation();
+                customUpdates++;
+            }
         }
     }
 
@@ -288,6 +368,9 @@ public final class WorldProgramInputs {
                 break;
             case IS_EYE_IN_WATER:
                 gl.uniform1i(location, environment.medium());
+                break;
+            case EYE_ALTITUDE:
+                gl.uniform1f(location, environment.eyeAltitude());
                 break;
             case FOG_MODE:
                 // With fog off nothing is fogged, and 0 is no GL fog mode.
@@ -540,6 +623,16 @@ public final class WorldProgramInputs {
     /** How many times the camera uniforms were set, which can only grow by one per camera snapshot. */
     public long cameraUpdates() {
         return cameraUpdates;
+    }
+
+    /** How many custom uniforms this program sets. */
+    public int customUniformCount() {
+        return customLocations.length;
+    }
+
+    /** How many times the custom uniforms were set, at most once per computation of the values. */
+    public long customUpdates() {
+        return customUpdates;
     }
 
     /** Active uniforms Focalis doesn't set yet. They keep the zero they got when the program was linked. */

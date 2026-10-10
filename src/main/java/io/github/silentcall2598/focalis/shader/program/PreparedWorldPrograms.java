@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
 import io.github.silentcall2598.focalis.shader.pack.IncludeException;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
@@ -30,10 +31,13 @@ public final class PreparedWorldPrograms {
 
     private final Map<ShaderProgramRole, Entry> entries;
     private final List<PreparedProgram> uniquePrograms;
+    private final CustomUniforms customUniforms;
 
-    private PreparedWorldPrograms(Map<ShaderProgramRole, Entry> entries, List<PreparedProgram> uniquePrograms) {
+    private PreparedWorldPrograms(Map<ShaderProgramRole, Entry> entries, List<PreparedProgram> uniquePrograms,
+            CustomUniforms customUniforms) {
         this.entries = entries;
         this.uniquePrograms = uniquePrograms;
+        this.customUniforms = customUniforms;
     }
 
     /**
@@ -81,7 +85,8 @@ public final class PreparedWorldPrograms {
             }
             entries.put(role, new Entry(role, resolution, outcome.program, outcome.problem));
         }
-        return new PreparedWorldPrograms(Collections.unmodifiableMap(entries), Collections.unmodifiableList(unique));
+        return new PreparedWorldPrograms(Collections.unmodifiableMap(entries), Collections.unmodifiableList(unique),
+                configuration.customUniforms());
     }
 
     // Programs are prepared from the pack's own file texts, so a folder of another pack with the same paths would
@@ -109,6 +114,11 @@ public final class PreparedWorldPrograms {
     }
 
     /** Each successfully prepared program once, in the order roles first selected it. Read only. */
+    /** The custom uniforms of the configuration these programs were prepared with. */
+    public CustomUniforms customUniforms() {
+        return customUniforms;
+    }
+
     public List<PreparedProgram> uniquePrograms() {
         return uniquePrograms;
     }

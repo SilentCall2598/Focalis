@@ -32,6 +32,11 @@ public final class CameraStream {
         this.height = height;
     }
 
+    /** Whether {@code earlier} was taken in the same client world and dimension. */
+    public boolean sameWorld(@Nullable CameraStream earlier) {
+        return earlier != null && world == earlier.world && dimension == earlier.dimension;
+    }
+
     /** Why history can't go on from {@code earlier} to this one, or null when it can. */
     @Nullable
     public String breakFrom(@Nullable CameraStream earlier) {

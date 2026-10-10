@@ -12,6 +12,7 @@ import javax.annotation.Nullable;
 public final class CameraSnapshot {
 
     private final long sequence;
+    private final long world;
     private final int lane;
     private final long frame;
     @Nullable
@@ -33,13 +34,15 @@ public final class CameraSnapshot {
     final float[] projectionInverse;
 
     /**
+     * @param world counts the client worlds and dimensions of the session the captures were in
      * @param previous whose current values become the previous ones, or null to start the history over
      * @param sameFrame true when {@code previous} is an earlier capture of this lane in the same frame, which shares
      *     its previous values instead
      */
-    CameraSnapshot(long sequence, int lane, long frame, @Nullable String historyBreak, double x, double y, double z,
-            float[] modelView, float[] projection, @Nullable CameraSnapshot previous, boolean sameFrame) {
+    CameraSnapshot(long sequence, long world, int lane, long frame, @Nullable String historyBreak, double x, double y,
+            double z, float[] modelView, float[] projection, @Nullable CameraSnapshot previous, boolean sameFrame) {
         this.sequence = sequence;
+        this.world = world;
         this.lane = lane;
         this.frame = frame;
         this.historyBreak = historyBreak;
@@ -72,6 +75,14 @@ public final class CameraSnapshot {
             previousModelView = previous.modelView;
             previousProjection = previous.projection;
         }
+    }
+
+    /**
+     * Counts the client worlds and dimensions the session's captures were taken in, from 1. It changes whenever
+     * Minecraft replaces the world or the dimension changes, and stays the same for every capture in between.
+     */
+    public long world() {
+        return world;
     }
 
     /** Counts every capture of the session from 1, and never wraps in practice. */
