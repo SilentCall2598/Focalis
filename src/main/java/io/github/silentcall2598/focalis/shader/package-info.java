@@ -5,5 +5,6 @@
  * OpenGL programs and binds world programs around render stages, and {@code shader.post} runs the experimental post
  * pass over the world image.
  * {@code shader.routing} turns render context into Focalis program roles and finds the pack program for a role.
+ * {@code shader.material} resolves a pack's block, item and entity mappings against the game's registries.
  */
 package io.github.silentcall2598.focalis.shader;

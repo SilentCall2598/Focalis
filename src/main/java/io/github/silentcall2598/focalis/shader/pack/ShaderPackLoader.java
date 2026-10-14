@@ -6,7 +6,6 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -21,10 +20,6 @@ import java.util.TreeSet;
  * {@link ShaderPackException}. Problems limited to one program are recorded as {@link PackIssue}s instead.
  */
 public final class ShaderPackLoader {
-
-    // Kept as text for later work. Nothing in them is interpreted yet.
-    private static final List<String> UNINTERPRETED_METADATA = Arrays.asList(
-            "block.properties", "item.properties", "entity.properties");
 
     private ShaderPackLoader() {
     }
@@ -105,22 +100,18 @@ public final class ShaderPackLoader {
             }
         }
 
-        // Read now so configurations can use it later without touching the pack again.
+        // Read now so configurations can use them later without touching the pack again.
         String properties = reader.read(ShaderPath.of(ShaderProperties.FILE_NAME));
         Map<ShaderPath, byte[]> images = properties == null ? Collections.<ShaderPath, byte[]>emptyMap()
                 : readImages(source, properties, reader, issues);
-        Set<ShaderPath> uninterpreted = new TreeSet<>();
-        for (String name : UNINTERPRETED_METADATA) {
-            ShaderPath path = ShaderPath.of(name);
-            if (reader.read(path) != null) {
-                uninterpreted.add(path);
-            }
+        for (MaterialMappings.Kind kind : MaterialMappings.Kind.values()) {
+            reader.read(kind.file());
         }
 
         return new ShaderPack(source.name(), Collections.unmodifiableSet(new TreeSet<>(source.files())),
                 Collections.unmodifiableMap(new HashMap<>(texts)), images, root,
                 Collections.unmodifiableMap(dimensionDirectories), dimensions, options.finish(issues),
-                Collections.unmodifiableSet(uninterpreted), Collections.unmodifiableList(issues));
+                Collections.unmodifiableList(issues));
     }
 
     // Every PNG a texture line names in any #if branch, with its .mcmeta, since which branch counts depends on a
