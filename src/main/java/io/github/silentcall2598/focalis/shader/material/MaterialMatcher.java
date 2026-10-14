@@ -15,9 +15,9 @@ import java.util.Set;
 
 /**
  * Matches declarations against registries seen only through names and property values, so it works without
- * Minecraft. A block state, item or entity type gets the ID of the first declaration in file order that matches it,
- * however specific a later one is, and later matches are reported as conflicts. Other implementations of the format
- * keep that order for block states for OptiFine parity, and items and entities follow the same rule here.
+ * Minecraft. A block state, item or entity type gets the ID of the first declaration that matches it, in the file
+ * order {@link MaterialMappings} keeps, however specific a later one is. Later matches are reported as conflicts
+ * that name the line above them that won. This is Focalis's own deterministic rule.
  *
  * <p>A property the block doesn't have is left out of the entry, so packs that add 1.13 properties to 1.12 names still
  * map those blocks. A value the property doesn't have matches nothing.

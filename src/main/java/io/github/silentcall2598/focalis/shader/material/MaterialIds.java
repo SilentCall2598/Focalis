@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.material;
 
+import com.google.common.collect.ImmutableMap;
 import io.github.silentcall2598.focalis.shader.pack.MaterialMappings;
+import net.minecraft.block.Block;
 import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
@@ -18,6 +20,7 @@ import net.minecraftforge.fml.common.registry.ForgeRegistries;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,16 +39,20 @@ public final class MaterialIds {
 
     private final MaterialMappings mappings;
     private final Map<IBlockState, Integer> blocks;
+    // Per block with Forge extended states, the properties map of each mapped state to its ID. See extendedCopy.
+    private final Map<Block, Map<ImmutableMap<IProperty<?>, Comparable<?>>, Integer>> extended;
     private final Map<Item, Integer> items;
     private final Map<Class<?>, Integer> entities;
     private final int player;
     private final int lightningBolt;
     private final MaterialReport report;
 
-    private MaterialIds(MaterialMappings mappings, Map<IBlockState, Integer> blocks, Map<Item, Integer> items,
+    private MaterialIds(MaterialMappings mappings, Map<IBlockState, Integer> blocks,
+            Map<Block, Map<ImmutableMap<IProperty<?>, Comparable<?>>, Integer>> extended, Map<Item, Integer> items,
             Map<Class<?>, Integer> entities, int player, int lightningBolt, MaterialReport report) {
         this.mappings = mappings;
         this.blocks = blocks;
+        this.extended = extended;
         this.items = items;
         this.entities = entities;
         this.player = player;
@@ -69,8 +76,24 @@ public final class MaterialIds {
         // No player has EntityPlayer as its own class, so the player name is only checked with instanceof.
         Integer player = entities.remove(EntityPlayer.class);
         Integer lightningBolt = entities.get(EntityLightningBolt.class);
-        return new MaterialIds(mappings, blocks, items, entities, player == null ? UNMAPPED : player,
-                lightningBolt == null ? UNMAPPED : lightningBolt, report.build(System.nanoTime() - start));
+        return new MaterialIds(mappings, blocks, extendedIndex(blocks), items, entities,
+                player == null ? UNMAPPED : player, lightningBolt == null ? UNMAPPED : lightningBolt,
+                report.build(System.nanoTime() - start));
+    }
+
+    // Only Forge's extended states have copies, and only listed properties can leave a copy's clean state behind. Each
+    // of those states has its own properties map, and blocks never share one, but the index is kept per block anyway.
+    private static Map<Block, Map<ImmutableMap<IProperty<?>, Comparable<?>>, Integer>> extendedIndex(
+            Map<IBlockState, Integer> blocks) {
+        Map<Block, Map<ImmutableMap<IProperty<?>, Comparable<?>>, Integer>> index = new IdentityHashMap<>();
+        for (Map.Entry<IBlockState, Integer> entry : blocks.entrySet()) {
+            IBlockState state = entry.getKey();
+            if (state instanceof IExtendedBlockState && !state.getProperties().isEmpty()) {
+                index.computeIfAbsent(state.getBlock(), block -> new IdentityHashMap<>())
+                        .put(state.getProperties(), entry.getValue());
+            }
+        }
+        return index;
     }
 
     // Registry lookups follow Forge's aliases. getValue alone would hand back air for a name that isn't there.
@@ -112,13 +135,28 @@ public final class MaterialIds {
     }
 
     /**
-     * The ID of a block state, normally the actual state the renderer draws. Forge's extended states count as their
-     * clean state, since unlisted values don't take part in matching.
+     * The ID of a block state, normally the actual state the renderer draws, before Forge's extended render data is
+     * added. An extended copy counts as the listed state it stands for, since unlisted values don't take part in
+     * matching.
      */
     public int block(IBlockState state) {
-        IBlockState listed = state instanceof IExtendedBlockState ? ((IExtendedBlockState) state).getClean() : state;
-        Integer id = blocks.get(listed);
+        Integer id = blocks.get(state);
+        if (id == null && state instanceof IExtendedBlockState) {
+            id = extendedCopy((IExtendedBlockState) state);
+        }
         return id == null ? UNMAPPED : id;
+    }
+
+    // A Forge copy keeps the properties map of the listed state it stands for. Its getClean is that state until a listed
+    // property changes on a copy that has unlisted values, which leaves getClean on the old state, so the map decides.
+    @Nullable
+    private Integer extendedCopy(IExtendedBlockState state) {
+        IBlockState clean = state.getClean();
+        if (clean != null && clean.getProperties() == state.getProperties()) {
+            return blocks.get(clean);
+        }
+        Map<ImmutableMap<IProperty<?>, Comparable<?>>, Integer> byProperties = extended.get(state.getBlock());
+        return byProperties == null ? null : byProperties.get(state.getProperties());
     }
 
     public int item(Item item) {

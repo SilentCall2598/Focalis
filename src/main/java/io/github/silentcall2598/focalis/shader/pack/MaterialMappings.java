@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -19,8 +18,10 @@ import java.util.regex.Pattern;
  * {@code entity.properties}, after the preprocessor. Only names and properties are kept. Matching them against the
  * game's registries is separate and has to wait until those are complete. Immutable.
  *
- * <p>Declarations keep the order their keys first appear in, which is the order matching tries them. A key written
- * twice keeps its last value at the place of its first line, like the other properties files of a pack.
+ * <p>Declarations are in file order, which is the order matching tries them. Only one line per ID counts. When an ID
+ * is declared again, with the same key or another spelling of the number like {@code block.010}, the later line
+ * replaces the earlier one at its own place, as if the earlier line weren't written. The format only says one line
+ * per ID is allowed, so this is Focalis's own rule for packs that break that.
  */
 public final class MaterialMappings {
 
@@ -213,17 +214,9 @@ public final class MaterialMappings {
     private static List<Declaration> readFile(Kind kind, String text, Map<String, String> macros, List<Layer> layers,
             List<PackIssue> issues) {
         ShaderPath file = kind.file();
-        Map<String, ShaderProperties.Line> byKey = new LinkedHashMap<>();
+        // Removing before putting moves a repeated ID to its latest line, so the order stays the file's.
+        Map<Integer, Declaration> byId = new LinkedHashMap<>();
         for (ShaderProperties.Line line : ShaderProperties.readLines(file, text, macros, issues)) {
-            ShaderProperties.Line earlier = byKey.put(line.key, line);
-            if (earlier != null) {
-                issues.add(new PackIssue(new SourceLocation(file, line.line), line.key + " is written again, which"
-                        + " replaces the value from line " + earlier.line + ". Only one line per ID is allowed"));
-            }
-        }
-        List<Declaration> declarations = new ArrayList<>();
-        Map<Integer, String> keysById = new HashMap<>();
-        for (ShaderProperties.Line line : byKey.values()) {
             SourceLocation here = new SourceLocation(file, line.line);
             if (line.key.startsWith(kind.prefix)) {
                 String written = line.key.substring(kind.prefix.length());
@@ -233,12 +226,12 @@ public final class MaterialMappings {
                             + " 0 to " + Integer.MAX_VALUE));
                     continue;
                 }
-                String other = keysById.put(id, line.key);
-                if (other != null) {
-                    issues.add(new PackIssue(here, line.key + " declares ID " + id + " again after " + other
-                            + ". Both lines are used"));
+                Declaration earlier = byId.remove(id);
+                if (earlier != null) {
+                    issues.add(new PackIssue(here, line.key + " repeats ID " + id + " from " + earlier.key() + " at "
+                            + earlier.location() + ", which no longer counts. Only one line per ID is allowed"));
                 }
-                declarations.add(new Declaration(kind, id, line.key, selectors(kind, line, here, issues), here));
+                byId.put(id, new Declaration(kind, id, line.key, selectors(kind, line, here, issues), here));
             } else if (kind == Kind.BLOCK && line.key.startsWith(LAYER)) {
                 String name = line.key.substring(LAYER.length());
                 if (!LAYERS.contains(name)) {
@@ -253,7 +246,7 @@ public final class MaterialMappings {
                         + "<id>" + (kind == Kind.BLOCK ? " and " + LAYER + "<layer>" : "") + " lines"));
             }
         }
-        return Collections.unmodifiableList(declarations);
+        return Collections.unmodifiableList(new ArrayList<>(byId.values()));
     }
 
     @Nullable
