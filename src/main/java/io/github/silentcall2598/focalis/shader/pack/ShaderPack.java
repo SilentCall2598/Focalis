@@ -16,6 +16,7 @@ public final class ShaderPack {
     private final String name;
     private final Set<ShaderPath> files;
     private final Map<ShaderPath, String> texts;
+    private final Map<ShaderPath, byte[]> images;
     private final ProgramDirectory root;
     private final Map<String, ProgramDirectory> dimensionDirectories;
     private final DimensionProperties dimensionProperties;
@@ -23,12 +24,14 @@ public final class ShaderPack {
     private final Set<ShaderPath> uninterpretedMetadata;
     private final List<PackIssue> issues;
 
-    ShaderPack(String name, Set<ShaderPath> files, Map<ShaderPath, String> texts, ProgramDirectory root,
-            Map<String, ProgramDirectory> dimensionDirectories, DimensionProperties dimensionProperties,
-            ShaderOptions options, Set<ShaderPath> uninterpretedMetadata, List<PackIssue> issues) {
+    ShaderPack(String name, Set<ShaderPath> files, Map<ShaderPath, String> texts, Map<ShaderPath, byte[]> images,
+            ProgramDirectory root, Map<String, ProgramDirectory> dimensionDirectories,
+            DimensionProperties dimensionProperties, ShaderOptions options, Set<ShaderPath> uninterpretedMetadata,
+            List<PackIssue> issues) {
         this.name = name;
         this.files = files;
         this.texts = texts;
+        this.images = images;
         this.root = root;
         this.dimensionDirectories = dimensionDirectories;
         this.dimensionProperties = dimensionProperties;
@@ -41,7 +44,7 @@ public final class ShaderPack {
         return name;
     }
 
-    /** Every file under {@code shaders}, including textures and anything else Focalis doesn't read. */
+    /** Every file under {@code shaders}, including ones Focalis never reads. */
     public Set<ShaderPath> files() {
         return files;
     }
@@ -94,6 +97,18 @@ public final class ShaderPack {
     @Nullable
     public String text(ShaderPath file) {
         return texts.get(file);
+    }
+
+    /** Whether the loader kept the bytes of an image some configuration could bind. */
+    public boolean hasImage(ShaderPath file) {
+        return images.containsKey(file);
+    }
+
+    /** A copy of the bytes of an image the loader kept, or null for any other file. */
+    @Nullable
+    public byte[] image(ShaderPath file) {
+        byte[] bytes = images.get(file);
+        return bytes == null ? null : bytes.clone();
     }
 
     /** Expands the includes of one stage of a program, with the sources as written. */

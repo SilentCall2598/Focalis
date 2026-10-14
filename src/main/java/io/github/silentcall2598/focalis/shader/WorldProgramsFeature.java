@@ -16,8 +16,10 @@ import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.PackIssue;
 import io.github.silentcall2598.focalis.shader.pack.PackSettings;
+import io.github.silentcall2598.focalis.shader.pack.PackTextures;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
+import io.github.silentcall2598.focalis.shader.pack.ProgramStates;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackException;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPackLoader;
@@ -33,6 +35,7 @@ import io.github.silentcall2598.focalis.shader.program.FrameInputs;
 import io.github.silentcall2598.focalis.shader.program.LiveWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.PreparedWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.ProgramFailure;
+import io.github.silentcall2598.focalis.shader.program.ProgramTextures;
 import io.github.silentcall2598.focalis.shader.program.ShaderCapabilities;
 import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramBinding;
@@ -69,8 +72,10 @@ import java.util.function.Supplier;
  * The legacy texture and lightmap samplers read the units Minecraft binds those textures on, the view size, frame
  * timing and world values are set every frame, the camera position, matrices and values in eye space every world pass,
  * and the fog whenever a stage binds its program. Custom uniforms from shaders.properties are computed once per world
- * pass from those same values. Nothing else a shaderpack expects is set up, so regular packs won't
- * look right. Problems with the pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
+ * pass from those same values. The pack's gbuffers custom textures and noise texture are uploaded once per
+ * configuration, and a program's alpha test and blend directives apply while a stage binds it. Nothing else a
+ * shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its programs leave
+ * rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -132,7 +137,8 @@ public final class WorldProgramsFeature extends Feature {
                 + " in its shaders folder replaces the main one in that dimension. Only the texture and lightmap"
                 + " samplers, the view size and frame timing uniforms, the camera position and matrices, and the"
                 + " time, sun and moon, rain, sky and fog, eye brightness and altitude and water or lava uniforms are"
-                + " set, along with the pack's custom uniforms that only use those, and no composite passes run.");
+                + " set, along with the pack's custom uniforms that only use those, its gbuffers custom and noise"
+                + " textures and its alpha test and blend directives. No composite passes run.");
         profileName = config.getString("profile", "", "A profile from the pack's shaders.properties, like HIGH. Empty"
                 + " keeps the pack's own defaults.");
         optionEntries = config.getString("options", "", "Option values applied after the profile, separated by"
@@ -198,6 +204,12 @@ public final class WorldProgramsFeature extends Feature {
             logger.info("Shaderpack '{}' has {} custom uniforms and variables, {} of them usable, with uniforms {}",
                     packName, custom.declarations().size(), custom.evaluatedCount(), custom.uniforms().keySet());
         }
+        ProgramStates states = configuration.programStates();
+        if (!states.alphaTests().isEmpty() || !states.blends().isEmpty() || !states.bufferBlends().isEmpty()) {
+            logger.info("Shaderpack '{}' sets the alpha test of {} and the blend mode of {}, and {} per-buffer blend"
+                    + " modes wait for later support", packName, states.alphaTests().keySet(), states.blends().keySet(),
+                    states.bufferBlends().size());
+        }
         monitor.packConfigured(configuration);
     }
 
@@ -249,13 +261,40 @@ public final class WorldProgramsFeature extends Feature {
             return null;
         }
         // Owned right away, so cleanup deletes whatever it builds even if something throws later.
-        live = LiveWorldPrograms.create(configuration, ShaderCapabilities.from(gl), this::folderBuilt, frame, camera,
+        LiveWorldPrograms.BuildListener listener = new LiveWorldPrograms.BuildListener() {
+            @Override
+            public void built(DirectoryPrograms programs) {
+                folderBuilt(programs);
+            }
+
+            @Override
+            public void texturesMade(ProgramTextures textures) {
+                logTextures(textures);
+            }
+        };
+        live = LiveWorldPrograms.create(configuration, ShaderCapabilities.from(gl), listener, frame, camera,
                 environment, fog);
         if (!fog.available()) {
             logger.warn("Minecraft's fog can't be read in this session, so programs that use the fog uniforms draw"
                     + " the normal way. Messages about mixins.focalis.json earlier in the log may say why.");
         }
         return live;
+    }
+
+    // Once per configuration, before any program that samples them is built.
+    private void logTextures(ProgramTextures textures) {
+        for (ProgramTextures.Outcome outcome : textures.outcomes()) {
+            PackTextures.Declaration declaration = outcome.declaration();
+            if (outcome.failure() == null) {
+                logger.info("Custom texture {} on unit {} from {} is ready, {}x{} with {} filtering, {}",
+                        declaration.sampler(), outcome.unit(), declaration.file(), outcome.width(), outcome.height(),
+                        outcome.linear() ? "linear" : "nearest", outcome.clamp() ? "clamped" : "repeating");
+            } else {
+                logger.error("Custom texture {} on unit {} can't be used, so programs that sample it draw the normal"
+                        + " way. {}", declaration.sampler(), outcome.unit(), outcome.failure());
+            }
+        }
+        monitor.texturesMade(textures);
     }
 
     // Once per folder and session. A folder that fails stays failed until the pack loads again.

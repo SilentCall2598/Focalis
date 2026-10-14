@@ -42,11 +42,14 @@ public final class PackConfiguration {
     private final Map<String, String> disabled;
     private final Map<ShaderPath, String> texts;
     private final CustomUniforms customUniforms;
+    private final ProgramStates programStates;
+    private final PackTextures textures;
     private final List<PackIssue> issues;
 
     private PackConfiguration(ShaderPack pack, @Nullable String profile, Map<String, String> values,
             Map<String, String> changed, Map<String, String> disabled, Map<ShaderPath, String> texts,
-            CustomUniforms customUniforms, List<PackIssue> issues) {
+            CustomUniforms customUniforms, ProgramStates programStates, PackTextures textures,
+            List<PackIssue> issues) {
         this.pack = pack;
         this.profile = profile;
         this.values = values;
@@ -54,6 +57,8 @@ public final class PackConfiguration {
         this.disabled = disabled;
         this.texts = texts;
         this.customUniforms = customUniforms;
+        this.programStates = programStates;
+        this.textures = textures;
         this.issues = issues;
     }
 
@@ -101,6 +106,8 @@ public final class PackConfiguration {
         resolution.applyConditions(conditions);
         // Custom uniforms see the option macros like every other setting that isn't a profile.
         CustomUniforms customUniforms = CustomUniforms.compile(PROPERTIES, conditions, resolution.issues);
+        ProgramStates programStates = ProgramStates.read(PROPERTIES, conditions, resolution.issues);
+        PackTextures textures = PackTextures.read(PROPERTIES, conditions, pack, resolution.issues);
 
         // Both reads see the same file, so its problems would mostly show up twice.
         List<PackIssue> issues = new ArrayList<>(resolution.issues);
@@ -124,7 +131,7 @@ public final class PackConfiguration {
         }
         return new PackConfiguration(pack, profile, Collections.unmodifiableMap(resolution.values),
                 Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled),
-                Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms,
+                Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms, programStates, textures,
                 Collections.unmodifiableList(issues));
     }
 
@@ -198,6 +205,16 @@ public final class PackConfiguration {
      */
     public CustomUniforms customUniforms() {
         return customUniforms;
+    }
+
+    /** The alpha test and blend directives, read once for this configuration. */
+    public ProgramStates programStates() {
+        return programStates;
+    }
+
+    /** The custom textures this configuration declares, read once. Equal configurations declare the same ones. */
+    public PackTextures textures() {
+        return textures;
     }
 
     /** Settings and pack lines that were ignored, and why. */

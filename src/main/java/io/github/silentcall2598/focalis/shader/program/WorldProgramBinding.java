@@ -15,10 +15,11 @@ import java.util.Set;
 
 /**
  * Binds the built world program of each precise world stage around its draw and restores the previous program at
- * its END, using the programs selected for the current world pass. A role without a ready program, or a pass without
- * selected programs, gets a scope that binds nothing. Where vanilla binds its own programs inside a stage, it steps
- * aside until that part is over. It never owns, builds or deletes programs. Client thread only, with the GL context
- * current.
+ * its END, using the programs selected for the current world pass. The program's alpha test, blend mode and custom
+ * textures go with it and are put back the same way. A role without a ready program, or a pass without selected
+ * programs, gets a scope that binds nothing. Where vanilla binds its own programs inside a stage, it steps aside
+ * until that part is over. It never owns, builds or deletes programs or textures. Client thread only, with the GL
+ * context current.
  */
 public final class WorldProgramBinding {
 
@@ -38,6 +39,7 @@ public final class WorldProgramBinding {
             EnumSet.of(RenderStage.ENTITY_OUTLINES));
 
     private final ScopedProgramBinding scopes;
+    private final ScopedProgramState state;
     private final FrameInputs frame;
     private final CameraInputs camera;
     private final EnvironmentInputs environment;
@@ -49,7 +51,13 @@ public final class WorldProgramBinding {
 
     WorldProgramBinding(ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera,
             EnvironmentInputs environment, FogSource fog) {
+        this(scopes, new ScopedProgramState(), frame, camera, environment, fog);
+    }
+
+    WorldProgramBinding(ScopedProgramBinding scopes, ScopedProgramState state, FrameInputs frame, CameraInputs camera,
+            EnvironmentInputs environment, FogSource fog) {
         this.scopes = Objects.requireNonNull(scopes, "scopes");
+        this.state = Objects.requireNonNull(state, "state");
         this.frame = Objects.requireNonNull(frame, "frame");
         this.camera = Objects.requireNonNull(camera, "camera");
         this.environment = Objects.requireNonNull(environment, "environment");
@@ -62,7 +70,7 @@ public final class WorldProgramBinding {
      */
     public void select(@Nullable BuiltWorldPrograms selected) {
         if (!scopes.isEmpty() || scopes.isSuspended()) {
-            scopes.abort();
+            abort();
             throw new IllegalStateException("World programs can't be switched while a program scope is open or"
                     + " suspended");
         }
@@ -80,19 +88,25 @@ public final class WorldProgramBinding {
         return programs;
     }
 
+    /** The alpha test, blend mode and texture changes of the open scopes. */
+    public ScopedProgramState state() {
+        return state;
+    }
+
     /**
      * Opens the program scope of a stage. A program bound for the first time in the current frame gets that frame's
      * values first, and the camera values the first time it's bound with the current pass's camera. The fog it gets
-     * is whatever Minecraft has set up when the stage starts. A program that can't use the current values, like one
-     * reading the camera before this world pass captured it, binds nothing, the same as a role without a ready
-     * program. The stage then draws the vanilla way, or with the program of the scope around it, like the sun inside
-     * the sky. Like {@link ScopedProgramBinding}, every open scope is unwound before anything is thrown.
+     * is whatever Minecraft has set up when the stage starts. Its alpha test, blend mode and textures are set after
+     * it's bound. A program that can't use the current values, like one reading the camera before this world pass
+     * captured it, binds nothing, the same as a role without a ready program. The stage then draws the vanilla way,
+     * or with the program of the scope around it, like the sun inside the sky. Like {@link ScopedProgramBinding},
+     * every open scope is unwound before anything is thrown.
      *
      * @throws IllegalArgumentException for a stage that isn't bound yet, like HAND
      */
     public void start(RenderStage stage, RenderDrawKind drawKind) {
         if (!STAGES.contains(stage)) {
-            scopes.abort();
+            abort();
             throw new IllegalArgumentException("World programs aren't bound for render stage " + stage);
         }
         BuiltWorldPrograms.Build build = readyBuild(ShaderProgramRouter.route(stage, drawKind));
@@ -101,7 +115,19 @@ public final class WorldProgramBinding {
             build = null;
         }
         ShaderProgram program = build == null ? null : build.program();
-        scopes.start(stage, drawKind, program);
+        try {
+            scopes.start(stage, drawKind, program);
+        } catch (RuntimeException | LinkageError e) {
+            // The program scopes already unwound themselves.
+            abortState(e);
+            throw e;
+        }
+        try {
+            state.start(build == null ? null : build.drawState());
+        } catch (RuntimeException | LinkageError e) {
+            abortScopes(e);
+            throw e;
+        }
         if (build == null) {
             return;
         }
@@ -110,46 +136,98 @@ public final class WorldProgramBinding {
         try {
             build.inputs().update(frame, snapshot, environment, fog, customValues);
         } catch (RuntimeException | LinkageError e) {
-            try {
-                scopes.abort();
-            } catch (RuntimeException | LinkageError abortFailure) {
-                e.addSuppressed(abortFailure);
-            }
+            abortState(e);
+            abortScopes(e);
             throw e;
         }
     }
 
+    /** Closes the program scope of a stage. Its state goes back first, then its program. */
     public void end(RenderStage stage, RenderDrawKind drawKind) {
-        scopes.end(stage, drawKind);
+        try {
+            state.end();
+        } catch (RuntimeException | LinkageError e) {
+            abortScopes(e);
+            throw e;
+        }
+        try {
+            scopes.end(stage, drawKind);
+        } catch (RuntimeException | LinkageError e) {
+            abortState(e);
+            throw e;
+        }
     }
 
     /**
-     * Steps aside when a stage where vanilla binds its own programs starts. See {@link ScopedProgramBinding#suspend}.
+     * Steps aside when a stage where vanilla binds its own programs starts, putting back the state the open scopes
+     * changed. See {@link ScopedProgramBinding#suspend}.
      *
      * @throws IllegalArgumentException for a stage that isn't one of {@link #VANILLA_PROGRAM_STAGES}
      */
     public void suspend(RenderStage stage, RenderDrawKind drawKind) {
         checkVanillaStage(stage);
-        scopes.suspend(stage, drawKind);
+        try {
+            state.suspend();
+        } catch (RuntimeException | LinkageError e) {
+            abortScopes(e);
+            throw e;
+        }
+        try {
+            scopes.suspend(stage, drawKind);
+        } catch (RuntimeException | LinkageError e) {
+            abortState(e);
+            throw e;
+        }
     }
 
-    /** Takes the program back when that stage ends. See {@link ScopedProgramBinding#resume}. */
+    /**
+     * Takes the program back when that stage ends, and its state when the program came back. See
+     * {@link ScopedProgramBinding#resume}.
+     */
     public void resume(RenderStage stage, RenderDrawKind drawKind) {
         checkVanillaStage(stage);
-        scopes.resume(stage, drawKind);
+        boolean bound;
+        try {
+            bound = scopes.resume(stage, drawKind);
+        } catch (RuntimeException | LinkageError e) {
+            abortState(e);
+            throw e;
+        }
+        try {
+            state.resume(bound);
+        } catch (RuntimeException | LinkageError e) {
+            abortScopes(e);
+            throw e;
+        }
     }
 
     /**
      * Takes the program back after one renderer inside a bound stage returned with something else bound. See
-     * {@link ScopedProgramBinding#reassert}.
+     * {@link ScopedProgramBinding#reassert}. The alpha test, blend mode and textures aren't checked here, they only
+     * come back if an earlier resume left them off.
      */
     public boolean reassert() {
-        return scopes.reassert();
+        boolean bound;
+        try {
+            bound = scopes.reassert();
+        } catch (RuntimeException | LinkageError e) {
+            abortState(e);
+            throw e;
+        }
+        if (bound) {
+            try {
+                state.programBoundAgain();
+            } catch (RuntimeException | LinkageError e) {
+                abortScopes(e);
+                throw e;
+            }
+        }
+        return bound;
     }
 
     private void checkVanillaStage(RenderStage stage) {
         if (!VANILLA_PROGRAM_STAGES.contains(stage)) {
-            scopes.abort();
+            abort();
             throw new IllegalArgumentException("Render stage " + stage + " doesn't bind vanilla programs");
         }
     }
@@ -182,8 +260,51 @@ public final class WorldProgramBinding {
         return scopes.isSuspended();
     }
 
-    /** Closes every open scope and restores the program each one replaced. See {@link ScopedProgramBinding#abort}. */
+    /**
+     * Closes every open scope and puts back the state and program each one replaced. Both are attempted even when
+     * one throws, and the first failure is rethrown. See {@link ScopedProgramBinding#abort}.
+     */
     public void abort() {
-        scopes.abort();
+        Throwable failure = null;
+        try {
+            state.abort();
+        } catch (RuntimeException | LinkageError e) {
+            failure = e;
+        }
+        try {
+            scopes.abort();
+        } catch (RuntimeException | LinkageError e) {
+            if (failure == null) {
+                failure = e;
+            } else {
+                failure.addSuppressed(e);
+            }
+        }
+        if (failure instanceof RuntimeException) {
+            throw (RuntimeException) failure;
+        }
+        if (failure instanceof LinkageError) {
+            throw (LinkageError) failure;
+        }
+    }
+
+    private void abortState(Throwable cause) {
+        try {
+            state.abort();
+        } catch (RuntimeException | LinkageError e) {
+            if (e != cause) {
+                cause.addSuppressed(e);
+            }
+        }
+    }
+
+    private void abortScopes(Throwable cause) {
+        try {
+            scopes.abort();
+        } catch (RuntimeException | LinkageError e) {
+            if (e != cause) {
+                cause.addSuppressed(e);
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ import io.github.silentcall2598.focalis.shader.pack.IncludeException;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
+import io.github.silentcall2598.focalis.shader.pack.ProgramStates;
 import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.routing.ProgramResolution;
@@ -32,12 +33,14 @@ public final class PreparedWorldPrograms {
     private final Map<ShaderProgramRole, Entry> entries;
     private final List<PreparedProgram> uniquePrograms;
     private final CustomUniforms customUniforms;
+    private final ProgramStates programStates;
 
     private PreparedWorldPrograms(Map<ShaderProgramRole, Entry> entries, List<PreparedProgram> uniquePrograms,
-            CustomUniforms customUniforms) {
+            CustomUniforms customUniforms, ProgramStates programStates) {
         this.entries = entries;
         this.uniquePrograms = uniquePrograms;
         this.customUniforms = customUniforms;
+        this.programStates = programStates;
     }
 
     /**
@@ -86,7 +89,7 @@ public final class PreparedWorldPrograms {
             entries.put(role, new Entry(role, resolution, outcome.program, outcome.problem));
         }
         return new PreparedWorldPrograms(Collections.unmodifiableMap(entries), Collections.unmodifiableList(unique),
-                configuration.customUniforms());
+                configuration.customUniforms(), configuration.programStates());
     }
 
     // Programs are prepared from the pack's own file texts, so a folder of another pack with the same paths would
@@ -113,12 +116,17 @@ public final class PreparedWorldPrograms {
         return entries;
     }
 
-    /** Each successfully prepared program once, in the order roles first selected it. Read only. */
     /** The custom uniforms of the configuration these programs were prepared with. */
     public CustomUniforms customUniforms() {
         return customUniforms;
     }
 
+    /** The alpha test and blend directives of the configuration these programs were prepared with. */
+    public ProgramStates programStates() {
+        return programStates;
+    }
+
+    /** Each successfully prepared program once, in the order roles first selected it. Read only. */
     public List<PreparedProgram> uniquePrograms() {
         return uniquePrograms;
     }

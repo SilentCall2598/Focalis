@@ -3,6 +3,7 @@
 package io.github.silentcall2598.focalis.shader.program;
 
 import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
+import io.github.silentcall2598.focalis.shader.pack.ProgramStates;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
 
 import javax.annotation.Nullable;
@@ -37,19 +38,34 @@ public final class BuiltWorldPrograms {
      * exception deletes the programs built so far and is rethrown.
      */
     public static BuiltWorldPrograms build(PreparedWorldPrograms prepared, ShaderCapabilities capabilities) {
+        return build(prepared, capabilities, ProgramTextures.NONE);
+    }
+
+    /**
+     * Like {@link #build(PreparedWorldPrograms, ShaderCapabilities)}, with the custom textures of the configuration the
+     * programs were prepared with. A program that samples one of them that couldn't be made is recorded as a failure.
+     */
+    public static BuiltWorldPrograms build(PreparedWorldPrograms prepared, ShaderCapabilities capabilities,
+            ProgramTextures textures) {
         Objects.requireNonNull(prepared, "prepared");
         Objects.requireNonNull(capabilities, "capabilities");
-        return build(prepared, new ProgramBuilder(capabilities));
+        return build(prepared, new ProgramBuilder(capabilities), textures);
     }
 
     static BuiltWorldPrograms build(PreparedWorldPrograms prepared, ProgramBuilder builder) {
+        return build(prepared, builder, ProgramTextures.NONE);
+    }
+
+    static BuiltWorldPrograms build(PreparedWorldPrograms prepared, ProgramBuilder builder, ProgramTextures textures) {
         Objects.requireNonNull(prepared, "prepared");
+        Objects.requireNonNull(textures, "textures");
         List<Build> builds = new ArrayList<>();
         try {
             // PreparedProgram has no equals, and roles that share a pack program share the exact object.
             Map<PreparedProgram, Build> byProgram = new IdentityHashMap<>();
             for (PreparedProgram program : prepared.uniquePrograms()) {
-                Build build = Build.attempt(builder, program, prepared.customUniforms());
+                Build build = Build.attempt(builder, program, prepared.customUniforms(), textures,
+                        prepared.programStates());
                 builds.add(build);
                 byProgram.put(program, build);
             }
@@ -141,28 +157,36 @@ public final class BuiltWorldPrograms {
         private final WorldProgramInputs inputs;
         @Nullable
         private final ProgramFailure failure;
+        private final ProgramDrawState drawState;
 
         private Build(PreparedProgram prepared, @Nullable ShaderProgram program, @Nullable WorldProgramInputs inputs,
-                @Nullable ProgramFailure failure) {
+                @Nullable ProgramFailure failure, ProgramDrawState drawState) {
             this.prepared = prepared;
             this.program = program;
             this.inputs = inputs;
             this.failure = failure;
+            this.drawState = drawState;
         }
 
         // The program is only owned by the set once this returns it, so anything failing before that deletes it.
-        static Build attempt(ProgramBuilder builder, PreparedProgram prepared, CustomUniforms customs) {
+        static Build attempt(ProgramBuilder builder, PreparedProgram prepared, CustomUniforms customs,
+                ProgramTextures textures, ProgramStates states) {
             ShaderProgram program;
             try {
                 program = builder.build(prepared);
             } catch (ProgramBuildException e) {
-                return new Build(prepared, null, null, e.failure());
+                return new Build(prepared, null, null, e.failure(), ProgramDrawState.NONE);
             }
             try {
-                return new Build(prepared, program, WorldProgramInputs.connect(program.gl(), program, customs), null);
+                WorldProgramInputs inputs = WorldProgramInputs.connect(program.gl(), program, customs, textures);
+                // Directives name the pack program, the same in every folder.
+                String name = prepared.name().substring(prepared.name().lastIndexOf('/') + 1);
+                ProgramDrawState drawState = ProgramDrawState.of(states.alphaTest(name), states.blend(name),
+                        inputs.textureUnits(), inputs.textures());
+                return new Build(prepared, program, inputs, null, drawState);
             } catch (ProgramBuildException e) {
                 program.delete();
-                return new Build(prepared, null, null, e.failure());
+                return new Build(prepared, null, null, e.failure(), ProgramDrawState.NONE);
             } catch (RuntimeException | LinkageError e) {
                 // If the inputs couldn't put the previous program back and this one is still current, GL only flags it
                 // for deletion and frees it once something else is bound.
@@ -195,6 +219,11 @@ public final class BuiltWorldPrograms {
         @Nullable
         public ProgramFailure failure() {
             return failure;
+        }
+
+        /** The alpha test, blend mode and textures the program gets while bound. Empty for a failed build. */
+        public ProgramDrawState drawState() {
+            return drawState;
         }
 
         public boolean succeeded() {

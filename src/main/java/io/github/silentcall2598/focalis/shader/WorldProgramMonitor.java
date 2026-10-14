@@ -9,6 +9,7 @@ import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
 import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
 import io.github.silentcall2598.focalis.shader.program.EnvironmentInputs;
+import io.github.silentcall2598.focalis.shader.program.ProgramTextures;
 
 /**
  * Lets an optional development probe watch the world programs. Every method does nothing by default, and normal play
@@ -21,6 +22,10 @@ public interface WorldProgramMonitor {
 
     /** The pack's configuration was worked out, right after the pack loaded and before anything is prepared. */
     default void packConfigured(PackConfiguration configuration) {
+    }
+
+    /** The configuration's custom textures were made, once per configuration and before any program is built. */
+    default void texturesMade(ProgramTextures textures) {
     }
 
     /** The programs of one folder were built, which happens once per folder and session. */

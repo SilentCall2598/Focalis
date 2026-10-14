@@ -27,6 +27,9 @@ public interface ShaderPackSource extends Closeable {
     /** Reads a file as UTF-8 text. */
     String readText(ShaderPath path) throws IOException;
 
+    /** Reads a file as it is, like an image. Throws for files over {@code limit} bytes. */
+    byte[] readBytes(ShaderPath path, int limit) throws IOException;
+
     static ShaderPackSource open(Path pack) throws ShaderPackException, IOException {
         if (Files.isDirectory(pack)) {
             return DirectoryPackSource.open(pack);
