@@ -132,8 +132,10 @@ public final class ScopedProgramBinding {
     /**
      * Ends the suspension, which has to be for the same stage and kind, and binds the innermost Focalis program again
      * if suspending took it away. Whatever the region left bound is replaced.
+     *
+     * @return whether the Focalis program was bound again
      */
-    public void resume(RenderStage stage, RenderDrawKind drawKind) {
+    public boolean resume(RenderStage stage, RenderDrawKind drawKind) {
         try {
             Objects.requireNonNull(stage, "stage");
             Objects.requireNonNull(drawKind, "drawKind");
@@ -148,9 +150,11 @@ public final class ScopedProgramBinding {
             int program = resumeProgram;
             // Cleared first, so if the bind throws the unwinding restores like it does for any open scope.
             clearSuspension();
-            if (program != NO_PROGRAM) {
-                gl.useProgram(program);
+            if (program == NO_PROGRAM) {
+                return false;
             }
+            gl.useProgram(program);
+            return true;
         } catch (RuntimeException | LinkageError e) {
             unwind(e);
             throw e;

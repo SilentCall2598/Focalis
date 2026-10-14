@@ -3,6 +3,7 @@
 package io.github.silentcall2598.focalis.shader.program;
 
 import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
+import io.github.silentcall2598.focalis.shader.pack.PackTextures;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -57,6 +58,9 @@ public final class WorldProgramInputs {
     private final int[] customSlots;
     private final boolean[] customBools;
     private final List<String> unprovided;
+    // Each unit a custom texture sampler reads, once, and the texture that goes on it.
+    private final int[] textureUnits;
+    private final int[] textures;
     // The values and the generation of them the custom uniforms were last set from.
     @Nullable
     private CustomUniformValues updatedCustomValues;
@@ -74,8 +78,10 @@ public final class WorldProgramInputs {
 
     private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, int[] cameraLocations,
             int[] environmentLocations, int[] customLocations, int[] customSlots, boolean[] customBools,
-            List<String> unprovided) {
+            List<String> unprovided, int[] textureUnits, int[] textures) {
         this.gl = gl;
+        this.textureUnits = textureUnits;
+        this.textures = textures;
         this.locations = locations;
         this.frameLocations = frameLocations;
         this.cameraLocations = cameraLocations;
@@ -129,6 +135,17 @@ public final class WorldProgramInputs {
      */
     static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program, CustomUniforms customs)
             throws ProgramBuildException {
+        return connect(gl, program, customs, ProgramTextures.NONE);
+    }
+
+    /**
+     * Like {@link #connect(ShaderGl, ShaderProgram, CustomUniforms)}, and also points the custom texture samplers the
+     * program uses at their documented units when the configuration declares a texture there. A sampler without a
+     * declared texture stays unprovided. One whose texture couldn't be made fails the program, so its stage draws the
+     * normal way instead of sampling nothing. A sampler the driver optimized out isn't active and never matters.
+     */
+    static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program, CustomUniforms customs,
+            ProgramTextures declared) throws ProgramBuildException {
         int id = program.id();
         int[] locations = new int[WorldSampler.values().length];
         Arrays.fill(locations, -1);
@@ -141,6 +158,8 @@ public final class WorldProgramInputs {
         List<String> unprovided = new ArrayList<>();
         List<CustomUniforms.Declaration> custom = new ArrayList<>();
         List<Integer> customLocations = new ArrayList<>();
+        List<Integer> textureLocations = new ArrayList<>();
+        List<Integer> textureLocationUnits = new ArrayList<>();
         for (ActiveUniform uniform : gl.activeUniforms(id)) {
             // Drivers can report an array with only its first element used as name[0] with size 1.
             boolean array = uniform.name.endsWith("[0]") || uniform.size != 1;
@@ -175,6 +194,18 @@ public final class WorldProgramInputs {
                 environmentLocations[environment.ordinal()] = gl.uniformLocation(id, name);
                 continue;
             }
+            int unit = PackTextures.gbuffersUnit(name);
+            if (unit >= 0 && declared.declared(unit)) {
+                String failure = declared.failure(unit);
+                if (failure != null) {
+                    throw new ProgramBuildException(ProgramFailure.inputs(program.name(), program.name() + " samples "
+                            + name + ", but the texture declared for it can't be used: " + failure));
+                }
+                check(program, uniform, name, array, GL_SAMPLER_2D, "a sampler2D");
+                textureLocations.add(gl.uniformLocation(id, name));
+                textureLocationUnits.add(unit);
+                continue;
+            }
             CustomUniforms.Declaration declaration = customs.uniforms().get(name);
             if (declaration != null) {
                 int type = declaration.bool() ? GL_BOOL : GL_FLOAT;
@@ -189,7 +220,24 @@ public final class WorldProgramInputs {
             }
             unprovided.add(name);
         }
-        assign(gl, id, locations);
+        int[] textureLocationArray = new int[textureLocations.size()];
+        int[] textureLocationUnitArray = new int[textureLocations.size()];
+        // Aliases like gaux4 and colortex7 read the same unit, which only needs its texture once.
+        List<Integer> units = new ArrayList<>();
+        for (int i = 0; i < textureLocationArray.length; i++) {
+            textureLocationArray[i] = textureLocations.get(i);
+            textureLocationUnitArray[i] = textureLocationUnits.get(i);
+            if (!units.contains(textureLocationUnits.get(i))) {
+                units.add(textureLocationUnits.get(i));
+            }
+        }
+        int[] textureUnits = new int[units.size()];
+        int[] textures = new int[units.size()];
+        for (int i = 0; i < textureUnits.length; i++) {
+            textureUnits[i] = units.get(i);
+            textures[i] = declared.texture(textureUnits[i]);
+        }
+        assign(gl, id, locations, textureLocationArray, textureLocationUnitArray);
         int[] customLocationArray = new int[custom.size()];
         int[] customSlots = new int[custom.size()];
         boolean[] customBools = new boolean[custom.size()];
@@ -199,7 +247,8 @@ public final class WorldProgramInputs {
             customBools[i] = custom.get(i).bool();
         }
         return new WorldProgramInputs(gl, locations, frameLocations, cameraLocations, environmentLocations,
-                customLocationArray, customSlots, customBools, Collections.unmodifiableList(unprovided));
+                customLocationArray, customSlots, customBools, Collections.unmodifiableList(unprovided), textureUnits,
+                textures);
     }
 
     private static void check(ShaderProgram program, ActiveUniform uniform, String name, boolean array, int type,
@@ -456,8 +505,9 @@ public final class WorldProgramInputs {
     }
 
     // Uniforms can only be set on the current program, and GL 2.1 has no way around that.
-    private static void assign(ShaderGl gl, int program, int[] locations) {
-        boolean any = false;
+    private static void assign(ShaderGl gl, int program, int[] locations, int[] textureLocations,
+            int[] textureUnits) {
+        boolean any = textureLocations.length > 0;
         for (int location : locations) {
             any |= location >= 0;
         }
@@ -474,6 +524,9 @@ public final class WorldProgramInputs {
                 if (location >= 0) {
                     gl.uniform1i(location, sampler.unit());
                 }
+            }
+            for (int i = 0; i < textureLocations.length; i++) {
+                gl.uniform1i(textureLocations[i], textureUnits[i]);
             }
         } catch (RuntimeException | LinkageError e) {
             failure = e;
@@ -638,5 +691,28 @@ public final class WorldProgramInputs {
     /** Active uniforms Focalis doesn't set yet. They keep the zero they got when the program was linked. */
     public List<String> unprovided() {
         return unprovided;
+    }
+
+    /** How many units the program reads custom textures from. */
+    public int textureCount() {
+        return textureUnits.length;
+    }
+
+    /** The unit of one custom texture the program reads. */
+    public int textureUnit(int index) {
+        return textureUnits[index];
+    }
+
+    /** The texture that goes on that unit while the program is bound. */
+    public int texture(int index) {
+        return textures[index];
+    }
+
+    int[] textureUnits() {
+        return textureUnits;
+    }
+
+    int[] textures() {
+        return textures;
     }
 }

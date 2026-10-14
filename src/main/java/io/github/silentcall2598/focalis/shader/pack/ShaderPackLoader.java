@@ -41,7 +41,7 @@ public final class ShaderPackLoader {
     static ShaderPack load(ShaderPackSource source) throws ShaderPackException, IOException {
         List<PackIssue> issues = new ArrayList<>();
         Map<ShaderPath, String> texts = new HashMap<>();
-        // Only files that are actually needed get read, so textures and unused files stay on disk.
+        // Text files are only read when something asks for them, so unused ones stay on disk.
         IncludeResolver.FileText reader = path -> {
             if (!source.files().contains(path)) {
                 return null;
@@ -106,7 +106,9 @@ public final class ShaderPackLoader {
         }
 
         // Read now so configurations can use it later without touching the pack again.
-        reader.read(ShaderPath.of(ShaderProperties.FILE_NAME));
+        String properties = reader.read(ShaderPath.of(ShaderProperties.FILE_NAME));
+        Map<ShaderPath, byte[]> images = properties == null ? Collections.<ShaderPath, byte[]>emptyMap()
+                : readImages(source, properties, reader, issues);
         Set<ShaderPath> uninterpreted = new TreeSet<>();
         for (String name : UNINTERPRETED_METADATA) {
             ShaderPath path = ShaderPath.of(name);
@@ -116,9 +118,31 @@ public final class ShaderPackLoader {
         }
 
         return new ShaderPack(source.name(), Collections.unmodifiableSet(new TreeSet<>(source.files())),
-                Collections.unmodifiableMap(new HashMap<>(texts)), root,
+                Collections.unmodifiableMap(new HashMap<>(texts)), images, root,
                 Collections.unmodifiableMap(dimensionDirectories), dimensions, options.finish(issues),
                 Collections.unmodifiableSet(uninterpreted), Collections.unmodifiableList(issues));
+    }
+
+    // Every PNG a texture line names in any #if branch, with its .mcmeta, since which branch counts depends on a
+    // configuration that doesn't exist yet. A file that can't be read only costs its own texture.
+    private static Map<ShaderPath, byte[]> readImages(ShaderPackSource source, String properties,
+            IncludeResolver.FileText reader, List<PackIssue> issues) {
+        Map<ShaderPath, byte[]> images = new TreeMap<>();
+        for (String value : ShaderProperties.valuesInEveryBranch(properties, PackTextures.TEXTURE)) {
+            ShaderPath image = PackTextures.packImage(value);
+            if (image == null || images.containsKey(image) || !source.files().contains(image)) {
+                continue;
+            }
+            try {
+                byte[] bytes = source.readBytes(image, PackFileReader.MAX_IMAGE_BYTES);
+                // Kept only with its .mcmeta, or the texture would quietly get default settings.
+                reader.read(ShaderPath.of(image + ".mcmeta"));
+                images.put(image, bytes);
+            } catch (IOException e) {
+                issues.add(new PackIssue(null, "Couldn't read texture " + image + ": " + e.getMessage()));
+            }
+        }
+        return images.isEmpty() ? Collections.<ShaderPath, byte[]>emptyMap() : Collections.unmodifiableMap(images);
     }
 
     // Programs live directly in the shaders folder or in a dimension folder, never deeper.

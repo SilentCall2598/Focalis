@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -22,7 +23,9 @@ import java.util.function.Function;
  * of the folder its dimension selects. A folder's programs are prepared under the session's pack configuration and
  * built the first time a dimension needs them. They're kept, failures included, until the session ends or switches
  * to a configuration that prepares other sources or picks other programs, so going back to a dimension or rejoining
- * never builds again. Owns every program it built. Client thread only, with the GL context current.
+ * never builds again. The configuration's custom textures are made once, right before the first folder builds, and
+ * every folder shares them until the configuration changes. Owns every program and texture it made. Client thread
+ * only, with the GL context current.
  */
 public final class LiveWorldPrograms {
 
@@ -30,13 +33,21 @@ public final class LiveWorldPrograms {
     public interface BuildListener {
 
         void built(DirectoryPrograms programs);
+
+        /** The configuration's custom textures were just made, before any program that samples them builds. */
+        default void texturesMade(ProgramTextures textures) {
+        }
     }
 
     private final ShaderPack pack;
     private PackConfiguration configuration;
     // Belongs to the configuration, so smoothing never carries over into another one.
     private CustomUniformValues customValues;
-    private final Function<PreparedWorldPrograms, BuiltWorldPrograms> builder;
+    private final BiFunction<PreparedWorldPrograms, ProgramTextures, BuiltWorldPrograms> builder;
+    private final Function<PackConfiguration, ProgramTextures> textureMaker;
+    // The current configuration's textures, or null until a folder first needs them.
+    @Nullable
+    private ProgramTextures textures;
     private final BuildListener listener;
     private final WorldProgramBinding binding;
     // ProgramDirectory has no equals, so this is keyed by the folder object. Dimensions without their own folder
@@ -49,14 +60,16 @@ public final class LiveWorldPrograms {
     private boolean deleted;
 
     private LiveWorldPrograms(PackConfiguration configuration,
-            Function<PreparedWorldPrograms, BuiltWorldPrograms> builder, BuildListener listener,
-            ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
-            FogSource fog) {
+            BiFunction<PreparedWorldPrograms, ProgramTextures, BuiltWorldPrograms> builder,
+            Function<PackConfiguration, ProgramTextures> textureMaker, BuildListener listener,
+            ScopedProgramBinding scopes, ScopedProgramState state, FrameInputs frame, CameraInputs camera,
+            EnvironmentInputs environment, FogSource fog) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.pack = configuration.pack();
         this.builder = builder;
+        this.textureMaker = textureMaker;
         this.listener = Objects.requireNonNull(listener, "listener");
-        this.binding = new WorldProgramBinding(scopes, frame, camera, environment, fog);
+        this.binding = new WorldProgramBinding(scopes, state, frame, camera, environment, fog);
         this.customValues = new CustomUniformValues(configuration.customUniforms());
         binding.customValues(customValues);
     }
@@ -77,15 +90,26 @@ public final class LiveWorldPrograms {
             BuildListener listener, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
             FogSource fog) {
         Objects.requireNonNull(capabilities, "capabilities");
-        return new LiveWorldPrograms(configuration, prepared -> BuiltWorldPrograms.build(prepared, capabilities),
-                listener, new ScopedProgramBinding(), frame, camera, environment, fog);
+        return new LiveWorldPrograms(configuration,
+                (prepared, textures) -> BuiltWorldPrograms.build(prepared, capabilities, textures),
+                ProgramTextures::create, listener, new ScopedProgramBinding(), new ScopedProgramState(), frame, camera,
+                environment, fog);
     }
 
     static LiveWorldPrograms create(PackConfiguration configuration, ProgramBuilder builder, BuildListener listener,
             ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
             FogSource fog) {
-        return new LiveWorldPrograms(configuration, prepared -> BuiltWorldPrograms.build(prepared, builder),
-                listener, scopes, frame, camera, environment, fog);
+        return create(configuration, builder, listener, scopes, new ScopedProgramState(), LwjglTextureGl.INSTANCE,
+                frame, camera, environment, fog);
+    }
+
+    static LiveWorldPrograms create(PackConfiguration configuration, ProgramBuilder builder, BuildListener listener,
+            ScopedProgramBinding scopes, ScopedProgramState state, TextureGl textureGl, FrameInputs frame,
+            CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
+        return new LiveWorldPrograms(configuration,
+                (prepared, textures) -> BuiltWorldPrograms.build(prepared, builder, textures),
+                next -> ProgramTextures.create(next, textureGl), listener, scopes, state, frame, camera, environment,
+                fog);
     }
 
     public PackConfiguration configuration() {
@@ -97,10 +121,21 @@ public final class LiveWorldPrograms {
         return customValues;
     }
 
+    /** The current configuration's custom textures, or null until a folder first needed them. */
+    @Nullable
+    public ProgramTextures textures() {
+        return textures;
+    }
+
+    /** The alpha test, blend mode and texture changes of the open scopes. */
+    public ScopedProgramState state() {
+        return binding.state();
+    }
+
     /**
      * Switches to another configuration of the same pack, between world passes. An equal configuration changes
-     * nothing. Any other deletes every folder built so far, and each builds again under the new configuration the
-     * next time a world pass needs it.
+     * nothing, so nothing is uploaded again. Any other deletes every folder built so far and the textures, and they
+     * are made again under the new configuration the next time a world pass needs them.
      *
      * @return whether the built programs were dropped
      */
@@ -159,9 +194,14 @@ public final class LiveWorldPrograms {
         if (programs != null) {
             return programs;
         }
+        if (textures == null) {
+            // Owned before the listener hears about them, so a throwing listener can't leak them.
+            textures = textureMaker.apply(configuration);
+            listener.texturesMade(textures);
+        }
         PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, StandardMacros.environment(),
                 configuration);
-        programs = new DirectoryPrograms(directory, prepared, builder.apply(prepared));
+        programs = new DirectoryPrograms(directory, prepared, builder.apply(prepared, textures));
         folders.put(directory, programs);
         listener.built(programs);
         return programs;
@@ -252,8 +292,8 @@ public final class LiveWorldPrograms {
 
     /**
      * Closes any open scope first, so no program is deleted while bound, then deletes the programs of every folder
-     * once. Everything is attempted even if something throws, and the first failure is rethrown. Calling it again
-     * does nothing.
+     * once and then the textures. Everything is attempted even if something throws, and the first failure is
+     * rethrown. Calling it again does nothing.
      */
     public void delete() {
         worldOpen = false;
@@ -282,6 +322,15 @@ public final class LiveWorldPrograms {
             }
         }
         folders.clear();
+        ProgramTextures made = textures;
+        textures = null;
+        if (made != null) {
+            try {
+                made.delete();
+            } catch (RuntimeException | LinkageError e) {
+                failure = collect(failure, e);
+            }
+        }
         return failure;
     }
 

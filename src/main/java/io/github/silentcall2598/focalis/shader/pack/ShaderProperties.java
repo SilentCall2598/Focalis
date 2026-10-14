@@ -3,6 +3,7 @@
 package io.github.silentcall2598.focalis.shader.pack;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -81,13 +82,10 @@ final class ShaderProperties {
                 continue;
             }
             StringBuilder logical = new StringBuilder();
-            while (endsWithContinuation(line) && i + 1 < lines.length) {
-                logical.append(line, 0, line.length() - 1);
-                line = strip(lines[++i]);
-            }
-            logical.append(endsWithContinuation(line) ? line.substring(0, line.length() - 1) : line);
+            i = join(lines, i, line, logical);
             if (active) {
-                put(logical.toString(), lineNumber, properties);
+                String[] keyValue = split(logical.toString());
+                properties.put(keyValue[0], new Property(keyValue[1], lineNumber));
             }
         }
         if (!levels.isEmpty()) {
@@ -95,6 +93,41 @@ final class ShaderProperties {
                     + " #if block(s) are never closed with #endif"));
         }
         return properties;
+    }
+
+    /**
+     * The values of every key starting with {@code prefix} on any line, whatever the preprocessor would keep. Only
+     * meant for finding the files some configuration could need before there is one.
+     */
+    static List<String> valuesInEveryBranch(String text, String prefix) {
+        List<String> values = new ArrayList<>();
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = strip(lines[i]);
+            // Directives start with # too.
+            if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
+                continue;
+            }
+            StringBuilder logical = new StringBuilder();
+            i = join(lines, i, line, logical);
+            String[] keyValue = split(logical.toString());
+            if (keyValue[0].startsWith(prefix)) {
+                values.add(keyValue[1]);
+            }
+        }
+        return values;
+    }
+
+    // Joins a line ending in a backslash with the ones after it. Returns the index of the last line used.
+    private static int join(String[] lines, int index, String first, StringBuilder logical) {
+        int i = index;
+        String line = first;
+        while (endsWithContinuation(line) && i + 1 < lines.length) {
+            logical.append(line, 0, line.length() - 1);
+            line = strip(lines[++i]);
+        }
+        logical.append(endsWithContinuation(line) ? line.substring(0, line.length() - 1) : line);
+        return i;
     }
 
     private static void directive(String name, String argument, boolean active, Deque<Level> levels,
@@ -189,7 +222,7 @@ final class ShaderProperties {
     }
 
     // Keys end at the first equals sign, colon or whitespace, like Java properties.
-    private static void put(String line, int lineNumber, Map<String, Property> properties) {
+    private static String[] split(String line) {
         int end = 0;
         while (end < line.length() && "=: \t".indexOf(line.charAt(end)) < 0) {
             end++;
@@ -202,7 +235,7 @@ final class ShaderProperties {
         if (start < line.length() && (line.charAt(start) == '=' || line.charAt(start) == ':')) {
             start++;
         }
-        properties.put(key, new Property(line.substring(start).trim(), lineNumber));
+        return new String[] {key, line.substring(start).trim()};
     }
 
     private static String argument(String raw) {

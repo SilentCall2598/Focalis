@@ -88,13 +88,24 @@ final class DirectoryPackSource implements ShaderPackSource {
 
     @Override
     public String readText(ShaderPath path) throws IOException {
+        try (InputStream input = open(path)) {
+            return PackFileReader.readText(input, path.toString());
+        }
+    }
+
+    @Override
+    public byte[] readBytes(ShaderPath path, int limit) throws IOException {
+        try (InputStream input = open(path)) {
+            return PackFileReader.readBytes(input, path.toString(), limit);
+        }
+    }
+
+    private InputStream open(ShaderPath path) throws IOException {
         Path file = files.get(path);
         if (file == null) {
             throw new NoSuchFileException(path.toString());
         }
-        try (InputStream input = Files.newInputStream(file)) {
-            return PackFileReader.readText(input, path.toString());
-        }
+        return Files.newInputStream(file);
     }
 
     @Override
