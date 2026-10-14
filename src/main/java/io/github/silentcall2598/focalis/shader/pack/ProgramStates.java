@@ -32,6 +32,7 @@ public final class ProgramStates {
     // Spelled the way the format documents them, GL_ALWAYS included.
     private static final Map<String, Integer> FUNCTIONS = new LinkedHashMap<>();
     private static final Map<String, Integer> FACTORS = new LinkedHashMap<>();
+    private static final String SATURATE = "SRC_ALPHA_SATURATE";
 
     static {
         FUNCTIONS.put("NEVER", 0x0200);
@@ -280,6 +281,12 @@ public final class ProgramStates {
             if (factor == null) {
                 issues.add(new PackIssue(here, key + " is ignored, '" + words[i] + "' isn't one of "
                         + FACTORS.keySet()));
+                return null;
+            }
+            // The spec only lists it for source factors, which are the first and third words.
+            if (words[i].equals(SATURATE) && i % 2 == 1) {
+                issues.add(new PackIssue(here, key + " is ignored, " + SATURATE + " can only be a source factor, so"
+                        + " not the destination factor in word " + (i + 1)));
                 return null;
             }
             factors[i] = factor;
