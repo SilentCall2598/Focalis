@@ -21,13 +21,11 @@ public final class ShaderPack {
     private final Map<String, ProgramDirectory> dimensionDirectories;
     private final DimensionProperties dimensionProperties;
     private final ShaderOptions options;
-    private final Set<ShaderPath> uninterpretedMetadata;
     private final List<PackIssue> issues;
 
     ShaderPack(String name, Set<ShaderPath> files, Map<ShaderPath, String> texts, Map<ShaderPath, byte[]> images,
             ProgramDirectory root, Map<String, ProgramDirectory> dimensionDirectories,
-            DimensionProperties dimensionProperties, ShaderOptions options, Set<ShaderPath> uninterpretedMetadata,
-            List<PackIssue> issues) {
+            DimensionProperties dimensionProperties, ShaderOptions options, List<PackIssue> issues) {
         this.name = name;
         this.files = files;
         this.texts = texts;
@@ -36,7 +34,6 @@ public final class ShaderPack {
         this.dimensionDirectories = dimensionDirectories;
         this.dimensionProperties = dimensionProperties;
         this.options = options;
-        this.uninterpretedMetadata = uninterpretedMetadata;
         this.issues = issues;
     }
 
@@ -78,14 +75,6 @@ public final class ShaderPack {
     /** The options the pack's .vsh and .fsh sources define, including the files they include. */
     public ShaderOptions options() {
         return options;
-    }
-
-    /**
-     * Metadata files the pack has but Focalis doesn't interpret yet, such as {@code block.properties}. Their text is
-     * kept and available from {@link #text}.
-     */
-    public Set<ShaderPath> uninterpretedMetadata() {
-        return uninterpretedMetadata;
     }
 
     /** Problems that affected part of the pack, such as a program with a broken include. */

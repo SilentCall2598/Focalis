@@ -12,7 +12,10 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
+import io.github.silentcall2598.focalis.shader.material.MaterialIds;
+import io.github.silentcall2598.focalis.shader.material.MaterialReport;
 import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
+import io.github.silentcall2598.focalis.shader.pack.MaterialMappings;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.PackIssue;
 import io.github.silentcall2598.focalis.shader.pack.PackSettings;
@@ -51,6 +54,8 @@ import net.minecraft.entity.Entity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.biome.Biome;
+import net.minecraftforge.fml.common.Loader;
+import net.minecraftforge.fml.common.LoaderState;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -62,6 +67,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -73,7 +79,8 @@ import java.util.function.Supplier;
  * timing and world values are set every frame, the camera position, matrices and values in eye space every world pass,
  * and the fog whenever a stage binds its program. Custom uniforms from shaders.properties are computed once per world
  * pass from those same values. The pack's gbuffers custom textures and noise texture are uploaded once per
- * configuration, and a program's alpha test and blend directives apply while a stage binds it. Nothing else a
+ * configuration, and a program's alpha test and blend directives apply while a stage binds it. The block, item and
+ * entity mappings are resolved at the first world pass, but no program receives the IDs yet. Nothing else a
  * shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its programs leave
  * rendering vanilla. Only a Focalis bug fails the feature.
  */
@@ -90,6 +97,9 @@ public final class WorldProgramsFeature extends Feature {
     private PackConfiguration configuration;
     @Nullable
     private LiveWorldPrograms live;
+    // Only ever used with the configuration whose mappings it came from, so a new configuration never sees old IDs.
+    @Nullable
+    private MaterialIds materialIds;
     // Shared by every program in every dimension, and never reset, since a turned off feature stays off.
     private final FrameInputs frame = new FrameInputs();
     // Also shared, but its history is dropped whenever there is no world, so it never keeps one alive.
@@ -192,6 +202,7 @@ public final class WorldProgramsFeature extends Feature {
     private void configure(ShaderPack pack) {
         configuration = PackConfiguration.resolve(pack, PackSettings.of(profileName, optionEntries),
                 StandardMacros.environment());
+        materialIds = null;
         for (PackIssue issue : configuration.issues()) {
             logger.warn("Shaderpack configuration: {}", issue);
         }
@@ -239,6 +250,10 @@ public final class WorldProgramsFeature extends Feature {
         if (current == null) {
             return;
         }
+        MaterialIds ids = materialIds;
+        if (ids == null || ids.mappings() != configuration.materialMappings()) {
+            resolveMaterials();
+        }
         WorldClient world = Minecraft.getMinecraft().world;
         if (world == null) {
             current.worldStartWithoutWorld();
@@ -279,6 +294,51 @@ public final class WorldProgramsFeature extends Feature {
                     + " the normal way. Messages about mixins.focalis.json earlier in the log may say why.");
         }
         return live;
+    }
+
+    // Mods register their blocks, items and entities after pre-init, when the pack configuration was worked out, so
+    // this waits for a world pass. Reading the registries only touches what the mappings name.
+    private void resolveMaterials() {
+        if (!Loader.instance().hasReachedState(LoaderState.AVAILABLE)) {
+            return;
+        }
+        MaterialIds ids = MaterialIds.resolve(configuration.materialMappings());
+        materialIds = ids;
+        logMaterials(ids.report());
+        monitor.materialsResolved(ids);
+    }
+
+    // A few examples per problem keep the log short, since multi-version packs name many things 1.12.2 doesn't have.
+    private void logMaterials(MaterialReport report) {
+        if (report.notes().isEmpty() && report.mapped(MaterialMappings.Kind.BLOCK) == 0
+                && report.mapped(MaterialMappings.Kind.ITEM) == 0 && report.mapped(MaterialMappings.Kind.ENTITY) == 0) {
+            return;
+        }
+        logger.info("Shaderpack '{}' maps {} block states of {} blocks, {} items and {} entity types to material IDs,"
+                + " resolved in {} ms. Programs don't receive them yet.", packName,
+                report.mapped(MaterialMappings.Kind.BLOCK), report.blocks(), report.mapped(MaterialMappings.Kind.ITEM),
+                report.mapped(MaterialMappings.Kind.ENTITY),
+                String.format(Locale.ROOT, "%.1f", report.nanos() / 1_000_000.0));
+        logNotes(report, MaterialReport.Problem.UNKNOWN_NAME, "name things this game doesn't have");
+        logNotes(report, MaterialReport.Problem.UNKNOWN_PROPERTY, "name block properties that don't exist, which are"
+                + " left out");
+        logNotes(report, MaterialReport.Problem.UNKNOWN_VALUE, "name property values that don't exist, which match"
+                + " nothing");
+        logNotes(report, MaterialReport.Problem.CONFLICT, "match things an earlier line already maps, which keep the"
+                + " earlier ID");
+        List<MaterialReport.Note> failed = report.notes(MaterialReport.Problem.FAILED);
+        if (!failed.isEmpty()) {
+            logger.warn("{} material mapping entries couldn't be read and map nothing: {}", failed.size(),
+                    failed.subList(0, Math.min(failed.size(), 5)));
+        }
+    }
+
+    private void logNotes(MaterialReport report, MaterialReport.Problem problem, String what) {
+        List<MaterialReport.Note> notes = report.notes(problem);
+        if (!notes.isEmpty()) {
+            logger.info("{} material mapping entries {}, like {}", notes.size(), what,
+                    notes.subList(0, Math.min(notes.size(), 3)));
+        }
     }
 
     // Once per configuration, before any program that samples them is built.
@@ -593,6 +653,7 @@ public final class WorldProgramsFeature extends Feature {
     protected void cleanup() {
         LiveWorldPrograms current = live;
         live = null;
+        materialIds = null;
         lastSelected = null;
         justBuilt = null;
         loggedDimensions.clear();

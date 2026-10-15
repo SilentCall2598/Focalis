@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.shader;
 
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import io.github.silentcall2598.focalis.shader.material.MaterialIds;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.program.BuiltWorldPrograms;
@@ -26,6 +27,10 @@ public interface WorldProgramMonitor {
 
     /** The configuration's custom textures were made, once per configuration and before any program is built. */
     default void texturesMade(ProgramTextures textures) {
+    }
+
+    /** The configuration's material IDs were resolved against the registries, once per configuration. */
+    default void materialsResolved(MaterialIds ids) {
     }
 
     /** The programs of one folder were built, which happens once per folder and session. */

@@ -37,6 +37,20 @@ final class ShaderProperties {
         }
     }
 
+    /** One active line, with a key that may repeat a key from an earlier line. */
+    static final class Line {
+
+        final String key;
+        final String value;
+        final int line;
+
+        Line(String key, String value, int line) {
+            this.key = key;
+            this.value = value;
+            this.line = line;
+        }
+    }
+
     // One #if level. Lines count only while every level is active.
     private static final class Level {
 
@@ -63,8 +77,17 @@ final class ShaderProperties {
      */
     static Map<String, Property> read(ShaderPath file, String text, Map<String, String> macros,
             List<PackIssue> issues) {
-        Map<String, String> defined = new LinkedHashMap<>(macros);
         Map<String, Property> properties = new LinkedHashMap<>();
+        for (Line line : readLines(file, text, macros, issues)) {
+            properties.put(line.key, new Property(line.value, line.line));
+        }
+        return properties;
+    }
+
+    /** Every line {@link #read} would use, in file order, with repeated keys kept as separate lines. */
+    static List<Line> readLines(ShaderPath file, String text, Map<String, String> macros, List<PackIssue> issues) {
+        Map<String, String> defined = new LinkedHashMap<>(macros);
+        List<Line> properties = new ArrayList<>();
         Deque<Level> levels = new ArrayDeque<>();
         String[] lines = text.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
@@ -85,7 +108,7 @@ final class ShaderProperties {
             i = join(lines, i, line, logical);
             if (active) {
                 String[] keyValue = split(logical.toString());
-                properties.put(keyValue[0], new Property(keyValue[1], lineNumber));
+                properties.add(new Line(keyValue[0], keyValue[1], lineNumber));
             }
         }
         if (!levels.isEmpty()) {

@@ -44,12 +44,13 @@ public final class PackConfiguration {
     private final CustomUniforms customUniforms;
     private final ProgramStates programStates;
     private final PackTextures textures;
+    private final MaterialMappings materialMappings;
     private final List<PackIssue> issues;
 
     private PackConfiguration(ShaderPack pack, @Nullable String profile, Map<String, String> values,
             Map<String, String> changed, Map<String, String> disabled, Map<ShaderPath, String> texts,
             CustomUniforms customUniforms, ProgramStates programStates, PackTextures textures,
-            List<PackIssue> issues) {
+            MaterialMappings materialMappings, List<PackIssue> issues) {
         this.pack = pack;
         this.profile = profile;
         this.values = values;
@@ -59,6 +60,7 @@ public final class PackConfiguration {
         this.customUniforms = customUniforms;
         this.programStates = programStates;
         this.textures = textures;
+        this.materialMappings = materialMappings;
         this.issues = issues;
     }
 
@@ -99,15 +101,17 @@ public final class PackConfiguration {
         resolution.applyEntries(settings.options(), null, null, null);
 
         List<PackIssue> conditionIssues = new ArrayList<>();
+        Map<String, String> optionMacros = optionMacros(options, resolution.values, environment);
         Map<String, ShaderProperties.Property> conditions = properties == null
                 ? Collections.<String, ShaderProperties.Property>emptyMap()
-                : ShaderProperties.read(PROPERTIES, properties, optionMacros(options, resolution.values, environment),
-                        conditionIssues);
+                : ShaderProperties.read(PROPERTIES, properties, optionMacros, conditionIssues);
         resolution.applyConditions(conditions);
         // Custom uniforms see the option macros like every other setting that isn't a profile.
         CustomUniforms customUniforms = CustomUniforms.compile(PROPERTIES, conditions, resolution.issues);
         ProgramStates programStates = ProgramStates.read(PROPERTIES, conditions, resolution.issues);
         PackTextures textures = PackTextures.read(PROPERTIES, conditions, pack, resolution.issues);
+        List<PackIssue> materialIssues = new ArrayList<>();
+        MaterialMappings materialMappings = MaterialMappings.read(pack, optionMacros, materialIssues);
 
         // Both reads see the same file, so its problems would mostly show up twice.
         List<PackIssue> issues = new ArrayList<>(resolution.issues);
@@ -121,6 +125,7 @@ public final class PackConfiguration {
                 issues.add(issue);
             }
         }
+        issues.addAll(materialIssues);
 
         Map<String, String> changed = new LinkedHashMap<>();
         for (ShaderOption option : options.all().values()) {
@@ -132,7 +137,7 @@ public final class PackConfiguration {
         return new PackConfiguration(pack, profile, Collections.unmodifiableMap(resolution.values),
                 Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled),
                 Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms, programStates, textures,
-                Collections.unmodifiableList(issues));
+                materialMappings, Collections.unmodifiableList(issues));
     }
 
     // Value options become macros with their value and switches that are on become empty macros. Ambiguous options
@@ -215,6 +220,14 @@ public final class PackConfiguration {
     /** The custom textures this configuration declares, read once. Equal configurations declare the same ones. */
     public PackTextures textures() {
         return textures;
+    }
+
+    /**
+     * The block, item and entity mappings, read once with the option macros. Equal configurations declare the same
+     * ones, but each configuration has its own copy, so lookups built from it belong to it alone.
+     */
+    public MaterialMappings materialMappings() {
+        return materialMappings;
     }
 
     /** Settings and pack lines that were ignored, and why. */
