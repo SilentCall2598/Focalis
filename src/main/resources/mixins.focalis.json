@@ -9,15 +9,25 @@
     "defaultRequire": 1
   },
   "client": [
+    "BlockRendererDispatcherStreamMixin",
+    "BufferBuilderStateMixin",
+    "BufferBuilderStreamMixin",
+    "ChunkRenderDispatcherStreamMixin",
     "EntityRendererFogAccessor",
     "EntityRendererMixin",
     "EntityRendererStageMixin",
     "GlStateManagerBooleanStateMixin",
     "GlStateManagerFogStateMixin",
+    "ListedRenderChunkStreamMixin",
     "OpenGlHelperMixin",
+    "RenderChunkStreamMixin",
     "RenderGlobalOutlineMixin",
     "RenderGlobalSkyMixin",
+    "RenderGlobalStreamMixin",
+    "RenderListStreamMixin",
     "RenderManagerMixin",
-    "TileEntityRendererDispatcherMixin"
+    "TileEntityRendererDispatcherMixin",
+    "VboRenderListStreamMixin",
+    "VertexBufferStreamMixin"
   ]
 }
