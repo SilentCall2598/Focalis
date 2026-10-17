@@ -90,6 +90,29 @@ final class LwjglShaderGl implements ShaderGl {
     }
 
     @Override
+    public void bindAttribLocation(int program, int location, String name) {
+        GL20.glBindAttribLocation(program, location, name);
+    }
+
+    @Override
+    public List<ActiveAttribute> activeAttributes(int program) {
+        int count = GL20.glGetProgrami(program, GL20.GL_ACTIVE_ATTRIBUTES);
+        int maxLength = GL20.glGetProgrami(program, GL20.GL_ACTIVE_ATTRIBUTE_MAX_LENGTH);
+        IntBuffer sizeAndType = BufferUtils.createIntBuffer(2);
+        List<ActiveAttribute> attributes = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            String name = GL20.glGetActiveAttrib(program, i, maxLength, sizeAndType);
+            attributes.add(new ActiveAttribute(name, sizeAndType.get(1), sizeAndType.get(0)));
+        }
+        return attributes;
+    }
+
+    @Override
+    public int attribLocation(int program, String name) {
+        return GL20.glGetAttribLocation(program, name);
+    }
+
+    @Override
     public List<ActiveUniform> activeUniforms(int program) {
         int count = GL20.glGetProgrami(program, GL20.GL_ACTIVE_UNIFORMS);
         int maxLength = GL20.glGetProgrami(program, GL20.GL_ACTIVE_UNIFORM_MAX_LENGTH);

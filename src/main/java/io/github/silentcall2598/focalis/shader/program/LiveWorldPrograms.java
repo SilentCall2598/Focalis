@@ -133,6 +133,18 @@ public final class LiveWorldPrograms {
     }
 
     /**
+     * Where terrain programs that read the chunk attribute stream ask for it. Until this is set, those programs never
+     * bind. Only between world passes.
+     */
+    public void terrainStreams(TerrainStreamGate gate) {
+        checkNotDeleted();
+        if (worldOpen) {
+            throw new IllegalStateException("The terrain stream gate can't change during a world pass");
+        }
+        binding.terrainStreams(gate);
+    }
+
+    /**
      * Switches to another configuration of the same pack, between world passes. An equal configuration changes
      * nothing, so nothing is uploaded again. Any other deletes every folder built so far and the textures, and they
      * are made again under the new configuration the next time a world pass needs them.

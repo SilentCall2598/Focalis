@@ -12,13 +12,24 @@ public final class ShaderProgram {
     private final int id;
     private final String name;
     private final String driverLog;
+    private final VertexInputs vertexInputs;
     private boolean deleted;
 
     ShaderProgram(ShaderGl gl, int id, String name, String driverLog) {
+        this(gl, id, name, driverLog, VertexInputs.NONE);
+    }
+
+    ShaderProgram(ShaderGl gl, int id, String name, String driverLog, VertexInputs vertexInputs) {
         this.gl = gl;
         this.id = id;
         this.name = name;
         this.driverLog = driverLog;
+        this.vertexInputs = vertexInputs;
+    }
+
+    /** The inputs it reads that only the chunk attribute stream supplies. */
+    public VertexInputs vertexInputs() {
+        return vertexInputs;
     }
 
     /** The OpenGL program name. Throws once the program has been deleted. */

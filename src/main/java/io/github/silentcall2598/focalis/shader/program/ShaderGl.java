@@ -2,12 +2,30 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
  * The OpenGL calls this package makes, nothing more. Every method needs a current context on the calling thread.
  */
 interface ShaderGl {
+
+    /**
+     * Binds a generic attribute name to a location, effective at the next link. Names a program doesn't declare are
+     * allowed. Recording fakes may leave this out.
+     */
+    default void bindAttribLocation(int program, int location, String name) {
+    }
+
+    /** Every active attribute of a linked program, built-in gl_ ones included. */
+    default List<ActiveAttribute> activeAttributes(int program) {
+        return Collections.emptyList();
+    }
+
+    /** Returns -1 when the linked program has no active generic attribute with that name. */
+    default int attribLocation(int program, String name) {
+        return -1;
+    }
 
     /** Returns 0 if the driver couldn't create the shader. */
     int createShader(int type);
