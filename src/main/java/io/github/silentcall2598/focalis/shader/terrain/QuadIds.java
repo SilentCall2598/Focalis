@@ -26,6 +26,22 @@ final class QuadIds {
         broken = false;
     }
 
+    /** The bytes the arrays hold on to. */
+    int capacity() {
+        return (ids.length + scratch.length) * 2;
+    }
+
+    /** Starts over and lets go of the arrays, which grow to the biggest layer there was. */
+    void release() {
+        reset();
+        if (ids.length > 16) {
+            ids = new short[16];
+        }
+        if (scratch.length > 0) {
+            scratch = new short[0];
+        }
+    }
+
     /** A block render starts with {@code vertices} in the buffer. */
     void blockStarted(int vertices) {
         if (broken) {

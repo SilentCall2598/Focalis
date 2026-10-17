@@ -122,6 +122,25 @@ final class SortCheck {
         armed = false;
     }
 
+    /** The bytes the buffers hold on to. */
+    int capacity() {
+        return before.capacity() + (order.length + seen.length) * 4;
+    }
+
+    /** Stops listening and lets go of the buffers, which grow to the biggest layer there was. */
+    void release() {
+        abandon();
+        if (before.capacity() > 0) {
+            before = newBuffer(0);
+        }
+        if (order.length > 0) {
+            order = new int[0];
+            seen = new int[0];
+        }
+        stamp = 0;
+        quads = -1;
+    }
+
     // The quad after the sort at one offset against the saved quad at another.
     private boolean sameQuad(ByteBuffer data, int dataOffset, int savedOffset) {
         for (int i = 0; i < quadBytes; i += 8) {

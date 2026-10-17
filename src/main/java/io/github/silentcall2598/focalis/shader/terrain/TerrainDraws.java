@@ -54,6 +54,8 @@ final class TerrainDraws implements TerrainStreamGate {
     private boolean arraysCaptured;
     private boolean currentCaptured;
     private boolean arraysOn;
+    // Whether the current normal and generic values may differ from the incoming ones since a draw or list set them.
+    private boolean valuesDirty;
 
     TerrainDraws(AttributeGl gl, Status status) {
         this.gl = Objects.requireNonNull(gl, "gl");
@@ -123,6 +125,7 @@ final class TerrainDraws implements TerrainStreamGate {
         arraysCaptured = false;
         currentCaptured = false;
         arraysOn = false;
+        valuesDirty = false;
         generation = status.generation();
         int top = depth - 1;
         feeding = top >= 0 && layer != null && layers[top] == layer && generation != 0;
@@ -157,12 +160,15 @@ final class TerrainDraws implements TerrainStreamGate {
                 arraysOn = true;
             }
             stepBack();
+            // A draw from enabled arrays leaves their current values indeterminate.
+            valuesDirty = true;
         } else {
             // Left on, the arrays would read past the end of another chunk's smaller stream.
             if (arraysOn) {
                 StreamArrays.enable(gl, false);
                 arraysOn = false;
             }
+            giveBackValues();
             stepAside();
         }
     }
@@ -175,14 +181,23 @@ final class TerrainDraws implements TerrainStreamGate {
      * @param listGeneration the generation the list was compiled with, 0 when it has no stream
      */
     void chunkList(int listGeneration) {
-        if (listGeneration != 0 && !currentCaptured && drawing) {
+        boolean carriesValues = listGeneration != 0 && drawing;
+        if (carriesValues && !currentCaptured) {
             saved.captureCurrent(gl);
             currentCaptured = true;
+        }
+        boolean fed = feeding && listGeneration == generation;
+        if (!fed) {
+            giveBackValues();
+        }
+        if (carriesValues) {
+            // The list sets the values of its last vertex as it plays.
+            valuesDirty = true;
         }
         if (!feeding) {
             return;
         }
-        if (listGeneration == generation) {
+        if (fed) {
             stepBack();
         } else {
             stepAside();
@@ -227,6 +242,15 @@ final class TerrainDraws implements TerrainStreamGate {
         return feeding;
     }
 
+    // A draw that doesn't use the stream gets the values it would have seen without it. The arrays it reads were
+    // already turned off, and the rest of what the stream changed can wait until the layer is done.
+    private void giveBackValues() {
+        if (valuesDirty) {
+            saved.restoreCurrent(gl);
+            valuesDirty = false;
+        }
+    }
+
     private void restore() {
         boolean arrays = arraysCaptured;
         boolean current = currentCaptured;
@@ -235,6 +259,7 @@ final class TerrainDraws implements TerrainStreamGate {
         arraysCaptured = false;
         currentCaptured = false;
         arraysOn = false;
+        valuesDirty = false;
         if (arrays) {
             saved.restoreArrays(gl);
         }

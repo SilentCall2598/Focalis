@@ -22,6 +22,12 @@ interface AttributeGl {
     /** Uploads to the buffer bound to GL_ARRAY_BUFFER, as static draw data. */
     void bufferData(ByteBuffer data);
 
+    /** The bytes the driver kept for the buffer bound to GL_ARRAY_BUFFER, 0 when it never made a data store. */
+    int arrayBufferSize();
+
+    /** Gives the buffer bound to GL_ARRAY_BUFFER an empty data store, so nothing it held is left. */
+    void emptyArrayBuffer();
+
     boolean normalArrayEnabled();
 
     void normalArray(boolean enabled);

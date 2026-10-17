@@ -24,6 +24,11 @@ import java.util.Locale;
  * way the stream expects, keeps generic arrays in display lists, and doesn't let the stream disturb the position,
  * color and texture coordinates vanilla's chunk data feeds. Runs once per path, and puts back everything it changes.
  * Client thread only, with the context current and no display list being compiled.
+ *
+ * <p>It reads the values back from an RGBA32F render target through GL30 framebuffer calls, which is what ties the
+ * stream to OpenGL 3.0, the same minimum as the post pass and the world target. Older contexts get no stream and
+ * terrain draws the normal way. A check through the framebuffer and float texture extensions of GL 2.1 hardware
+ * would be code nothing here can run, and it would decide whether drawing is trusted, so there isn't one.
  */
 final class StreamSelfTest {
 
@@ -96,7 +101,8 @@ final class StreamSelfTest {
     static Result run(StreamLayout layout) {
         ContextCapabilities caps = GLContext.getCapabilities();
         if (!caps.OpenGL30) {
-            return new Result(Outcome.UNSUPPORTED, "the check needs OpenGL 3.0 for its float render target");
+            return new Result(Outcome.UNSUPPORTED, "the stream needs OpenGL 3.0, since its check reads values back"
+                    + " from a float framebuffer");
         }
         // An error that was already there can't be blamed on the check, and would hide whatever the check raises.
         int earlier = GL11.glGetError();

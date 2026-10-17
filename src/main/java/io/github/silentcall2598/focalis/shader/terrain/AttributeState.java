@@ -88,61 +88,93 @@ final class AttributeState {
     /**
      * Puts the arrays back and leaves GL_ARRAY_BUFFER bound to what it is now. A null pointer without a buffer can't
      * be set directly, so the array points at a scratch buffer that's deleted at the end, which resets it to buffer 0.
+     * The scratch buffer is made before anything changes, and always deleted. If the arrays can't all be put back, the
+     * stream's arrays are turned off, since half of them pointing at the stream is worse than off.
      */
     void restoreArrays(AttributeGl gl) {
         int bound = gl.arrayBuffer();
         int active = bound;
         int scratch = 0;
-        if (normalBuffer != 0) {
-            active = bind(gl, normalBuffer, active);
-            gl.normalPointer(normalType, normalStride, normalOffset);
-        } else if (normalClient != null) {
-            active = bind(gl, 0, active);
-            gl.normalPointer(normalType, normalStride, normalClient);
-        } else {
-            scratch = gl.createBuffer();
-            active = bind(gl, scratch, active);
-            gl.normalPointer(normalType, normalStride, 0L);
-        }
-        gl.normalArray(normalEnabled);
-        for (int slot = 0; slot < GENERIC.length; slot++) {
-            int index = GENERIC[slot];
-            ByteBuffer clientPointer = client[slot];
-            if (buffer[slot] != 0 || clientPointer == null) {
-                int target = buffer[slot];
-                if (target == 0) {
-                    if (scratch == 0) {
-                        scratch = gl.createBuffer();
-                    }
-                    target = scratch;
+        boolean restored = false;
+        try {
+            if (needsScratch()) {
+                scratch = gl.createBuffer();
+                if (scratch == 0) {
+                    throw new IllegalStateException("The driver gave no buffer to put the vertex arrays back with");
                 }
-                active = bind(gl, target, active);
-                if (integer[slot]) {
-                    gl.attribIntegerPointer(index, size[slot], type[slot], stride[slot], offset[slot]);
-                } else {
-                    gl.attribPointer(index, size[slot], type[slot], normalized[slot], stride[slot], offset[slot]);
-                }
-            } else {
+            }
+            if (normalBuffer != 0) {
+                active = bind(gl, normalBuffer, active);
+                gl.normalPointer(normalType, normalStride, normalOffset);
+            } else if (normalClient != null) {
                 active = bind(gl, 0, active);
-                if (integer[slot]) {
-                    gl.attribIntegerPointer(index, size[slot], type[slot], stride[slot], clientPointer);
+                gl.normalPointer(normalType, normalStride, normalClient);
+            } else {
+                active = bind(gl, scratch, active);
+                gl.normalPointer(normalType, normalStride, 0L);
+            }
+            gl.normalArray(normalEnabled);
+            for (int slot = 0; slot < GENERIC.length; slot++) {
+                int index = GENERIC[slot];
+                ByteBuffer clientPointer = client[slot];
+                if (buffer[slot] != 0 || clientPointer == null) {
+                    active = bind(gl, buffer[slot] != 0 ? buffer[slot] : scratch, active);
+                    if (integer[slot]) {
+                        gl.attribIntegerPointer(index, size[slot], type[slot], stride[slot], offset[slot]);
+                    } else {
+                        gl.attribPointer(index, size[slot], type[slot], normalized[slot], stride[slot], offset[slot]);
+                    }
                 } else {
-                    gl.attribPointer(index, size[slot], type[slot], normalized[slot], stride[slot], clientPointer);
+                    active = bind(gl, 0, active);
+                    if (integer[slot]) {
+                        gl.attribIntegerPointer(index, size[slot], type[slot], stride[slot], clientPointer);
+                    } else {
+                        gl.attribPointer(index, size[slot], type[slot], normalized[slot], stride[slot], clientPointer);
+                    }
+                }
+                gl.attribArray(index, enabled[slot]);
+                if (divisor[slot] != 0) {
+                    gl.attribDivisor(index, divisor[slot]);
                 }
             }
-            gl.attribArray(index, enabled[slot]);
-            if (divisor[slot] != 0) {
-                gl.attribDivisor(index, divisor[slot]);
+            restored = true;
+        } finally {
+            try {
+                bind(gl, bound, active);
+                if (scratch != 0) {
+                    gl.deleteBuffer(scratch);
+                }
+            } finally {
+                // Nothing to keep alive past this point.
+                normalClient = null;
+                for (int slot = 0; slot < GENERIC.length; slot++) {
+                    client[slot] = null;
+                }
+                if (!restored) {
+                    turnOff(gl);
+                }
             }
         }
-        bind(gl, bound, active);
-        if (scratch != 0) {
-            gl.deleteBuffer(scratch);
+    }
+
+    // Whether any array was on no buffer and on no client memory, which only a scratch buffer can restore.
+    private boolean needsScratch() {
+        if (normalBuffer == 0 && normalClient == null) {
+            return true;
         }
-        // Nothing to keep alive past this point.
-        normalClient = null;
         for (int slot = 0; slot < GENERIC.length; slot++) {
-            client[slot] = null;
+            if (buffer[slot] == 0 && client[slot] == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void turnOff(AttributeGl gl) {
+        try {
+            StreamArrays.enable(gl, false);
+        } catch (RuntimeException | LinkageError e) {
+            // Whatever made the restore fail may stop this too, and there is nothing left to try.
         }
     }
 

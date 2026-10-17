@@ -69,6 +69,22 @@ public final class StreamCompanion {
         vertices = -1;
         ids.reset();
         sort.abandon();
+        if (buildPlan == null) {
+            release();
+        }
+    }
+
+    // Nothing is built with a stream for now, so the builder doesn't keep what the biggest layer it ever built took.
+    private void release() {
+        stream = null;
+        ids.release();
+        sort.release();
+    }
+
+    /** The bytes this builder holds on to for its streams, which grow to the biggest layer it built. */
+    int capacity() {
+        ByteBuffer held = stream;
+        return (held == null ? 0 : held.capacity()) + sort.capacity() + ids.capacity();
     }
 
     /** Whether this build is still on its way to a stream. */

@@ -64,6 +64,16 @@ final class LwjglAttributeGl implements AttributeGl {
     }
 
     @Override
+    public void emptyArrayBuffer() {
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, 0L, GL15.GL_STATIC_DRAW);
+    }
+
+    @Override
+    public int arrayBufferSize() {
+        return GL15.glGetBufferParameteri(GL15.GL_ARRAY_BUFFER, GL15.GL_BUFFER_SIZE);
+    }
+
+    @Override
     public boolean normalArrayEnabled() {
         return GL11.glIsEnabled(GL11.GL_NORMAL_ARRAY);
     }

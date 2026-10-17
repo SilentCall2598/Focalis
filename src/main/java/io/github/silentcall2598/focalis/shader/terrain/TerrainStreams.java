@@ -49,6 +49,9 @@ public final class TerrainStreams {
     private static MaterialIds planIds;
     private static int lastGeneration;
     private static boolean reloadRequested;
+    // Set when the plan went away, so the streams of chunks that were built with it are given back at the next frame,
+    // unless a plan is there again by then.
+    private static boolean releaseRequested;
     @Nullable
     private static TerrainDraws draws;
 
@@ -57,8 +60,8 @@ public final class TerrainStreams {
     private static volatile int listPath = UNCHECKED;
     // Set once a terrain layer was drawn without the hooked chunk renderers. Final for the session. Client thread only.
     private static boolean renderersReplaced;
-    // Stream buffers that exist right now. Client thread only.
-    private static int liveStreamBuffers;
+    // The GL buffers of the streams of vertex buffer chunk layers. Client thread only.
+    private static StreamBuffers buffers = new StreamBuffers(LwjglAttributeGl.INSTANCE);
 
     private static final AtomicReference<Throwable> failure = new AtomicReference<>();
     // Each kind of note is only queued once a session, so the log can't fill up from worker threads.
@@ -72,6 +75,7 @@ public final class TerrainStreams {
     private static long uploads;
     private static long uploadedBytes;
     private static long uploadNanos;
+    private static long uploadsRefused;
 
     private TerrainStreams() {
     }
@@ -113,9 +117,11 @@ public final class TerrainStreams {
     }
 
     /**
-     * Turns the stream off. Streams already built stay until their chunks are built again.
+     * Turns the stream off. The buffers of streams already built can't be drawn anymore, so they are deleted at the
+     * next frame without touching the chunks. The display lists compiled with the stream, and the builders' own
+     * buffers, stay until their chunks and builders build again.
      *
-     * @param reload whether to reload the renderers at the next frame, which drops them
+     * @param reload whether to reload the renderers at the next frame, which builds every chunk again without it
      */
     public static void withdraw(boolean reload) {
         boolean was = plan != null;
@@ -124,6 +130,7 @@ public final class TerrainStreams {
         if (reload && was) {
             reloadRequested = true;
         }
+        releaseRequested = true;
     }
 
     public static boolean active() {
@@ -174,13 +181,13 @@ public final class TerrainStreams {
         return "layers with the stream " + layersStreamed.sum() + ", without " + layersWithout.sum() + ", quads "
                 + quadsWritten.sum() + ", build ms " + String.format(Locale.ROOT, "%.1f",
                 buildNanos.sum() / 1_000_000.0) + ", uploads " + uploads + " with " + uploadedBytes + " bytes in "
-                + String.format(Locale.ROOT, "%.1f", uploadNanos / 1_000_000.0) + " ms, live stream buffers "
-                + liveStreamBuffers;
+                + String.format(Locale.ROOT, "%.1f", uploadNanos / 1_000_000.0) + " ms, refused " + uploadsRefused
+                + ", live stream buffers " + buffers.live();
     }
 
     /** How many stream buffers exist right now, for checking that none outlive their chunks. */
     public static int liveBuffers() {
-        return liveStreamBuffers;
+        return buffers.live();
     }
 
     // Chunk builds, any thread.
@@ -350,51 +357,41 @@ public final class TerrainStreams {
             if (!(vertexBuffer instanceof StreamVertexBuffer)) {
                 return;
             }
-            StreamVertexBuffer target = (StreamVertexBuffer) vertexBuffer;
-            BufferStream stream = target.focalis$stream();
-            StreamCompanion companion = companion(buffer);
-            TerrainStreamPlan current = usablePlan();
-            // A vertex buffer vanilla already deleted never gets a new stream buffer, so a late upload can't leak one.
-            boolean usable = companion != null && current != null && target.focalis$glBuffer() >= 0
-                    && companion.generation() == current.generation()
-                    && companion.ready(StreamLayout.BUFFER, target.focalis$vertexCount());
-            if (!usable) {
-                if (stream != null) {
-                    stream.valid = false;
-                    deleteBuffer(stream);
-                }
-                return;
-            }
-            if (stream == null) {
-                stream = new BufferStream();
-                target.focalis$stream(stream);
-            }
-            long start = System.nanoTime();
-            AttributeGl gl = LwjglAttributeGl.INSTANCE;
-            int previous = gl.arrayBuffer();
-            if (stream.buffer == 0) {
-                stream.buffer = gl.createBuffer();
-                liveStreamBuffers++;
-            }
-            ByteBuffer data = companion.stream();
-            int bytes = companion.vertices() * StreamLayout.BUFFER.stride();
-            gl.bindArrayBuffer(stream.buffer);
-            try {
-                data.position(0).limit(bytes);
-                gl.bufferData(data);
-            } finally {
-                data.clear();
-                gl.bindArrayBuffer(previous);
-            }
-            stream.vertices = companion.vertices();
-            stream.generation = companion.generation();
-            stream.valid = true;
-            uploads++;
-            uploadedBytes += bytes;
-            uploadNanos += System.nanoTime() - start;
+            streamUploaded(companion(buffer), usablePlan(), (StreamVertexBuffer) vertexBuffer);
         } catch (RuntimeException | LinkageError e) {
             failed(e);
         }
+    }
+
+    static void streamUploaded(@Nullable StreamCompanion companion, @Nullable TerrainStreamPlan current,
+            StreamVertexBuffer target) {
+        BufferStream stream = target.focalis$stream();
+        // A vertex buffer vanilla already deleted never gets a new stream buffer, so a late upload can't leak one.
+        boolean usable = companion != null && current != null && target.focalis$glBuffer() >= 0
+                && companion.generation() == current.generation()
+                && companion.ready(StreamLayout.BUFFER, target.focalis$vertexCount());
+        if (!usable) {
+            if (stream != null) {
+                buffers.release(stream);
+            }
+            return;
+        }
+        if (stream == null) {
+            stream = new BufferStream();
+            target.focalis$stream(stream);
+        }
+        long start = System.nanoTime();
+        String problem = buffers.upload(stream, companion.stream(), companion.vertices(), companion.generation());
+        if (problem != null) {
+            // Only this layer goes without, drawing the normal way, and its next upload tries again.
+            uploadsRefused++;
+            note("Some chunk layers draw without the attribute stream because " + problem + ". This is only logged"
+                    + " once for each reason.");
+            return;
+        }
+        uploads++;
+        uploadedBytes += companion.vertices() * StreamLayout.BUFFER.stride();
+        uploadNanos += System.nanoTime() - start;
     }
 
     /** Vanilla is putting new data into this vertex buffer, so whatever stream it had no longer belongs to it. */
@@ -416,8 +413,7 @@ public final class TerrainStreams {
             StreamVertexBuffer target = (StreamVertexBuffer) vertexBuffer;
             BufferStream stream = target.focalis$stream();
             if (stream != null) {
-                stream.valid = false;
-                deleteBuffer(stream);
+                buffers.release(stream);
                 target.focalis$stream(null);
             }
         } catch (RuntimeException | LinkageError e) {
@@ -569,6 +565,12 @@ public final class TerrainStreams {
 
     // Only at the start of a frame, outside any rendering, the way vanilla's own option changes reload.
     private static void serviceReload() {
+        if (releaseRequested) {
+            releaseRequested = false;
+            if (plan == null) {
+                releaseBuffers();
+            }
+        }
         if (!reloadRequested) {
             return;
         }
@@ -578,6 +580,15 @@ public final class TerrainStreams {
         }
         reloadRequested = false;
         mc.renderGlobal.loadRenderers();
+    }
+
+    // Streams that were built can't be drawn once the plan is gone. The chunks themselves are left as they are.
+    private static void releaseBuffers() {
+        try {
+            buffers.releaseAll();
+        } catch (RuntimeException | LinkageError e) {
+            failed(e);
+        }
     }
 
     @Nullable
@@ -603,16 +614,6 @@ public final class TerrainStreams {
 
     private static boolean isBlockFormat(@Nullable VertexFormat format) {
         return format == DefaultVertexFormats.BLOCK || DefaultVertexFormats.BLOCK.equals(format);
-    }
-
-    private static void deleteBuffer(BufferStream stream) {
-        if (stream.buffer != 0) {
-            int buffer = stream.buffer;
-            // Forgotten first, so a failing delete can't be tried twice.
-            stream.buffer = 0;
-            liveStreamBuffers--;
-            LwjglAttributeGl.INSTANCE.deleteBuffer(buffer);
-        }
     }
 
     // Translucent data from before a plan only needs the reload, which is already on its way.
