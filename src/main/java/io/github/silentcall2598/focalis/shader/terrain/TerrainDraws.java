@@ -15,8 +15,8 @@ import java.util.Objects;
  * The draw side of the stream. A terrain program that reads the stream starts its stage stepped aside, and a chunk
  * draw binds it again only after pointing the arrays at that chunk's stream. A chunk without a usable stream, or
  * terrain drawn by something other than the hooked renderers, draws the vanilla way. The array state the stream
- * changes is captured right before its first change in a layer and put back when the layer is done. Client thread
- * only.
+ * changes is captured right before its first change in a layer and put back when the layer is done. A chunk without
+ * a stream that follows a streamed one gets the arrays that were on put back for its own draw. Client thread only.
  */
 final class TerrainDraws implements TerrainStreamGate {
 
@@ -163,9 +163,11 @@ final class TerrainDraws implements TerrainStreamGate {
             // A draw from enabled arrays leaves their current values indeterminate.
             valuesDirty = true;
         } else {
-            // Left on, the arrays would read past the end of another chunk's smaller stream.
+            // Left on, the arrays would read past the end of another chunk's smaller stream. The draw gets the arrays
+            // it would have seen without the stream, which are only off if they were off.
             if (arraysOn) {
-                StreamArrays.enable(gl, false);
+                // The hook doesn't always know vanilla's buffer, and the one bound stays bound either way.
+                saved.restoreForDraw(gl, vanillaBuffer > 0 ? vanillaBuffer : gl.arrayBuffer());
                 arraysOn = false;
             }
             giveBackValues();

@@ -92,30 +92,51 @@ final class AttributeState {
      * stream's arrays are turned off, since half of them pointing at the stream is worse than off.
      */
     void restoreArrays(AttributeGl gl) {
-        int bound = gl.arrayBuffer();
+        restore(gl, gl.arrayBuffer(), false);
+    }
+
+    /**
+     * For a draw that doesn't use the stream, after streamed draws changed the arrays. The arrays that were on are
+     * pointed where they pointed, with their divisors, and turned on again. The others are only turned off, since a
+     * draw doesn't read those. {@link #restoreArrays} still has to run when the layer is done. {@code bound} is the
+     * buffer bound to GL_ARRAY_BUFFER, which stays bound.
+     */
+    void restoreForDraw(AttributeGl gl, int bound) {
+        restore(gl, bound, true);
+    }
+
+    private void restore(AttributeGl gl, int bound, boolean forDraw) {
         int active = bound;
         int scratch = 0;
         boolean restored = false;
         try {
-            if (needsScratch()) {
+            if (needsScratch(forDraw)) {
                 scratch = gl.createBuffer();
                 if (scratch == 0) {
                     throw new IllegalStateException("The driver gave no buffer to put the vertex arrays back with");
                 }
             }
-            if (normalBuffer != 0) {
-                active = bind(gl, normalBuffer, active);
-                gl.normalPointer(normalType, normalStride, normalOffset);
-            } else if (normalClient != null) {
-                active = bind(gl, 0, active);
-                gl.normalPointer(normalType, normalStride, normalClient);
+            if (forDraw && !normalEnabled) {
+                gl.normalArray(false);
             } else {
-                active = bind(gl, scratch, active);
-                gl.normalPointer(normalType, normalStride, 0L);
+                if (normalBuffer != 0) {
+                    active = bind(gl, normalBuffer, active);
+                    gl.normalPointer(normalType, normalStride, normalOffset);
+                } else if (normalClient != null) {
+                    active = bind(gl, 0, active);
+                    gl.normalPointer(normalType, normalStride, normalClient);
+                } else {
+                    active = bind(gl, scratch, active);
+                    gl.normalPointer(normalType, normalStride, 0L);
+                }
+                gl.normalArray(normalEnabled);
             }
-            gl.normalArray(normalEnabled);
             for (int slot = 0; slot < GENERIC.length; slot++) {
                 int index = GENERIC[slot];
+                if (forDraw && !enabled[slot]) {
+                    gl.attribArray(index, false);
+                    continue;
+                }
                 ByteBuffer clientPointer = client[slot];
                 if (buffer[slot] != 0 || clientPointer == null) {
                     active = bind(gl, buffer[slot] != 0 ? buffer[slot] : scratch, active);
@@ -145,10 +166,12 @@ final class AttributeState {
                     gl.deleteBuffer(scratch);
                 }
             } finally {
-                // Nothing to keep alive past this point.
-                normalClient = null;
-                for (int slot = 0; slot < GENERIC.length; slot++) {
-                    client[slot] = null;
+                if (!forDraw) {
+                    // Nothing to keep alive past the end of the layer. A restore for a draw leaves it for that.
+                    normalClient = null;
+                    for (int slot = 0; slot < GENERIC.length; slot++) {
+                        client[slot] = null;
+                    }
                 }
                 if (!restored) {
                     turnOff(gl);
@@ -157,13 +180,14 @@ final class AttributeState {
         }
     }
 
-    // Whether any array was on no buffer and on no client memory, which only a scratch buffer can restore.
-    private boolean needsScratch() {
-        if (normalBuffer == 0 && normalClient == null) {
+    // Whether an array that gets its pointer back was on no buffer and on no client memory, which only a scratch buffer
+    // can restore.
+    private boolean needsScratch(boolean forDraw) {
+        if ((!forDraw || normalEnabled) && normalBuffer == 0 && normalClient == null) {
             return true;
         }
         for (int slot = 0; slot < GENERIC.length; slot++) {
-            if (buffer[slot] == 0 && client[slot] == null) {
+            if ((!forDraw || enabled[slot]) && buffer[slot] == 0 && client[slot] == null) {
                 return true;
             }
         }
