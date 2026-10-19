@@ -18,6 +18,7 @@ import io.github.silentcall2598.focalis.shader.ShaderFeature;
 import io.github.silentcall2598.focalis.shader.WorldProgramMonitor;
 import io.github.silentcall2598.focalis.shader.WorldProgramsFeature;
 import io.github.silentcall2598.focalis.shader.post.PostPassMonitor;
+import io.github.silentcall2598.focalis.shader.terrain.TerrainStreams;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import javax.annotation.Nullable;
@@ -57,6 +58,8 @@ public final class FocalisCore {
 
         // Hooks first, so features see which render stages are dispatched when they register listeners.
         render.install();
+        // Its renderer reload has to work even after the feature that turned the stream on failed.
+        TerrainStreams.install(render.lifecycle());
         // Listeners run in registration order, so this puts the probe's listeners on both sides of the features' work.
         if (probe != null) {
             probe.installBefore(render.lifecycle());

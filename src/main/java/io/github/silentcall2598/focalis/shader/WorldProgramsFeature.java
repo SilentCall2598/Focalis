@@ -41,10 +41,13 @@ import io.github.silentcall2598.focalis.shader.program.ProgramFailure;
 import io.github.silentcall2598.focalis.shader.program.ProgramTextures;
 import io.github.silentcall2598.focalis.shader.program.ShaderCapabilities;
 import io.github.silentcall2598.focalis.shader.program.ShaderProgram;
+import io.github.silentcall2598.focalis.shader.program.VertexInputs;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramBinding;
 import io.github.silentcall2598.focalis.shader.program.WorldProgramInputs;
 import io.github.silentcall2598.focalis.shader.routing.ResolutionState;
 import io.github.silentcall2598.focalis.shader.routing.ShaderProgramRole;
+import io.github.silentcall2598.focalis.shader.terrain.StreamLayout;
+import io.github.silentcall2598.focalis.shader.terrain.TerrainStreams;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.WorldClient;
@@ -80,9 +83,11 @@ import java.util.function.Supplier;
  * and the fog whenever a stage binds its program. Custom uniforms from shaders.properties are computed once per world
  * pass from those same values. The pack's gbuffers custom textures and noise texture are uploaded once per
  * configuration, and a program's alpha test and blend directives apply while a stage binds it. The block, item and
- * entity mappings are resolved at the first world pass, but no program receives the IDs yet. Nothing else a
- * shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its programs leave
- * rendering vanilla. Only a Focalis bug fails the feature.
+ * entity mappings are resolved at the first world pass. Chunk terrain gets block IDs, normals, texture midpoints and
+ * tangents from Focalis's attribute stream while a terrain program reads them, and such a program only draws chunks
+ * the stream feeds. Programs of other stages that read those attributes aren't bound, and item and entity IDs don't
+ * reach any program yet. Nothing else a shaderpack expects is set up, so regular packs won't look right. Problems
+ * with the pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -100,6 +105,8 @@ public final class WorldProgramsFeature extends Feature {
     // Only ever used with the configuration whose mappings it came from, so a new configuration never sees old IDs.
     @Nullable
     private MaterialIds materialIds;
+    @Nullable
+    private MaterialIds loggedUnfitIds;
     // Shared by every program in every dimension, and never reset, since a turned off feature stays off.
     private final FrameInputs frame = new FrameInputs();
     // Also shared, but its history is dropped whenever there is no world, so it never keeps one alive.
@@ -148,7 +155,8 @@ public final class WorldProgramsFeature extends Feature {
                 + " samplers, the view size and frame timing uniforms, the camera position and matrices, and the"
                 + " time, sun and moon, rain, sky and fog, eye brightness and altitude and water or lava uniforms are"
                 + " set, along with the pack's custom uniforms that only use those, its gbuffers custom and noise"
-                + " textures and its alpha test and blend directives. No composite passes run.");
+                + " textures, its alpha test and blend directives, and the normal, block ID, texture midpoint and"
+                + " tangent attributes of chunk terrain. No composite passes run.");
         profileName = config.getString("profile", "", "A profile from the pack's shaders.properties, like HIGH. Empty"
                 + " keeps the pack's own defaults.");
         optionEntries = config.getString("options", "", "Option values applied after the profile, separated by"
@@ -237,6 +245,7 @@ public final class WorldProgramsFeature extends Feature {
 
     // The dimension is read once per world pass, here. Nothing during the pass looks it up again.
     private void worldStart(ShaderPack pack) {
+        checkTerrainStreams();
         // Only when no FRAME START came first, which Minecraft doesn't do but a mod drawing the world could.
         if (!frame.captured()) {
             captureFrame();
@@ -266,6 +275,58 @@ public final class WorldProgramsFeature extends Feature {
         if (selected != lastSelected || dimension != lastDimension) {
             selectionChanged(pack, dimension, selected, selected == justBuilt);
         }
+        updateTerrainStreams(selected.programs(), dimension);
+    }
+
+    // Chunks only carry the stream while a terrain program of the selected folder can read it, since building it
+    // costs time and memory. Turning it on reloads the renderers once at the next frame.
+    private void updateTerrainStreams(BuiltWorldPrograms programs, int dimension) {
+        boolean needed = false;
+        for (ShaderProgramRole role : WorldProgramBinding.TERRAIN_ROLES) {
+            BuiltWorldPrograms.Entry entry = programs.forRole(role);
+            if (entry.ready()) {
+                VertexInputs inputs = entry.build().program().vertexInputs();
+                needed |= inputs.needsStream() && inputs.problem() == null;
+            }
+        }
+        MaterialIds ids = materialIds;
+        if (needed && ids != null) {
+            if (TerrainStreams.publish(ids)) {
+                logger.info("Chunk terrain in dimension {} gets gl_Normal, mc_Entity, mc_midTexCoord and at_tangent"
+                        + " from Focalis's attribute stream, so the renderers reload once.", dimension);
+                logUnfitIds(ids);
+            }
+        } else if (TerrainStreams.active()) {
+            TerrainStreams.withdraw(false);
+            logger.info("No terrain program in dimension {} reads the attribute stream, so chunks are built"
+                    + " without it.", dimension);
+        }
+    }
+
+    // mc_Entity carries a short, so bigger IDs would wrap into other IDs. They read as unmapped instead.
+    private void logUnfitIds(MaterialIds ids) {
+        if (ids == loggedUnfitIds) {
+            return;
+        }
+        loggedUnfitIds = ids;
+        List<MaterialMappings.Declaration> unfit = new ArrayList<>();
+        for (MaterialMappings.Declaration declaration : ids.mappings().declarations(MaterialMappings.Kind.BLOCK)) {
+            if (declaration.id() > StreamLayout.MAX_ENTITY_ID) {
+                unfit.add(declaration);
+            }
+        }
+        if (!unfit.isEmpty()) {
+            logger.warn("{} block IDs are above {}, the largest mc_Entity can hold, so blocks mapped to them read as"
+                    + " unmapped, -1, in terrain programs: {}", unfit.size(), StreamLayout.MAX_ENTITY_ID,
+                    unfit.subList(0, Math.min(unfit.size(), 5)));
+        }
+    }
+
+    private void checkTerrainStreams() {
+        Throwable failure = TerrainStreams.failure();
+        if (failure != null) {
+            throw new IllegalStateException("The chunk attribute stream failed", failure);
+        }
     }
 
     @Nullable
@@ -289,6 +350,7 @@ public final class WorldProgramsFeature extends Feature {
         };
         live = LiveWorldPrograms.create(configuration, ShaderCapabilities.from(gl), listener, frame, camera,
                 environment, fog);
+        live.terrainStreams(TerrainStreams.gate());
         if (!fog.available()) {
             logger.warn("Minecraft's fog can't be read in this session, so programs that use the fog uniforms draw"
                     + " the normal way. Messages about mixins.focalis.json earlier in the log may say why.");
@@ -315,7 +377,7 @@ public final class WorldProgramsFeature extends Feature {
             return;
         }
         logger.info("Shaderpack '{}' maps {} block states of {} blocks, {} items and {} entity types to material IDs,"
-                + " resolved in {} ms. Programs don't receive them yet.", packName,
+                + " resolved in {} ms. Only chunk terrain receives block IDs so far.", packName,
                 report.mapped(MaterialMappings.Kind.BLOCK), report.blocks(), report.mapped(MaterialMappings.Kind.ITEM),
                 report.mapped(MaterialMappings.Kind.ENTITY),
                 String.format(Locale.ROOT, "%.1f", report.nanos() / 1_000_000.0));
@@ -437,6 +499,31 @@ public final class WorldProgramsFeature extends Feature {
                 logger.info("{} uses uniforms Focalis doesn't set yet, so they read as zero: {}", program.name(),
                         inputs.unprovided());
             }
+            if (program != null) {
+                logVertexInputs(programs, build, program);
+            }
+        }
+    }
+
+    // Only chunk terrain gets the stream's attributes. Other draws would feed a program reading them meaningless
+    // values.
+    private void logVertexInputs(BuiltWorldPrograms programs, BuiltWorldPrograms.Build build, ShaderProgram program) {
+        VertexInputs vertex = program.vertexInputs();
+        if (!vertex.needsStream()) {
+            return;
+        }
+        List<ShaderProgramRole> terrain = new ArrayList<>();
+        List<ShaderProgramRole> other = new ArrayList<>();
+        for (ShaderProgramRole role : rolesOf(programs, build)) {
+            (WorldProgramBinding.TERRAIN_ROLES.contains(role) ? terrain : other).add(role);
+        }
+        if (!terrain.isEmpty() && vertex.problem() != null) {
+            logger.warn("{} reads {} from the chunk attribute stream, but {}, so {} draw the normal way.",
+                    program.name(), vertex, vertex.problem(), terrain);
+        }
+        if (!other.isEmpty() && vertex.readsStreamAttributes()) {
+            logger.info("{} reads {}, which only chunk terrain gets so far, so {} draw the normal way.",
+                    program.name(), vertex, other);
         }
     }
 
@@ -615,6 +702,9 @@ public final class WorldProgramsFeature extends Feature {
     // Every displayed frame counts, also the ones without a world, like in menus.
     private void onFrame(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
         if (phase == RenderPhase.START) {
+            checkTerrainStreams();
+            // Before anything draws, so a check the stream runs has the frame to itself.
+            TerrainStreams.prepare(logger);
             captureFrame();
             // Leaving a world lets go of it here, so no camera history can reach into the next one either.
             if (Minecraft.getMinecraft().world == null) {
@@ -651,6 +741,8 @@ public final class WorldProgramsFeature extends Feature {
     // cleans up at shutdown, when the context may already be gone.
     @Override
     protected void cleanup() {
+        // The reload at the next frame builds every chunk again without the stream and frees its buffers.
+        TerrainStreams.withdraw(true);
         LiveWorldPrograms current = live;
         live = null;
         materialIds = null;
