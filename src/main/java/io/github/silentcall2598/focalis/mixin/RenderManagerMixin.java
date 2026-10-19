@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.mixin;
 
-import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpoint;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.entity.Entity;
@@ -19,22 +18,22 @@ public abstract class RenderManagerMixin {
     @Inject(method = "renderEntity(Lnet/minecraft/entity/Entity;DDDFFZ)V", at = @At("HEAD"), require = 0)
     private void focalis$entityStarted(Entity entity, double x, double y, double z, float yaw, float partialTicks,
             boolean debug, CallbackInfo ci) {
-        RenderHooks.rendererStarted();
+        RenderHooks.entityStarted(entity);
     }
 
     @Inject(method = "renderEntity(Lnet/minecraft/entity/Entity;DDDFFZ)V", at = @At("RETURN"), require = 0)
     private void focalis$entityReturned(Entity entity, double x, double y, double z, float yaw, float partialTicks,
             boolean debug, CallbackInfo ci) {
-        RenderHooks.rendererReturned(RenderCheckpoint.ENTITY_RENDERED);
+        RenderHooks.entityReturned();
     }
 
     @Inject(method = "renderMultipass(Lnet/minecraft/entity/Entity;F)V", at = @At("HEAD"), require = 0)
     private void focalis$multipassStarted(Entity entity, float partialTicks, CallbackInfo ci) {
-        RenderHooks.rendererStarted();
+        RenderHooks.entityStarted(entity);
     }
 
     @Inject(method = "renderMultipass(Lnet/minecraft/entity/Entity;F)V", at = @At("RETURN"), require = 0)
     private void focalis$multipassReturned(Entity entity, float partialTicks, CallbackInfo ci) {
-        RenderHooks.rendererReturned(RenderCheckpoint.ENTITY_RENDERED);
+        RenderHooks.entityReturned();
     }
 }

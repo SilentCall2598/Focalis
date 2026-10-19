@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.mixin;
 
-import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpoint;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderHooks;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.tileentity.TileEntity;
@@ -12,19 +11,29 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 // Reports each block entity renderer starting and returning. Every other render method here ends up in this one,
-// which hands the block entity to its renderer.
+// which hands the block entity to its renderer. Fast renderers only fill Forge's batch there, which drawBatch draws.
 @Mixin(TileEntityRendererDispatcher.class)
 public abstract class TileEntityRendererDispatcherMixin {
 
     @Inject(method = "render(Lnet/minecraft/tileentity/TileEntity;DDDFIF)V", at = @At("HEAD"), require = 0)
     private void focalis$blockEntityStarted(TileEntity tileEntity, double x, double y, double z, float partialTicks,
             int destroyStage, float alpha, CallbackInfo ci) {
-        RenderHooks.rendererStarted();
+        RenderHooks.blockEntityStarted(tileEntity);
     }
 
     @Inject(method = "render(Lnet/minecraft/tileentity/TileEntity;DDDFIF)V", at = @At("RETURN"), require = 0)
     private void focalis$blockEntityReturned(TileEntity tileEntity, double x, double y, double z, float partialTicks,
             int destroyStage, float alpha, CallbackInfo ci) {
-        RenderHooks.rendererReturned(RenderCheckpoint.BLOCK_ENTITY_RENDERED);
+        RenderHooks.blockEntityReturned();
+    }
+
+    @Inject(method = "drawBatch(I)V", at = @At("HEAD"), require = 0, remap = false)
+    private void focalis$batchStarted(int pass, CallbackInfo ci) {
+        RenderHooks.blockEntityBatchStarted();
+    }
+
+    @Inject(method = "drawBatch(I)V", at = @At("RETURN"), require = 0, remap = false)
+    private void focalis$batchEnded(int pass, CallbackInfo ci) {
+        RenderHooks.blockEntityBatchEnded();
     }
 }

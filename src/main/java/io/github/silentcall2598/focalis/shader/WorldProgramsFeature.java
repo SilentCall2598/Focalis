@@ -9,6 +9,7 @@ import io.github.silentcall2598.focalis.feature.Feature;
 import io.github.silentcall2598.focalis.feature.FeatureContext;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpoint;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderObjectListener;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
@@ -54,8 +55,10 @@ import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.renderer.ActiveRenderInfo;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.entity.Entity;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.LoaderState;
@@ -204,6 +207,65 @@ public final class WorldProgramsFeature extends Feature {
             context.addRenderListener(stage, this::onVanillaPrograms);
         }
         context.addCheckpointListener(this::onRendererReturned);
+        context.addObjectListener(new ObjectContext());
+    }
+
+    // Each entity and block entity renderer gets its role's program and its material ID. The IDs are looked up per
+    // object since entities change and block entities move with pistons. Lookups are maps and one block state read.
+    private final class ObjectContext implements RenderObjectListener {
+
+        @Override
+        public void entityStarted(Entity entity) {
+            LiveWorldPrograms current = live;
+            if (current == null) {
+                return;
+            }
+            MaterialIds ids = materialIds;
+            int id = ids == null ? MaterialIds.UNMAPPED : ids.entity(entity);
+            current.objectStart(RenderDrawKind.ENTITY, id);
+            monitor.objectStarted(RenderDrawKind.ENTITY, entity, id);
+        }
+
+        @Override
+        public void blockEntityStarted(@Nullable TileEntity blockEntity) {
+            LiveWorldPrograms current = live;
+            if (current == null) {
+                return;
+            }
+            int id = blockEntityId(materialIds, blockEntity);
+            current.objectStart(RenderDrawKind.BLOCK_ENTITY, id);
+            monitor.objectStarted(RenderDrawKind.BLOCK_ENTITY, blockEntity, id);
+        }
+
+        @Override
+        public void objectEnded() {
+            LiveWorldPrograms current = live;
+            if (current != null) {
+                current.objectEnd();
+                monitor.objectEnded();
+            }
+        }
+
+        @Override
+        public void objectColor(float red, float green, float blue, float alpha) {
+            LiveWorldPrograms current = live;
+            if (current != null) {
+                current.objectColor(red, green, blue, alpha);
+            }
+        }
+    }
+
+    // A block entity's ID is the one block.properties gives the block state stored at its position. Without a world,
+    // like the ones items draw with, there is no state to look up.
+    static int blockEntityId(@Nullable MaterialIds ids, @Nullable TileEntity blockEntity) {
+        if (ids == null || blockEntity == null) {
+            return MaterialIds.UNMAPPED;
+        }
+        World world = blockEntity.getWorld();
+        if (world == null) {
+            return MaterialIds.UNMAPPED;
+        }
+        return ids.block(world.getBlockState(blockEntity.getPos()));
     }
 
     // Settings that don't fit the pack are skipped and logged, so a typo never turns the programs off.

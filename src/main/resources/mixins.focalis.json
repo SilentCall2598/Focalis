@@ -25,6 +25,7 @@
     "RenderGlobalSkyMixin",
     "RenderGlobalStreamMixin",
     "RenderListStreamMixin",
+    "RenderLivingBaseColorMixin",
     "RenderManagerMixin",
     "TileEntityRendererDispatcherMixin",
     "VboRenderListStreamMixin",

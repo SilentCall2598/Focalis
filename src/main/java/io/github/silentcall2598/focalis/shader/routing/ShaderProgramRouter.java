@@ -48,8 +48,11 @@ public final class ShaderProgramRouter {
                 return only(kind, RenderDrawKind.TERRAIN_TRANSLUCENT, ShaderProgramRole.TERRAIN_TRANSLUCENT);
             case ENTITIES:
                 // The Forge pass is about draw order, not a different kind of program.
-                return kind == RenderDrawKind.ENTITY_PASS_0 || kind == RenderDrawKind.ENTITY_PASS_1
-                        ? ShaderProgramRole.ENTITIES : ShaderProgramRole.UNCLASSIFIED;
+                if (kind == RenderDrawKind.ENTITY_PASS_0 || kind == RenderDrawKind.ENTITY_PASS_1
+                        || kind == RenderDrawKind.ENTITY) {
+                    return ShaderProgramRole.ENTITIES;
+                }
+                return only(kind, RenderDrawKind.BLOCK_ENTITY, ShaderProgramRole.BLOCK_ENTITIES);
             case PARTICLES:
                 if (kind == RenderDrawKind.PARTICLES_LIT) {
                     return ShaderProgramRole.PARTICLES_LIT;

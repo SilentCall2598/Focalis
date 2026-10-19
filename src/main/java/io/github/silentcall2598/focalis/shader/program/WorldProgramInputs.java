@@ -16,8 +16,9 @@ import java.util.List;
  * linked again, so the samplers are set once right after linking. The frame uniforms and the world values are set the
  * first time the program is bound in a frame, and the camera uniforms and the values in eye space the first time it's
  * bound with a new camera snapshot. The fog is draw state, so it's set every time a stage binds the program. Custom
- * uniforms are set the first time the program is bound after the session's values were computed again. Every
- * location is looked up once, right after linking.
+ * uniforms are set the first time the program is bound after the session's values were computed again. The object
+ * values entityId, blockEntityId and entityColor change with the entity or block entity being drawn and are only sent
+ * when they differ from what the program holds. Every location is looked up once, right after linking.
  */
 public final class WorldProgramInputs {
 
@@ -43,7 +44,22 @@ public final class WorldProgramInputs {
     private static final CameraUniform[] CAMERA_UNIFORMS = CameraUniform.values();
     private static final EnvironmentUniform[] ENVIRONMENT_UNIFORMS = EnvironmentUniform.values();
 
+    private static final String ENTITY_ID = "entityId";
+    private static final String BLOCK_ENTITY_ID = "blockEntityId";
+    private static final String ENTITY_COLOR = "entityColor";
+
     private final ShaderGl gl;
+    private final int entityIdLocation;
+    private final int blockEntityIdLocation;
+    private final int entityColorLocation;
+    // The object values this program holds, so an unchanged value isn't sent again. Nothing is known before the first.
+    private boolean objectSet;
+    private int setEntityId;
+    private int setBlockEntityId;
+    private float setRed;
+    private float setGreen;
+    private float setBlue;
+    private float setAlpha;
     private final int[] locations;
     private final int[] frameLocations;
     private final int[] cameraLocations;
@@ -77,9 +93,12 @@ public final class WorldProgramInputs {
     private long fogUpdates;
 
     private WorldProgramInputs(ShaderGl gl, int[] locations, int[] frameLocations, int[] cameraLocations,
-            int[] environmentLocations, int[] customLocations, int[] customSlots, boolean[] customBools,
-            List<String> unprovided, int[] textureUnits, int[] textures) {
+            int[] environmentLocations, int[] objectLocations, int[] customLocations, int[] customSlots,
+            boolean[] customBools, List<String> unprovided, int[] textureUnits, int[] textures) {
         this.gl = gl;
+        this.entityIdLocation = objectLocations[0];
+        this.blockEntityIdLocation = objectLocations[1];
+        this.entityColorLocation = objectLocations[2];
         this.textureUnits = textureUnits;
         this.textures = textures;
         this.locations = locations;
@@ -155,6 +174,7 @@ public final class WorldProgramInputs {
         Arrays.fill(cameraLocations, -1);
         int[] environmentLocations = new int[ENVIRONMENT_UNIFORMS.length];
         Arrays.fill(environmentLocations, -1);
+        int[] objectLocations = {-1, -1, -1};
         List<String> unprovided = new ArrayList<>();
         List<CustomUniforms.Declaration> custom = new ArrayList<>();
         List<Integer> customLocations = new ArrayList<>();
@@ -192,6 +212,16 @@ public final class WorldProgramInputs {
             if (environment != null) {
                 check(program, uniform, name, array, environment.type().glType, environment.type().description);
                 environmentLocations[environment.ordinal()] = gl.uniformLocation(id, name);
+                continue;
+            }
+            if (name.equals(ENTITY_ID) || name.equals(BLOCK_ENTITY_ID)) {
+                check(program, uniform, name, array, GL_INT, "an int");
+                objectLocations[name.equals(ENTITY_ID) ? 0 : 1] = gl.uniformLocation(id, name);
+                continue;
+            }
+            if (name.equals(ENTITY_COLOR)) {
+                check(program, uniform, name, array, GL_FLOAT_VEC4, "a vec4");
+                objectLocations[2] = gl.uniformLocation(id, name);
                 continue;
             }
             int unit = PackTextures.gbuffersUnit(name);
@@ -247,8 +277,8 @@ public final class WorldProgramInputs {
             customBools[i] = custom.get(i).bool();
         }
         return new WorldProgramInputs(gl, locations, frameLocations, cameraLocations, environmentLocations,
-                customLocationArray, customSlots, customBools, Collections.unmodifiableList(unprovided), textureUnits,
-                textures);
+                objectLocations, customLocationArray, customSlots, customBools, Collections.unmodifiableList(unprovided),
+                textureUnits, textures);
     }
 
     private static void check(ShaderProgram program, ActiveUniform uniform, String name, boolean array, int type,
@@ -366,6 +396,43 @@ public final class WorldProgramInputs {
                 customUpdates++;
             }
         }
+    }
+
+    /**
+     * Sets the values of the object being drawn, or the defaults outside any object, on this program, which has to be
+     * current. Only values that differ from what the program already holds are sent.
+     */
+    void object(int entityId, int blockEntityId, float red, float green, float blue, float alpha) {
+        boolean known = objectSet;
+        if (entityIdLocation >= 0 && (!known || setEntityId != entityId)) {
+            gl.uniform1i(entityIdLocation, entityId);
+        }
+        if (blockEntityIdLocation >= 0 && (!known || setBlockEntityId != blockEntityId)) {
+            gl.uniform1i(blockEntityIdLocation, blockEntityId);
+        }
+        if (entityColorLocation >= 0 && (!known || setRed != red || setGreen != green || setBlue != blue
+                || setAlpha != alpha)) {
+            gl.uniform4f(entityColorLocation, red, green, blue, alpha);
+        }
+        // Only marked once every value is in, so a failed call is never taken for a value the program holds.
+        setEntityId = entityId;
+        setBlockEntityId = blockEntityId;
+        setRed = red;
+        setGreen = green;
+        setBlue = blue;
+        setAlpha = alpha;
+        objectSet = true;
+    }
+
+    /** Whether {@link #object} with these values would send anything. */
+    boolean objectDiffers(int entityId, int blockEntityId, float red, float green, float blue, float alpha) {
+        if (!objectSet) {
+            return entityIdLocation >= 0 || blockEntityIdLocation >= 0 || entityColorLocation >= 0;
+        }
+        return entityIdLocation >= 0 && setEntityId != entityId
+                || blockEntityIdLocation >= 0 && setBlockEntityId != blockEntityId
+                || entityColorLocation >= 0 && (setRed != red || setGreen != green || setBlue != blue
+                        || setAlpha != alpha);
     }
 
     private void setEnvironment(EnvironmentUniform.Update update, EnvironmentInputs environment, FogSource fog) {
@@ -644,6 +711,20 @@ public final class WorldProgramInputs {
     }
 
     /** The uniform location of an environment uniform in this program, or -1 when the program doesn't use it. */
+    /** The location of entityId, blockEntityId or entityColor, -1 when the program doesn't use it. */
+    public int objectLocation(String name) {
+        switch (name) {
+            case ENTITY_ID:
+                return entityIdLocation;
+            case BLOCK_ENTITY_ID:
+                return blockEntityIdLocation;
+            case ENTITY_COLOR:
+                return entityColorLocation;
+            default:
+                return -1;
+        }
+    }
+
     public int location(EnvironmentUniform uniform) {
         return environmentLocations[uniform.ordinal()];
     }

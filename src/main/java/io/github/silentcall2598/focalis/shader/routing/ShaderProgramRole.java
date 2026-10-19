@@ -22,8 +22,10 @@ public enum ShaderProgramRole {
     TERRAIN_CUTOUT_MIPPED,
     TERRAIN_CUTOUT,
     TERRAIN_TRANSLUCENT,
-    /** Both Forge entity render passes. */
+    /** Both Forge entity render passes, and each entity drawn in them. */
     ENTITIES,
+    /** Each block entity drawn inside the entity render passes, and the batch of fast block entity renderers. */
+    BLOCK_ENTITIES,
     PARTICLES_LIT,
     PARTICLES_NORMAL,
     WEATHER,

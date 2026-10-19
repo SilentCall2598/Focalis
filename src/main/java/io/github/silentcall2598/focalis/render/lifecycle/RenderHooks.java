@@ -3,6 +3,8 @@
 package io.github.silentcall2598.focalis.render.lifecycle;
 
 import io.github.silentcall2598.focalis.core.FocalisLog;
+import net.minecraft.entity.Entity;
+import net.minecraft.tileentity.TileEntity;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
@@ -106,6 +108,66 @@ public final class RenderHooks {
         RenderLifecycle target = lifecycle;
         if (target != null && RENDERERS.returned()) {
             target.dispatchCheckpoint(checkpoint);
+        }
+    }
+
+    // Like rendererStarted and rendererReturned, and the object listeners hear about the entity or block entity too.
+    // The object end comes before the checkpoint, so the checkpoint sees the state the object left.
+    public static void entityStarted(Entity entity) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            RENDERERS.entered();
+            target.dispatchObject(RenderLifecycle.ENTITY_STARTED, entity, null, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    public static void entityReturned() {
+        objectReturned(RenderCheckpoint.ENTITY_RENDERED);
+    }
+
+    public static void blockEntityStarted(TileEntity blockEntity) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            RENDERERS.entered();
+            target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, blockEntity, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    public static void blockEntityReturned() {
+        objectReturned(RenderCheckpoint.BLOCK_ENTITY_RENDERED);
+    }
+
+    private static void objectReturned(RenderCheckpoint checkpoint) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, 0f, 0f, 0f, 0f);
+            if (RENDERERS.returned()) {
+                target.dispatchCheckpoint(checkpoint);
+            }
+        }
+    }
+
+    // Forge's fast block entity renderers only fill a batch, which vanilla code draws afterwards. It's no renderer of
+    // a mod, so it doesn't count for nesting and has no checkpoint.
+    public static void blockEntityBatchStarted() {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, null, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    public static void blockEntityBatchEnded() {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    // The constant color a living entity renderer just set up for blending, or all zero when it stopped.
+    public static void entityColor(float red, float green, float blue, float alpha) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.OBJECT_COLOR, null, null, red, green, blue, alpha);
         }
     }
 
