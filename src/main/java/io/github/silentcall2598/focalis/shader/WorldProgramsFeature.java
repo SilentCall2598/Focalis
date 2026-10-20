@@ -88,9 +88,10 @@ import java.util.function.Supplier;
  * configuration, and a program's alpha test and blend directives apply while a stage binds it. The block, item and
  * entity mappings are resolved at the first world pass. Chunk terrain gets block IDs, normals, texture midpoints and
  * tangents from Focalis's attribute stream while a terrain program reads them, and such a program only draws chunks
- * the stream feeds. Programs of other stages that read those attributes aren't bound, and item and entity IDs don't
- * reach any program yet. Nothing else a shaderpack expects is set up, so regular packs won't look right. Problems
- * with the pack or its programs leave rendering vanilla. Only a Focalis bug fails the feature.
+ * the stream feeds. Programs of other stages that read those attributes aren't bound. Entities and block entities
+ * drawn in the entity pass get their own programs and their IDs as uniforms, and item IDs don't reach any program
+ * yet. Nothing else a shaderpack expects is set up, so regular packs won't look right. Problems with the pack or its
+ * programs leave rendering vanilla. Only a Focalis bug fails the feature.
  */
 public final class WorldProgramsFeature extends Feature {
 
@@ -255,8 +256,9 @@ public final class WorldProgramsFeature extends Feature {
         }
     }
 
-    // A block entity's ID is the one block.properties gives the block state stored at its position. Without a world,
-    // like the ones items draw with, there is no state to look up.
+    // A block entity's ID is the one block.properties gives the block state stored at its position, and there is none
+    // without a world, like the ones items draw with. Chunk terrain maps the actual state, so a line naming a property
+    // only getActualState sets, like a bed foot's occupied, doesn't match the block entity.
     static int blockEntityId(@Nullable MaterialIds ids, @Nullable TileEntity blockEntity) {
         if (ids == null || blockEntity == null) {
             return MaterialIds.UNMAPPED;
@@ -439,7 +441,8 @@ public final class WorldProgramsFeature extends Feature {
             return;
         }
         logger.info("Shaderpack '{}' maps {} block states of {} blocks, {} items and {} entity types to material IDs,"
-                + " resolved in {} ms. Only chunk terrain receives block IDs so far.", packName,
+                + " resolved in {} ms. Chunk terrain receives block IDs, entities and block entities in the entity"
+                + " pass receive theirs as uniforms, and item IDs aren't used yet.", packName,
                 report.mapped(MaterialMappings.Kind.BLOCK), report.blocks(), report.mapped(MaterialMappings.Kind.ITEM),
                 report.mapped(MaterialMappings.Kind.ENTITY),
                 String.format(Locale.ROOT, "%.1f", report.nanos() / 1_000_000.0));

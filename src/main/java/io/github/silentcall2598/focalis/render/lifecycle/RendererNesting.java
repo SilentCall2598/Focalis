@@ -20,7 +20,7 @@ final class RendererNesting {
         return depth == 0;
     }
 
-    // A renderer that threw never returns, so its count is dropped at the next world pass.
+    // Renderers also return when they throw, so this only drops a count whose return never came, like after a VM error.
     void reset() {
         depth = 0;
     }

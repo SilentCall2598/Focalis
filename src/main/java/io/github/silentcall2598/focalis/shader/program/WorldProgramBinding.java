@@ -105,7 +105,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             throw new IllegalStateException("World programs can't be switched while a program scope is open or"
                     + " suspended");
         }
-        // Objects drawn outside any scope, like in a screen, whose renderer threw and never returned.
+        // Objects drawn outside any scope, like in a screen, whose end never came.
         objectDepth = 0;
         programs = selected;
     }
@@ -228,7 +228,7 @@ public final class WorldProgramBinding implements DrawSuspension {
 
     /**
      * Closes the program scope of a stage. Its state goes back first, then its program. An entity pass still holding
-     * objects whose renderers never returned closes them first, innermost first.
+     * objects whose end never came closes them first, innermost first.
      */
     public void end(RenderStage stage, RenderDrawKind drawKind) {
         reasserted = false;
@@ -620,8 +620,8 @@ public final class WorldProgramBinding implements DrawSuspension {
         return null;
     }
 
-    // Objects whose renderers never returned, like one that threw and was caught by its caller. Their scopes close
-    // innermost first.
+    // Objects whose end never came. Renderers also end when they throw, so this is only a safety net, like after a VM
+    // error. Their scopes close innermost first.
     private void dropObjects() {
         while (objectDepth > 0) {
             int top = --objectDepth;

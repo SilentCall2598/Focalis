@@ -112,25 +112,30 @@ public final class RenderHooks {
     }
 
     // Like rendererStarted and rendererReturned, and the object listeners hear about the entity or block entity too.
-    // The object end comes before the checkpoint, so the checkpoint sees the state the object left.
-    public static void entityStarted(Entity entity) {
+    // The object end comes before the checkpoint, so the checkpoint sees the state the object left. A start returns
+    // whether it counted, and the Mixins send the end for exactly those, also when the renderer throws.
+    public static boolean entityStarted(Entity entity) {
         RenderLifecycle target = lifecycle;
-        if (target != null) {
-            RENDERERS.entered();
-            target.dispatchObject(RenderLifecycle.ENTITY_STARTED, entity, null, 0f, 0f, 0f, 0f);
+        if (target == null) {
+            return false;
         }
+        RENDERERS.entered();
+        target.dispatchObject(RenderLifecycle.ENTITY_STARTED, entity, null, 0f, 0f, 0f, 0f);
+        return true;
     }
 
     public static void entityReturned() {
         objectReturned(RenderCheckpoint.ENTITY_RENDERED);
     }
 
-    public static void blockEntityStarted(TileEntity blockEntity) {
+    public static boolean blockEntityStarted(TileEntity blockEntity) {
         RenderLifecycle target = lifecycle;
-        if (target != null) {
-            RENDERERS.entered();
-            target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, blockEntity, 0f, 0f, 0f, 0f);
+        if (target == null) {
+            return false;
         }
+        RENDERERS.entered();
+        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, blockEntity, 0f, 0f, 0f, 0f);
+        return true;
     }
 
     public static void blockEntityReturned() {
@@ -149,11 +154,13 @@ public final class RenderHooks {
 
     // Forge's fast block entity renderers only fill a batch, which vanilla code draws afterwards. It's no renderer of
     // a mod, so it doesn't count for nesting and has no checkpoint.
-    public static void blockEntityBatchStarted() {
+    public static boolean blockEntityBatchStarted() {
         RenderLifecycle target = lifecycle;
-        if (target != null) {
-            target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, null, 0f, 0f, 0f, 0f);
+        if (target == null) {
+            return false;
         }
+        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, null, 0f, 0f, 0f, 0f);
+        return true;
     }
 
     public static void blockEntityBatchEnded() {
