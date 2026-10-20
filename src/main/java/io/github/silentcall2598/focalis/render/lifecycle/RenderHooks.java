@@ -27,6 +27,8 @@ public final class RenderHooks {
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
     private static final RendererNesting RENDERERS = new RendererNesting();
+    // renderEntity bodies whose object started and hasn't ended yet. Client thread only, like RENDERERS.
+    private static int entityBodies;
 
     @Nullable
     private static volatile RenderLifecycle lifecycle;
@@ -64,6 +66,7 @@ public final class RenderHooks {
             reportFirstPass();
         }
         RENDERERS.reset();
+        entityBodies = 0;
         target.dispatch(RenderStage.WORLD, RenderPhase.START, partialTicks);
     }
 
@@ -126,6 +129,22 @@ public final class RenderHooks {
 
     public static void entityReturned() {
         objectReturned(RenderCheckpoint.ENTITY_RENDERED);
+    }
+
+    // renderEntity's injections, which have no local for what the start returned. Their start and their ends sit at
+    // different places in vanilla's code, so an end whose start another mod's change kept from applying finds nothing
+    // open here and does nothing.
+    public static void entityBodyStarted(Entity entity) {
+        if (entityStarted(entity)) {
+            entityBodies++;
+        }
+    }
+
+    public static void entityBodyEnded() {
+        if (entityBodies > 0) {
+            entityBodies--;
+            entityReturned();
+        }
     }
 
     public static boolean blockEntityStarted(TileEntity blockEntity) {
