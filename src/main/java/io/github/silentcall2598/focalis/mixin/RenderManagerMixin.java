@@ -37,8 +37,9 @@ public abstract class RenderManagerMixin {
     @Inject(method = RENDER_ENTITY, at = @At("RETURN"),
             slice = @Slice(from = @At(value = "INVOKE", target = RENDERER_LOOKUP, ordinal = 0)), require = 0,
             expect = 1)
-    private void focalis$entityReturned(CallbackInfo ci) {
-        RenderHooks.entityBodyEnded();
+    private void focalis$entityReturned(Entity entity, double x, double y, double z, float yaw, float partialTicks,
+            boolean debug, CallbackInfo ci) {
+        RenderHooks.entityBodyEnded(entity);
     }
 
     // The outer catch starts by making its crash report, which runs mods' crash callables, so the end comes first.
@@ -46,8 +47,9 @@ public abstract class RenderManagerMixin {
     @Inject(method = RENDER_ENTITY, at = @At(value = "CONSTANT", args = "stringValue=Rendering entity in world",
             ordinal = 0), slice = @Slice(from = @At(value = "CONSTANT",
             args = "stringValue=Rendering entity hitbox in world")), require = 0, expect = 1)
-    private void focalis$entityFailed(CallbackInfo ci) {
-        RenderHooks.entityBodyEnded();
+    private void focalis$entityFailed(Entity entity, double x, double y, double z, float yaw, float partialTicks,
+            boolean debug, CallbackInfo ci) {
+        RenderHooks.entityBodyEnded(entity);
     }
 
     @WrapMethod(method = "renderMultipass(Lnet/minecraft/entity/Entity;F)V", require = 0, expect = 1)

@@ -7,6 +7,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.tileentity.TileEntity;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -27,8 +28,10 @@ public final class RenderHooks {
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
     private static final RendererNesting RENDERERS = new RendererNesting();
-    // renderEntity bodies whose object started and hasn't ended yet. Client thread only, like RENDERERS.
-    private static int entityBodies;
+    // The entities of renderEntity bodies whose object started and hasn't ended yet, innermost last. Client thread
+    // only, like RENDERERS. It only grows when entities nest deeper than ever before.
+    private static Entity[] entityBodies = new Entity[8];
+    private static int entityBodyCount;
 
     @Nullable
     private static volatile RenderLifecycle lifecycle;
@@ -66,7 +69,8 @@ public final class RenderHooks {
             reportFirstPass();
         }
         RENDERERS.reset();
-        entityBodies = 0;
+        Arrays.fill(entityBodies, 0, entityBodyCount, null);
+        entityBodyCount = 0;
         target.dispatch(RenderStage.WORLD, RenderPhase.START, partialTicks);
     }
 
@@ -131,20 +135,29 @@ public final class RenderHooks {
         objectReturned(RenderCheckpoint.ENTITY_RENDERED);
     }
 
-    // renderEntity's injections, which have no local for what the start returned. Their start and their ends sit at
-    // different places in vanilla's code, so an end whose start another mod's change kept from applying finds nothing
-    // open here and does nothing.
+    // renderEntity's injections, which have no local for what the start returned. An end only closes the innermost
+    // open body, and only if that body is its own entity's, so an end whose start never ran closes nothing it doesn't
+    // own. That happens when another mod's change keeps the start injection from applying, or when a VM error hits
+    // the start handler before it ran. The body is recorded before the start dispatches, so its end still balances the
+    // renderer nesting if a VM error interrupts the listeners, and what they had done by then is left to the world pass
+    // safety nets like any VM error. Only the same entity rendered inside its own body can't be told apart.
     public static void entityBodyStarted(Entity entity) {
-        if (entityStarted(entity)) {
-            entityBodies++;
+        if (lifecycle == null) {
+            return;
         }
+        if (entityBodyCount == entityBodies.length) {
+            entityBodies = Arrays.copyOf(entityBodies, entityBodyCount * 2);
+        }
+        entityBodies[entityBodyCount++] = entity;
+        entityStarted(entity);
     }
 
-    public static void entityBodyEnded() {
-        if (entityBodies > 0) {
-            entityBodies--;
-            entityReturned();
+    public static void entityBodyEnded(Entity entity) {
+        if (entityBodyCount == 0 || entityBodies[entityBodyCount - 1] != entity) {
+            return;
         }
+        entityBodies[--entityBodyCount] = null;
+        entityReturned();
     }
 
     public static boolean blockEntityStarted(TileEntity blockEntity) {
