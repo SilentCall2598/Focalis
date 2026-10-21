@@ -3,7 +3,10 @@
 package io.github.silentcall2598.focalis.render.lifecycle;
 
 import io.github.silentcall2598.focalis.core.FocalisLog;
+import net.minecraft.entity.Entity;
+import net.minecraft.tileentity.TileEntity;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -27,11 +30,13 @@ public final class RenderLifecycle {
 
     private static final Registration[] NONE = new Registration[0];
     private static final CheckpointRegistration[] NO_CHECKPOINTS = new CheckpointRegistration[0];
+    private static final ObjectRegistration[] NO_OBJECTS = new ObjectRegistration[0];
 
     // One array per stage, indexed by ordinal. Changes replace the arrays, so a dispatch walks its own snapshot
     // without allocating.
     private volatile Registration[][] listeners;
     private volatile CheckpointRegistration[] checkpointListeners = NO_CHECKPOINTS;
+    private volatile ObjectRegistration[] objectListeners = NO_OBJECTS;
     private final Set<RenderStage> dispatchedStages = EnumSet.noneOf(RenderStage.class);
     private volatile FailureHandler failureHandler = (owner, during, error) -> {
     };
@@ -81,6 +86,16 @@ public final class RenderLifecycle {
         checkpointListeners = grown;
     }
 
+    /** Every object listener gets every object in registration order. */
+    public synchronized void registerObject(String owner, RenderObjectListener listener) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(listener, "listener");
+        ObjectRegistration[] current = objectListeners;
+        ObjectRegistration[] grown = Arrays.copyOf(current, current.length + 1);
+        grown[current.length] = new ObjectRegistration(owner, listener);
+        objectListeners = grown;
+    }
+
     public synchronized void removeOwner(String owner) {
         Registration[][] updated = listeners.clone();
         for (int i = 0; i < updated.length; i++) {
@@ -104,6 +119,65 @@ public final class RenderLifecycle {
             }
         }
         checkpointListeners = keptCheckpoints.toArray(NO_CHECKPOINTS);
+        List<ObjectRegistration> keptObjects = new ArrayList<>();
+        for (ObjectRegistration registration : objectListeners) {
+            if (registration.owner.equals(owner)) {
+                registration.active = false;
+            } else {
+                keptObjects.add(registration);
+            }
+        }
+        objectListeners = keptObjects.toArray(NO_OBJECTS);
+    }
+
+    // Same failure handling as a checkpoint. The switch keeps one loop for every kind of object event.
+    void dispatchObject(int event, @Nullable Entity entity, @Nullable TileEntity blockEntity, float red, float green,
+            float blue, float alpha) {
+        for (ObjectRegistration registration : objectListeners) {
+            if (!registration.active) {
+                continue;
+            }
+            try {
+                switch (event) {
+                    case ENTITY_STARTED:
+                        registration.listener.entityStarted(entity);
+                        break;
+                    case BLOCK_ENTITY_STARTED:
+                        registration.listener.blockEntityStarted(blockEntity);
+                        break;
+                    case OBJECT_ENDED:
+                        registration.listener.objectEnded();
+                        break;
+                    default:
+                        registration.listener.objectColor(red, green, blue, alpha);
+                        break;
+                }
+            } catch (Exception | LinkageError e) { // VM errors such as OutOfMemoryError deliberately propagate
+                removeOwner(registration.owner);
+                String during = event == OBJECT_ENDED ? "an entity or block entity end"
+                        : event == OBJECT_COLOR ? "an entity color" : "an entity or block entity start";
+                FocalisLog.LOGGER.error("Render listener of '{}' failed at {}. All of its render listeners have been"
+                        + " removed.", registration.owner, during, e);
+                failureHandler.onListenerFailure(registration.owner, during, e);
+            }
+        }
+    }
+
+    static final int ENTITY_STARTED = 0;
+    static final int BLOCK_ENTITY_STARTED = 1;
+    static final int OBJECT_ENDED = 2;
+    static final int OBJECT_COLOR = 3;
+
+    private static final class ObjectRegistration {
+
+        final String owner;
+        final RenderObjectListener listener;
+        volatile boolean active = true;
+
+        ObjectRegistration(String owner, RenderObjectListener listener) {
+            this.owner = owner;
+            this.listener = listener;
+        }
     }
 
     public void dispatch(RenderStage stage, RenderPhase phase, float partialTicks) {

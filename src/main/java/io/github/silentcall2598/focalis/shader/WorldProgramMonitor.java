@@ -12,6 +12,8 @@ import io.github.silentcall2598.focalis.shader.program.CameraSnapshot;
 import io.github.silentcall2598.focalis.shader.program.EnvironmentInputs;
 import io.github.silentcall2598.focalis.shader.program.ProgramTextures;
 
+import javax.annotation.Nullable;
+
 /**
  * Lets an optional development probe watch the world programs. Every method does nothing by default, and normal play
  * only ever uses {@link #NONE}. Client thread only.
@@ -54,6 +56,18 @@ public interface WorldProgramMonitor {
 
     /** Runs right after a stage's program scope opened, before vanilla draws. */
     default void scopeStarted(RenderStage stage, RenderDrawKind drawKind) {
+    }
+
+    /**
+     * Runs right after an entity ({@link RenderDrawKind#ENTITY}) or block entity ({@link RenderDrawKind#BLOCK_ENTITY})
+     * started and got its program and ID, before its renderer draws. {@code object} is the entity or block entity, or
+     * null for the batch of fast block entity renderers.
+     */
+    default void objectStarted(RenderDrawKind kind, @Nullable Object object, int id) {
+    }
+
+    /** Runs right after an object ended and the one around it, if any, got its program and values back. */
+    default void objectEnded() {
     }
 
     default void stopped(String reason) {

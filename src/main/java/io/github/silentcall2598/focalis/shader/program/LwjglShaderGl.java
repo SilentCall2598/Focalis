@@ -151,6 +151,11 @@ final class LwjglShaderGl implements ShaderGl {
     }
 
     @Override
+    public void uniform4f(int location, float x, float y, float z, float w) {
+        GL20.glUniform4f(location, x, y, z, w);
+    }
+
+    @Override
     public void uniformMatrix4(int location, float[] columns) {
         FloatBuffer buffer = matrix;
         buffer.clear();

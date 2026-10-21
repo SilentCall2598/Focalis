@@ -282,7 +282,30 @@ public final class LiveWorldPrograms {
      * @return whether the program had to be bound again
      */
     public boolean rendererReturned() {
-        return worldOpen && binding.reassert();
+        return worldOpen && binding.rendererReturned();
+    }
+
+    /**
+     * An entity or block entity renderer starts. Inside a bound entity pass the object gets its role's program and its
+     * material ID, see {@link WorldProgramBinding#objectStart}. Every start needs its {@link #objectEnd}.
+     */
+    public void objectStart(RenderDrawKind kind, int id) {
+        if (worldOpen) {
+            binding.objectStart(kind, id);
+        }
+    }
+
+    public void objectEnd() {
+        if (worldOpen) {
+            binding.objectEnd();
+        }
+    }
+
+    /** The color vanilla blends the innermost entity with, (0, 0, 0, 0) for none. */
+    public void objectColor(float red, float green, float blue, float alpha) {
+        if (worldOpen) {
+            binding.objectColor(red, green, blue, alpha);
+        }
     }
 
     // A scope still open here never got its END, or a suspension its resume. Both are closed so no program stays

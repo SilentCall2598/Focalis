@@ -33,6 +33,8 @@ public final class ShaderProgramResolver {
             "gbuffers_textured", "gbuffers_basic");
     private static final List<String> ENTITIES = chain("gbuffers_entities", "gbuffers_textured_lit",
             "gbuffers_textured", "gbuffers_basic");
+    private static final List<String> BLOCK_ENTITIES = chain("gbuffers_block", "gbuffers_terrain",
+            "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic");
     private static final List<String> WEATHER = chain("gbuffers_weather", "gbuffers_textured_lit",
             "gbuffers_textured", "gbuffers_basic");
     private static final List<String> CLOUDS = chain("gbuffers_clouds", "gbuffers_textured", "gbuffers_basic");
@@ -97,6 +99,8 @@ public final class ShaderProgramResolver {
                 return WATER;
             case ENTITIES:
                 return ENTITIES;
+            case BLOCK_ENTITIES:
+                return BLOCK_ENTITIES;
             case PARTICLES_LIT:
                 return TEXTURED_LIT;
             case PARTICLES_NORMAL:

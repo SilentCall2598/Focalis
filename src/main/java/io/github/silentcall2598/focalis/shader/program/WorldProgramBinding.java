@@ -59,6 +59,26 @@ public final class WorldProgramBinding implements DrawSuspension {
     private TerrainStreamGate streams = TerrainStreamGate.CLOSED;
     // Per open scope, innermost last like the program scopes, whether it told the stream gate it needs the stream.
     private boolean[] streamScopes = new boolean[8];
+    // Per open scope, the build it bound, or null for one that bound nothing.
+    private BuiltWorldPrograms.Build[] scopeBuilds = new BuiltWorldPrograms.Build[8];
+
+    // The entities and block entities being drawn, innermost last. Arrays so an object allocates nothing.
+    private static final byte PASSIVE = 0;
+    private static final byte CONTEXT = 1;
+    private static final byte SCOPED = 2;
+    private byte[] objectModes = new byte[8];
+    // For an object with its own scope, whether the scopes' program was known to be current when it opened.
+    private boolean[] objectOwnedAtStart = new boolean[8];
+    private RenderDrawKind[] objectKinds = new RenderDrawKind[8];
+    private int[] objectEntityIds = new int[8];
+    private int[] objectBlockEntityIds = new int[8];
+    private float[] objectColors = new float[32];
+    private int objectDepth;
+    // Set when an object's end just bound the scopes' program again, so the renderer checkpoint right after can skip it.
+    private boolean reasserted;
+    // Whether the program the scopes own is known to be current, so object values can go on it without asking GL.
+    // Cleared whenever code Focalis doesn't control may run or a scope closes.
+    private boolean ownedCurrent;
 
     WorldProgramBinding(ScopedProgramBinding scopes, FrameInputs frame, CameraInputs camera,
             EnvironmentInputs environment, FogSource fog) {
@@ -85,6 +105,8 @@ public final class WorldProgramBinding implements DrawSuspension {
             throw new IllegalStateException("World programs can't be switched while a program scope is open or"
                     + " suspended");
         }
+        // Objects drawn outside any scope, like in a screen, whose end never came.
+        objectDepth = 0;
         programs = selected;
     }
 
@@ -130,28 +152,43 @@ public final class WorldProgramBinding implements DrawSuspension {
             abort();
             throw new IllegalArgumentException("World programs aren't bound for render stage " + stage);
         }
+        reasserted = false;
+        BuiltWorldPrograms.Build build = usableBuild(stage, drawKind);
+        open(stage, drawKind, build);
+        // Nothing drawn by the stage itself is an entity or block entity.
+        if (build != null) {
+            applyObject(build, -1);
+        }
+    }
+
+    // The build a stage binds, or null when it binds nothing.
+    @Nullable
+    private BuiltWorldPrograms.Build usableBuild(RenderStage stage, RenderDrawKind drawKind) {
         ShaderProgramRole role = ShaderProgramRouter.route(stage, drawKind);
         BuiltWorldPrograms.Build build = readyBuild(role);
-        CameraSnapshot snapshot = camera.current();
-        if (build != null && !build.inputs().accepts(snapshot, environment, fog)) {
-            build = null;
+        if (build != null && !build.inputs().accepts(camera.current(), environment, fog)) {
+            return null;
         }
-        boolean stream = false;
         if (build != null) {
             VertexInputs vertex = build.program().vertexInputs();
             if (TERRAIN_ROLES.contains(role)) {
                 // Vanilla chunk data has no normals or IDs, so without the stream the program would read whatever
                 // GL had left. The layer draws vanilla instead.
                 if (vertex.needsStream() && (vertex.problem() != null || !streams.ready(drawKind))) {
-                    build = null;
-                } else {
-                    stream = vertex.needsStream();
+                    return null;
                 }
             } else if (vertex.readsStreamAttributes()) {
                 // Only chunk terrain supplies these. Other draws would feed the program meaningless values.
-                build = null;
+                return null;
             }
         }
+        return build;
+    }
+
+    private void open(RenderStage stage, RenderDrawKind drawKind, @Nullable BuiltWorldPrograms.Build build) {
+        CameraSnapshot snapshot = camera.current();
+        boolean stream = build != null && TERRAIN_ROLES.contains(ShaderProgramRouter.route(stage, drawKind))
+                && build.program().vertexInputs().needsStream();
         ShaderProgram program = build == null ? null : build.program();
         try {
             scopes.start(stage, drawKind, program);
@@ -162,6 +199,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             throw e;
         }
         markStream(stream);
+        scopeBuilds[scopes.depth() - 1] = build;
         try {
             state.start(build == null ? null : build.drawState());
         } catch (RuntimeException | LinkageError e) {
@@ -176,6 +214,7 @@ public final class WorldProgramBinding implements DrawSuspension {
         // bound again later in the frame, like after a renderer or outlines, still hold these values.
         try {
             build.inputs().update(frame, snapshot, environment, fog, customValues);
+            ownedCurrent = true;
             if (stream) {
                 streams.opened(stage, drawKind, this);
             }
@@ -187,9 +226,25 @@ public final class WorldProgramBinding implements DrawSuspension {
         }
     }
 
-    /** Closes the program scope of a stage. Its state goes back first, then its program. */
+    /**
+     * Closes the program scope of a stage. Its state goes back first, then its program. An entity pass still holding
+     * objects whose end never came closes them first, innermost first.
+     */
     public void end(RenderStage stage, RenderDrawKind drawKind) {
+        reasserted = false;
+        if (stage == RenderStage.ENTITIES && objectDepth > 0) {
+            dropObjects();
+        }
+        close(stage, drawKind);
+    }
+
+    // Returns whether the scope bound the program from before it again.
+    private boolean close(RenderStage stage, RenderDrawKind drawKind) {
+        ownedCurrent = false;
         int innermost = scopes.depth() - 1;
+        if (innermost >= 0 && innermost < scopeBuilds.length) {
+            scopeBuilds[innermost] = null;
+        }
         if (innermost >= 0 && innermost < streamScopes.length && streamScopes[innermost]) {
             streamScopes[innermost] = false;
             try {
@@ -209,7 +264,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             throw e;
         }
         try {
-            scopes.end(stage, drawKind);
+            return scopes.end(stage, drawKind);
         } catch (RuntimeException | LinkageError e) {
             abortState(e);
             resetStreams(e);
@@ -261,6 +316,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             resetStreams(e);
             throw e;
         }
+        ownedCurrent = false;
         try {
             scopes.suspend(stage, drawKind);
         } catch (RuntimeException | LinkageError e) {
@@ -279,6 +335,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             resetStreams(e);
             throw e;
         }
+        ownedCurrent = bound;
         try {
             state.resume(bound);
         } catch (RuntimeException | LinkageError e) {
@@ -302,6 +359,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             resetStreams(e);
             throw e;
         }
+        ownedCurrent = scopes.ownsProgram();
         if (bound) {
             try {
                 state.programBoundAgain();
@@ -312,6 +370,20 @@ public final class WorldProgramBinding implements DrawSuspension {
             }
         }
         return bound;
+    }
+
+    /**
+     * Right after the outermost entity or block entity renderer returned. Like {@link #reassert}, unless the object's own
+     * end just did that.
+     *
+     * @return whether the program had to be bound again
+     */
+    public boolean rendererReturned() {
+        if (reasserted) {
+            reasserted = false;
+            return false;
+        }
+        return reassert();
     }
 
     private void checkVanillaStage(RenderStage stage) {
@@ -353,7 +425,210 @@ public final class WorldProgramBinding implements DrawSuspension {
         if (index >= streamScopes.length) {
             streamScopes = Arrays.copyOf(streamScopes, Math.max(index + 1, streamScopes.length * 2));
         }
+        if (index >= scopeBuilds.length) {
+            scopeBuilds = Arrays.copyOf(scopeBuilds, Math.max(index + 1, scopeBuilds.length * 2));
+        }
         streamScopes[index] = stream;
+    }
+
+    /**
+     * An entity ({@link RenderDrawKind#ENTITY}) or block entity ({@link RenderDrawKind#BLOCK_ENTITY}) starts drawing,
+     * with its material ID, -1 when it has none. Inside a bound entity pass it gets the program of its role, unless that
+     * is already the one current, and its ID goes on the program, with -1 for the other kind of ID and no color. Outside
+     * one, while the scopes stepped aside, or while a renderer around it has its own program bound, nothing changes.
+     * Every start needs its {@link #objectEnd}, also the ones that changed nothing.
+     */
+    public void objectStart(RenderDrawKind kind, int id) {
+        if (kind != RenderDrawKind.ENTITY && kind != RenderDrawKind.BLOCK_ENTITY) {
+            abort();
+            throw new IllegalArgumentException("Draw kind " + kind + " isn't an entity or block entity");
+        }
+        reasserted = false;
+        int index = pushObject(kind, id);
+        if (scopes.isEmpty() || scopes.isSuspended() || scopes.innermostStage() != RenderStage.ENTITIES) {
+            return;
+        }
+        try {
+            if (activeObjectBelow(index) >= 0 && !ownedCurrent) {
+                // A renderer around this one may have bound its own program for what it draws inside, and keeps it.
+                if (!scopes.expectsCurrent()) {
+                    return;
+                }
+                ownedCurrent = scopes.ownsProgram();
+            }
+            BuiltWorldPrograms.Build owned = ownedBuild();
+            BuiltWorldPrograms.Build build = usableBuild(RenderStage.ENTITIES, kind);
+            if (build == null || build == owned) {
+                objectModes[index] = CONTEXT;
+                if (owned != null) {
+                    applyObjectIfCurrent(owned, index);
+                }
+            } else {
+                objectModes[index] = SCOPED;
+                objectOwnedAtStart[index] = ownedCurrent;
+                open(RenderStage.ENTITIES, kind, build);
+                applyObject(build, index);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            objectDepth = 0;
+            throw e;
+        }
+        // The object's renderer runs next and may bind what it wants.
+        ownedCurrent = false;
+    }
+
+    /**
+     * The innermost entity or block entity is done. Its program, if it bound one, and the values of the object around
+     * it, or the defaults when there is none, come back. A renderer may have left its own program bound, so the
+     * scopes' program is bound again if needed. An end without a start is ignored.
+     */
+    public void objectEnd() {
+        if (objectDepth == 0) {
+            return;
+        }
+        reasserted = false;
+        int top = --objectDepth;
+        byte mode = objectModes[top];
+        if (mode == PASSIVE) {
+            return;
+        }
+        try {
+            // Closing the object's own scope binds what was current at its start, which was the scopes' program when
+            // Focalis knew that, so GL needs no asking then.
+            if (mode == SCOPED && close(RenderStage.ENTITIES, objectKinds[top]) && objectOwnedAtStart[top]) {
+                ownedCurrent = true;
+            } else {
+                reassert();
+            }
+            BuiltWorldPrograms.Build owned = ownedBuild();
+            if (owned != null) {
+                applyObjectIfCurrent(owned, activeObjectBelow(top));
+            }
+            reasserted = true;
+            // An object around this one is still drawing, and its renderer runs on.
+            if (activeObjectBelow(top) >= 0) {
+                ownedCurrent = false;
+            }
+        } catch (RuntimeException | LinkageError e) {
+            objectDepth = 0;
+            throw e;
+        }
+    }
+
+    /**
+     * The color vanilla multiplies the innermost entity with, like red while it's hurt, or (0, 0, 0, 0) for none. It goes
+     * on the program when that is the one current.
+     */
+    public void objectColor(float red, float green, float blue, float alpha) {
+        if (objectDepth == 0) {
+            return;
+        }
+        int top = objectDepth - 1;
+        int at = top * 4;
+        if (objectColors[at] == red && objectColors[at + 1] == green && objectColors[at + 2] == blue
+                && objectColors[at + 3] == alpha) {
+            return;
+        }
+        objectColors[at] = red;
+        objectColors[at + 1] = green;
+        objectColors[at + 2] = blue;
+        objectColors[at + 3] = alpha;
+        if (objectModes[top] == PASSIVE) {
+            return;
+        }
+        BuiltWorldPrograms.Build owned = ownedBuild();
+        // The renderer runs while this is set, and it may have bound its own program.
+        if (owned != null) {
+            applyObjectIfCurrent(owned, top);
+            ownedCurrent = false;
+        }
+    }
+
+    /** How many entities and block entities are being drawn, nested ones included. */
+    public int objectDepth() {
+        return objectDepth;
+    }
+
+    private int pushObject(RenderDrawKind kind, int id) {
+        int index = objectDepth;
+        if (index == objectModes.length) {
+            int grown = index * 2;
+            objectModes = Arrays.copyOf(objectModes, grown);
+            objectOwnedAtStart = Arrays.copyOf(objectOwnedAtStart, grown);
+            objectKinds = Arrays.copyOf(objectKinds, grown);
+            objectEntityIds = Arrays.copyOf(objectEntityIds, grown);
+            objectBlockEntityIds = Arrays.copyOf(objectBlockEntityIds, grown);
+            objectColors = Arrays.copyOf(objectColors, grown * 4);
+        }
+        objectModes[index] = PASSIVE;
+        objectOwnedAtStart[index] = false;
+        objectKinds[index] = kind;
+        objectEntityIds[index] = kind == RenderDrawKind.ENTITY ? id : -1;
+        objectBlockEntityIds[index] = kind == RenderDrawKind.BLOCK_ENTITY ? id : -1;
+        Arrays.fill(objectColors, index * 4, index * 4 + 4, 0f);
+        objectDepth = index + 1;
+        return index;
+    }
+
+    // The innermost object below index that is drawn with a Focalis program, or -1.
+    private int activeObjectBelow(int index) {
+        for (int i = index - 1; i >= 0; i--) {
+            if (objectModes[i] != PASSIVE) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Like applyObject, for a moment where the build's program may not be current. GL is only asked when a value
+    // actually has to change and Focalis doesn't already know its program is current.
+    private void applyObjectIfCurrent(BuiltWorldPrograms.Build build, int index) {
+        WorldProgramInputs inputs = build.inputs();
+        boolean differs = index < 0 ? inputs.objectDiffers(-1, -1, 0f, 0f, 0f, 0f)
+                : inputs.objectDiffers(objectEntityIds[index], objectBlockEntityIds[index], objectColors[index * 4],
+                        objectColors[index * 4 + 1], objectColors[index * 4 + 2], objectColors[index * 4 + 3]);
+        if (!differs) {
+            return;
+        }
+        if (!ownedCurrent && !scopes.ownsCurrent()) {
+            // Something else is bound, so the values wait until the program is bound again.
+            return;
+        }
+        ownedCurrent = true;
+        applyObject(build, index);
+    }
+
+    // The values of the object at index, or the defaults for -1, go on the build, whose program has to be current.
+    private void applyObject(BuiltWorldPrograms.Build build, int index) {
+        if (index < 0) {
+            build.inputs().object(-1, -1, 0f, 0f, 0f, 0f);
+            return;
+        }
+        int at = index * 4;
+        build.inputs().object(objectEntityIds[index], objectBlockEntityIds[index], objectColors[at],
+                objectColors[at + 1], objectColors[at + 2], objectColors[at + 3]);
+    }
+
+    // The build of the innermost scope that bound one, which is the program the scopes want current.
+    @Nullable
+    private BuiltWorldPrograms.Build ownedBuild() {
+        for (int i = scopes.depth() - 1; i >= 0; i--) {
+            if (i < scopeBuilds.length && scopeBuilds[i] != null) {
+                return scopeBuilds[i];
+            }
+        }
+        return null;
+    }
+
+    // Objects whose end never came. Renderers also end when they throw, so this is only a safety net, like after a VM
+    // error. Their scopes close innermost first.
+    private void dropObjects() {
+        while (objectDepth > 0) {
+            int top = --objectDepth;
+            if (objectModes[top] == SCOPED) {
+                close(RenderStage.ENTITIES, objectKinds[top]);
+            }
+        }
     }
 
     public boolean isEmpty() {
@@ -369,6 +644,10 @@ public final class WorldProgramBinding implements DrawSuspension {
      * one throws, and the first failure is rethrown. See {@link ScopedProgramBinding#abort}.
      */
     public void abort() {
+        objectDepth = 0;
+        reasserted = false;
+        ownedCurrent = false;
+        Arrays.fill(scopeBuilds, null);
         Throwable failure = null;
         try {
             state.abort();

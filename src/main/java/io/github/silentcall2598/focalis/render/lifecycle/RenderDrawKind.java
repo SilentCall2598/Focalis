@@ -27,6 +27,10 @@ public enum RenderDrawKind {
     ENTITY_PASS_0,
     /** Forge entity render pass 1, after translucent terrain. */
     ENTITY_PASS_1,
+    /** One entity drawn inside an entity render pass. */
+    ENTITY,
+    /** One block entity drawn inside an entity render pass, or the batch of fast block entity renderers. */
+    BLOCK_ENTITY,
     PARTICLES_LIT,
     PARTICLES_NORMAL
 }

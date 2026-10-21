@@ -3,8 +3,11 @@
 package io.github.silentcall2598.focalis.render.lifecycle;
 
 import io.github.silentcall2598.focalis.core.FocalisLog;
+import net.minecraft.entity.Entity;
+import net.minecraft.tileentity.TileEntity;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -25,6 +28,10 @@ public final class RenderHooks {
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
     private static final RendererNesting RENDERERS = new RendererNesting();
+    // The entities of renderEntity bodies whose object started and hasn't ended yet, innermost last. Client thread
+    // only, like RENDERERS. It only grows when entities nest deeper than ever before.
+    private static Entity[] entityBodies = new Entity[8];
+    private static int entityBodyCount;
 
     @Nullable
     private static volatile RenderLifecycle lifecycle;
@@ -62,6 +69,8 @@ public final class RenderHooks {
             reportFirstPass();
         }
         RENDERERS.reset();
+        Arrays.fill(entityBodies, 0, entityBodyCount, null);
+        entityBodyCount = 0;
         target.dispatch(RenderStage.WORLD, RenderPhase.START, partialTicks);
     }
 
@@ -106,6 +115,98 @@ public final class RenderHooks {
         RenderLifecycle target = lifecycle;
         if (target != null && RENDERERS.returned()) {
             target.dispatchCheckpoint(checkpoint);
+        }
+    }
+
+    // Like rendererStarted and rendererReturned, and the object listeners hear about the entity or block entity too.
+    // The object end comes before the checkpoint, so the checkpoint sees the state the object left. A start returns
+    // whether it counted, and the Mixins send the end for exactly those, also when the renderer throws.
+    public static boolean entityStarted(Entity entity) {
+        RenderLifecycle target = lifecycle;
+        if (target == null) {
+            return false;
+        }
+        RENDERERS.entered();
+        target.dispatchObject(RenderLifecycle.ENTITY_STARTED, entity, null, 0f, 0f, 0f, 0f);
+        return true;
+    }
+
+    public static void entityReturned() {
+        objectReturned(RenderCheckpoint.ENTITY_RENDERED);
+    }
+
+    // renderEntity's injections, which have no local for what the start returned. An end only closes the innermost
+    // open body, and only if that body is its own entity's, so an end whose start never ran closes nothing it doesn't
+    // own. That happens when another mod's change keeps the start injection from applying, or when a VM error hits
+    // the start handler before it ran. The body is recorded before the start dispatches, so its end still balances the
+    // renderer nesting if a VM error interrupts the listeners, and what they had done by then is left to the world pass
+    // safety nets like any VM error. Only the same entity rendered inside its own body can't be told apart.
+    public static void entityBodyStarted(Entity entity) {
+        if (lifecycle == null) {
+            return;
+        }
+        if (entityBodyCount == entityBodies.length) {
+            entityBodies = Arrays.copyOf(entityBodies, entityBodyCount * 2);
+        }
+        entityBodies[entityBodyCount++] = entity;
+        entityStarted(entity);
+    }
+
+    public static void entityBodyEnded(Entity entity) {
+        if (entityBodyCount == 0 || entityBodies[entityBodyCount - 1] != entity) {
+            return;
+        }
+        entityBodies[--entityBodyCount] = null;
+        entityReturned();
+    }
+
+    public static boolean blockEntityStarted(TileEntity blockEntity) {
+        RenderLifecycle target = lifecycle;
+        if (target == null) {
+            return false;
+        }
+        RENDERERS.entered();
+        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, blockEntity, 0f, 0f, 0f, 0f);
+        return true;
+    }
+
+    public static void blockEntityReturned() {
+        objectReturned(RenderCheckpoint.BLOCK_ENTITY_RENDERED);
+    }
+
+    private static void objectReturned(RenderCheckpoint checkpoint) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, 0f, 0f, 0f, 0f);
+            if (RENDERERS.returned()) {
+                target.dispatchCheckpoint(checkpoint);
+            }
+        }
+    }
+
+    // Forge's fast block entity renderers only fill a batch, which vanilla code draws afterwards. It's no renderer of
+    // a mod, so it doesn't count for nesting and has no checkpoint.
+    public static boolean blockEntityBatchStarted() {
+        RenderLifecycle target = lifecycle;
+        if (target == null) {
+            return false;
+        }
+        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, null, 0f, 0f, 0f, 0f);
+        return true;
+    }
+
+    public static void blockEntityBatchEnded() {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    // The constant color a living entity renderer just set up for blending, or all zero when it stopped.
+    public static void entityColor(float red, float green, float blue, float alpha) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.OBJECT_COLOR, null, null, red, green, blue, alpha);
         }
     }
 

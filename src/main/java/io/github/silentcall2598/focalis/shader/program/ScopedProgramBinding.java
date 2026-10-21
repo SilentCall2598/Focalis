@@ -76,8 +76,10 @@ public final class ScopedProgramBinding {
     /**
      * Closes the innermost scope, which has to be the same stage and kind, and restores its previous program. Throws
      * while the scopes are suspended.
+     *
+     * @return whether it bound the program from before the scope again
      */
-    public void end(RenderStage stage, RenderDrawKind drawKind) {
+    public boolean end(RenderStage stage, RenderDrawKind drawKind) {
         try {
             Objects.requireNonNull(stage, "stage");
             Objects.requireNonNull(drawKind, "drawKind");
@@ -95,7 +97,9 @@ public final class ScopedProgramBinding {
             // Nothing to undo when Focalis didn't bind anything, even if something else changed the program since.
             if (changed[top]) {
                 gl.useProgram(previousPrograms[top]);
+                return true;
             }
+            return false;
         } catch (RuntimeException | LinkageError e) {
             unwind(e);
             throw e;
@@ -204,6 +208,55 @@ public final class ScopedProgramBinding {
     /** How many scopes are open, suspended or not. */
     public int depth() {
         return depth;
+    }
+
+    /**
+     * Whether the open scopes own a program, the one {@link #reassert} makes current. Asks nothing of GL. False while
+     * suspended.
+     */
+    public boolean ownsProgram() {
+        return ownedProgram() != NO_PROGRAM;
+    }
+
+    /** The stage of the innermost open scope, or null when none is open. */
+    @Nullable
+    public RenderStage innermostStage() {
+        return depth == 0 ? null : stages[depth - 1];
+    }
+
+    /**
+     * Whether the program the open scopes own is the one current right now, so its uniforms can be set. False while
+     * suspended, when the open scopes own no program, or when something else is bound.
+     */
+    public boolean ownsCurrent() {
+        int owned = ownedProgram();
+        if (owned == NO_PROGRAM) {
+            return false;
+        }
+        try {
+            return gl.currentProgram() == owned;
+        } catch (RuntimeException | LinkageError e) {
+            unwind(e);
+            throw e;
+        }
+    }
+
+    /**
+     * Whether the program current right now is the one the open scopes leave current: their own, or when they own none,
+     * the one that was current when the innermost scope opened. False while suspended or when no scope is open.
+     */
+    public boolean expectsCurrent() {
+        if (depth == 0 || suspendedStage != null) {
+            return false;
+        }
+        int owned = ownedProgram();
+        int expected = owned != NO_PROGRAM ? owned : previousPrograms[depth - 1];
+        try {
+            return gl.currentProgram() == expected;
+        } catch (RuntimeException | LinkageError e) {
+            unwind(e);
+            throw e;
+        }
     }
 
     public boolean isEmpty() {

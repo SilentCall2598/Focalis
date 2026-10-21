@@ -4,6 +4,7 @@ package io.github.silentcall2598.focalis.feature;
 
 import io.github.silentcall2598.focalis.render.lifecycle.RenderCheckpointListener;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderLifecycle;
+import io.github.silentcall2598.focalis.render.lifecycle.RenderObjectListener;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStageListener;
 import org.apache.logging.log4j.Logger;
@@ -41,6 +42,13 @@ public final class FeatureContext {
             throw new IllegalStateException("Feature '" + featureId + "' is no longer active");
         }
         renderLifecycle.registerCheckpoint(featureId, listener);
+    }
+
+    public void addObjectListener(RenderObjectListener listener) {
+        if (closed) {
+            throw new IllegalStateException("Feature '" + featureId + "' is no longer active");
+        }
+        renderLifecycle.registerObject(featureId, listener);
     }
 
     void close() {

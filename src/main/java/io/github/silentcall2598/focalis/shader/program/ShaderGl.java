@@ -75,6 +75,9 @@ interface ShaderGl {
     /** Sets a vec3 uniform of the program that is current right now. */
     void uniform3f(int location, float x, float y, float z);
 
+    /** Sets a vec4 uniform of the program that is current right now. */
+    void uniform4f(int location, float x, float y, float z, float w);
+
     /**
      * Sets a mat4 uniform of the program that is current right now. The 16 values are column by column, the order
      * OpenGL returns matrices in, and are sent without transposing.
