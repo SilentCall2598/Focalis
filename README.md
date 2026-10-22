@@ -1,6 +1,8 @@
 
 <div align="center">
 
+![Focalis banner](assets/Focalis%20banner.png)
+
 # Focalis | A Minecraft 1.12.2 graphics and optimization project
 
 <br>
