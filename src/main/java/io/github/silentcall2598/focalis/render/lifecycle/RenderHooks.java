@@ -22,8 +22,8 @@ public final class RenderHooks {
     /** Stages the Mixins wrap around vanilla calls inside the world pass. Read only. */
     public static final Set<RenderStage> PRECISE_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.CAMERA,
             RenderStage.SKY, RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.ENTITY_OUTLINES,
-            RenderStage.PARTICLES, RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS,
-            RenderStage.HAND));
+            RenderStage.BLOCK_DAMAGE, RenderStage.PARTICLES, RenderStage.TRANSLUCENT, RenderStage.WEATHER,
+            RenderStage.CLOUDS, RenderStage.HAND));
 
     private static final HookAvailability WORLD_START = new HookAvailability();
     private static final FirstPassStages FIRST_PASS = new FirstPassStages();
@@ -127,7 +127,7 @@ public final class RenderHooks {
             return false;
         }
         RENDERERS.entered();
-        target.dispatchObject(RenderLifecycle.ENTITY_STARTED, entity, null, 0f, 0f, 0f, 0f);
+        target.dispatchObject(RenderLifecycle.ENTITY_STARTED, entity, null, RenderDrawKind.DEFAULT, 0f, 0f, 0f, 0f);
         return true;
     }
 
@@ -160,13 +160,15 @@ public final class RenderHooks {
         entityReturned();
     }
 
-    public static boolean blockEntityStarted(TileEntity blockEntity) {
+    // destroyStage is the dispatcher's argument, 0 to 9 while the renderer draws the block entity's breaking overlay.
+    public static boolean blockEntityStarted(TileEntity blockEntity, int destroyStage) {
         RenderLifecycle target = lifecycle;
         if (target == null) {
             return false;
         }
         RENDERERS.entered();
-        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, blockEntity, 0f, 0f, 0f, 0f);
+        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, blockEntity,
+                destroyStage >= 0 ? RenderDrawKind.DAMAGED_BLOCK_ENTITY : RenderDrawKind.BLOCK_ENTITY, 0f, 0f, 0f, 0f);
         return true;
     }
 
@@ -177,7 +179,7 @@ public final class RenderHooks {
     private static void objectReturned(RenderCheckpoint checkpoint) {
         RenderLifecycle target = lifecycle;
         if (target != null) {
-            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, 0f, 0f, 0f, 0f);
+            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, RenderDrawKind.DEFAULT, 0f, 0f, 0f, 0f);
             if (RENDERERS.returned()) {
                 target.dispatchCheckpoint(checkpoint);
             }
@@ -191,14 +193,41 @@ public final class RenderHooks {
         if (target == null) {
             return false;
         }
-        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, null, 0f, 0f, 0f, 0f);
+        target.dispatchObject(RenderLifecycle.BLOCK_ENTITY_STARTED, null, null, RenderDrawKind.BLOCK_ENTITY, 0f, 0f,
+                0f, 0f);
         return true;
     }
 
     public static void blockEntityBatchEnded() {
         RenderLifecycle target = lifecycle;
         if (target != null) {
-            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, 0f, 0f, 0f, 0f);
+            target.dispatchObject(RenderLifecycle.OBJECT_ENDED, null, null, RenderDrawKind.DEFAULT, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    // Called by the Mixins at the start and the return of vanilla's glint, eye and beacon beam draws, which happen
+    // inside an entity or block entity renderer and also in screens. They aren't renderers, so they don't count for
+    // nesting and have no checkpoint. A draw that throws never returns, see specialDrawsAbandoned.
+    public static void specialDrawStarted(RenderDrawKind kind) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.SPECIAL_STARTED, null, null, kind, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    public static void specialDrawEnded(RenderDrawKind kind) {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.SPECIAL_ENDED, null, null, kind, 0f, 0f, 0f, 0f);
+        }
+    }
+
+    // RenderLivingBase.doRender caught a failure of its model or layers and draws on.
+    public static void specialDrawsAbandoned() {
+        RenderLifecycle target = lifecycle;
+        if (target != null) {
+            target.dispatchObject(RenderLifecycle.SPECIALS_ABANDONED, null, null, RenderDrawKind.DEFAULT, 0f, 0f, 0f,
+                    0f);
         }
     }
 
@@ -206,7 +235,8 @@ public final class RenderHooks {
     public static void entityColor(float red, float green, float blue, float alpha) {
         RenderLifecycle target = lifecycle;
         if (target != null) {
-            target.dispatchObject(RenderLifecycle.OBJECT_COLOR, null, null, red, green, blue, alpha);
+            target.dispatchObject(RenderLifecycle.OBJECT_COLOR, null, null, RenderDrawKind.DEFAULT, red, green, blue,
+                    alpha);
         }
     }
 

@@ -228,14 +228,15 @@ public final class WorldProgramsFeature extends Feature {
         }
 
         @Override
-        public void blockEntityStarted(@Nullable TileEntity blockEntity) {
+        public void blockEntityStarted(@Nullable TileEntity blockEntity, boolean damaged) {
             LiveWorldPrograms current = live;
             if (current == null) {
                 return;
             }
             int id = blockEntityId(materialIds, blockEntity);
-            current.objectStart(RenderDrawKind.BLOCK_ENTITY, id);
-            monitor.objectStarted(RenderDrawKind.BLOCK_ENTITY, blockEntity, id);
+            RenderDrawKind kind = damaged ? RenderDrawKind.DAMAGED_BLOCK_ENTITY : RenderDrawKind.BLOCK_ENTITY;
+            current.objectStart(kind, id);
+            monitor.objectStarted(kind, blockEntity, id);
         }
 
         @Override
@@ -252,6 +253,33 @@ public final class WorldProgramsFeature extends Feature {
             LiveWorldPrograms current = live;
             if (current != null) {
                 current.objectColor(red, green, blue, alpha);
+            }
+        }
+
+        @Override
+        public void specialDrawStarted(RenderDrawKind kind) {
+            LiveWorldPrograms current = live;
+            if (current != null) {
+                current.specialStart(kind);
+                monitor.specialDrawStarted(kind);
+            }
+        }
+
+        @Override
+        public void specialDrawEnded(RenderDrawKind kind) {
+            LiveWorldPrograms current = live;
+            if (current != null) {
+                current.specialEnd(kind);
+                monitor.specialDrawEnded(kind);
+            }
+        }
+
+        @Override
+        public void specialDrawsAbandoned() {
+            LiveWorldPrograms current = live;
+            if (current != null) {
+                current.specialsAbandoned();
+                monitor.specialDrawEnded(RenderDrawKind.DEFAULT);
             }
         }
     }

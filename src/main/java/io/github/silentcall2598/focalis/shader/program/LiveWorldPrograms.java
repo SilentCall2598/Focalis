@@ -308,6 +308,29 @@ public final class LiveWorldPrograms {
         }
     }
 
+    /**
+     * A special draw of the innermost object starts, like its armor glint. See
+     * {@link WorldProgramBinding#specialStart}.
+     */
+    public void specialStart(RenderDrawKind kind) {
+        if (worldOpen) {
+            binding.specialStart(kind);
+        }
+    }
+
+    public void specialEnd(RenderDrawKind kind) {
+        if (worldOpen) {
+            binding.specialEnd(kind);
+        }
+    }
+
+    /** A living entity renderer caught a failure and draws on. See {@link WorldProgramBinding#specialsAbandoned}. */
+    public void specialsAbandoned() {
+        if (worldOpen) {
+            binding.specialsAbandoned();
+        }
+    }
+
     // A scope still open here never got its END, or a suspension its resume. Both are closed so no program stays
     // bound, and this throws because Focalis lost track of the stages.
     private void checkClosed(String when) {

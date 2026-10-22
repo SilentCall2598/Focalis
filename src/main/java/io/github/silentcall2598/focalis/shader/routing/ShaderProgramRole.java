@@ -26,6 +26,14 @@ public enum ShaderProgramRole {
     ENTITIES,
     /** Each block entity drawn inside the entity render passes, and the batch of fast block entity renderers. */
     BLOCK_ENTITIES,
+    /** The enchantment glint over armor and items drawn in the world. */
+    ARMOR_GLINT,
+    /** The glowing eye layers of spiders, endermen and the ender dragon. */
+    EYES,
+    /** Beacon and end gateway beams. */
+    BEACON_BEAM,
+    /** Block breaking overlays, on blocks and on block entities. */
+    DAMAGED_BLOCK,
     PARTICLES_LIT,
     PARTICLES_NORMAL,
     WEATHER,

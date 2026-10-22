@@ -21,8 +21,9 @@ import java.util.Set;
  * programs, gets a scope that binds nothing. Where vanilla binds its own programs inside a stage, it steps aside
  * until that part is over. Terrain programs that read inputs only the chunk attribute stream supplies are bound only
  * while the stream can feed them, and a single chunk draw without a usable stream steps aside too. Programs of other
- * roles that read those inputs aren't bound at all. It never owns, builds or deletes programs or textures. Client
- * thread only, with the GL context current.
+ * roles that read those inputs aren't bound at all. Inside the entity passes, each entity and block entity, and each
+ * special draw nested in one like armor glint, gets its role's program the same nested way. It never owns, builds or
+ * deletes programs or textures. Client thread only, with the GL context current.
  */
 public final class WorldProgramBinding implements DrawSuspension {
 
@@ -31,8 +32,8 @@ public final class WorldProgramBinding implements DrawSuspension {
      * its program would run outside the world target, and it isn't bound yet. Read only.
      */
     public static final Set<RenderStage> STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.SKY,
-            RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.PARTICLES, RenderStage.TRANSLUCENT,
-            RenderStage.WEATHER, RenderStage.CLOUDS));
+            RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.BLOCK_DAMAGE, RenderStage.PARTICLES,
+            RenderStage.TRANSLUCENT, RenderStage.WEATHER, RenderStage.CLOUDS));
 
     /**
      * Stages inside a bound stage where vanilla binds its own shader programs, so the open scopes step aside until
@@ -62,7 +63,8 @@ public final class WorldProgramBinding implements DrawSuspension {
     // Per open scope, the build it bound, or null for one that bound nothing.
     private BuiltWorldPrograms.Build[] scopeBuilds = new BuiltWorldPrograms.Build[8];
 
-    // The entities and block entities being drawn, innermost last. Arrays so an object allocates nothing.
+    // The entities, block entities and special draws being drawn, innermost last. Arrays so an object allocates
+    // nothing. A special draw's frame has no values of its own, it shows the innermost object's.
     private static final byte PASSIVE = 0;
     private static final byte CONTEXT = 1;
     private static final byte SCOPED = 2;
@@ -432,24 +434,25 @@ public final class WorldProgramBinding implements DrawSuspension {
     }
 
     /**
-     * An entity ({@link RenderDrawKind#ENTITY}) or block entity ({@link RenderDrawKind#BLOCK_ENTITY}) starts drawing,
-     * with its material ID, -1 when it has none. Inside a bound entity pass it gets the program of its role, unless that
-     * is already the one current, and its ID goes on the program, with -1 for the other kind of ID and no color. Outside
-     * one, while the scopes stepped aside, or while a renderer around it has its own program bound, nothing changes.
-     * Every start needs its {@link #objectEnd}, also the ones that changed nothing.
+     * An entity ({@link RenderDrawKind#ENTITY}), block entity ({@link RenderDrawKind#BLOCK_ENTITY}) or block entity's
+     * breaking overlay ({@link RenderDrawKind#DAMAGED_BLOCK_ENTITY}) starts drawing, with its material ID, -1 when it
+     * has none. Inside a bound entity pass it gets the program of its role, unless that is already the one current, and
+     * its ID goes on the program, with -1 for the other kind of ID and no color. Outside one, while the scopes stepped
+     * aside, or while a renderer around it has its own program bound, nothing changes. Every start needs its
+     * {@link #objectEnd}, also the ones that changed nothing.
      */
     public void objectStart(RenderDrawKind kind, int id) {
-        if (kind != RenderDrawKind.ENTITY && kind != RenderDrawKind.BLOCK_ENTITY) {
+        if (!isObject(kind)) {
             abort();
             throw new IllegalArgumentException("Draw kind " + kind + " isn't an entity or block entity");
         }
         reasserted = false;
-        int index = pushObject(kind, id);
+        int index = pushFrame(kind, id);
         if (scopes.isEmpty() || scopes.isSuspended() || scopes.innermostStage() != RenderStage.ENTITIES) {
             return;
         }
         try {
-            if (activeObjectBelow(index) >= 0 && !ownedCurrent) {
+            if (activeFrameBelow(index) >= 0 && !ownedCurrent) {
                 // A renderer around this one may have bound its own program for what it draws inside, and keeps it.
                 if (!scopes.expectsCurrent()) {
                     return;
@@ -478,16 +481,24 @@ public final class WorldProgramBinding implements DrawSuspension {
     }
 
     /**
-     * The innermost entity or block entity is done. Its program, if it bound one, and the values of the object around
-     * it, or the defaults when there is none, come back. A renderer may have left its own program bound, so the
-     * scopes' program is bound again if needed. An end without a start is ignored.
+     * The innermost entity or block entity is done. Special draws of it whose code threw end first. Its program, if it
+     * bound one, and the values of the object around it, or the defaults when there is none, come back. A renderer may
+     * have left its own program bound, so the scopes' program is bound again if needed. An end without a start is
+     * ignored.
      */
     public void objectEnd() {
-        if (objectDepth == 0) {
+        int top = innermostObject(objectDepth);
+        if (top < 0) {
             return;
         }
         reasserted = false;
-        int top = --objectDepth;
+        try {
+            endSpecialsAbove(top);
+        } catch (RuntimeException | LinkageError e) {
+            objectDepth = 0;
+            throw e;
+        }
+        objectDepth = top;
         byte mode = objectModes[top];
         if (mode == PASSIVE) {
             return;
@@ -505,8 +516,8 @@ public final class WorldProgramBinding implements DrawSuspension {
                 applyObjectIfCurrent(owned, activeObjectBelow(top));
             }
             reasserted = true;
-            // An object around this one is still drawing, and its renderer runs on.
-            if (activeObjectBelow(top) >= 0) {
+            // An object or special draw around this one is still drawing, and its code runs on.
+            if (activeFrameBelow(top) >= 0) {
                 ownedCurrent = false;
             }
         } catch (RuntimeException | LinkageError e) {
@@ -516,14 +527,122 @@ public final class WorldProgramBinding implements DrawSuspension {
     }
 
     /**
+     * A special draw nested in the innermost object starts, like its armor glint. Inside a bound entity pass it gets
+     * the program of its role, unless that is already the one current, and that program gets the innermost object's
+     * IDs and color, so it still knows what it draws on. A role without a ready program leaves the object's program
+     * on. Outside a bound entity pass, while the scopes stepped aside, or while a renderer has its own program bound,
+     * nothing changes. Every start needs its {@link #specialEnd}, or {@link #specialsAbandoned} or its object's end
+     * when its code throws.
+     *
+     * @throws IllegalArgumentException for a kind that isn't a special draw
+     */
+    public void specialStart(RenderDrawKind kind) {
+        if (!isSpecial(kind)) {
+            abort();
+            throw new IllegalArgumentException("Draw kind " + kind + " isn't a special draw");
+        }
+        reasserted = false;
+        int index = pushFrame(kind, -1);
+        if (scopes.isEmpty() || scopes.isSuspended() || scopes.innermostStage() != RenderStage.ENTITIES) {
+            return;
+        }
+        try {
+            if (activeFrameBelow(index) >= 0 && !ownedCurrent) {
+                // The renderer drawing this may have bound its own program, and keeps it.
+                if (!scopes.expectsCurrent()) {
+                    return;
+                }
+                ownedCurrent = scopes.ownsProgram();
+            }
+            BuiltWorldPrograms.Build owned = ownedBuild();
+            BuiltWorldPrograms.Build build = usableBuild(RenderStage.ENTITIES, kind);
+            if (build == null || build == owned) {
+                objectModes[index] = CONTEXT;
+            } else {
+                objectModes[index] = SCOPED;
+                objectOwnedAtStart[index] = ownedCurrent;
+                open(RenderStage.ENTITIES, kind, build);
+                applyObject(build, activeObjectBelow(index));
+            }
+        } catch (RuntimeException | LinkageError e) {
+            objectDepth = 0;
+            throw e;
+        }
+        // The draw's own code runs next, and the model it draws may be a mod's.
+        ownedCurrent = false;
+    }
+
+    /**
+     * The special draw of that kind returned. Its program, if it bound one, goes back to the object's, with the
+     * object's current values. An end that doesn't match the innermost draw, like one whose start never ran, is
+     * ignored.
+     */
+    public void specialEnd(RenderDrawKind kind) {
+        int top = objectDepth - 1;
+        if (top < 0 || objectKinds[top] != kind || !isSpecial(kind)) {
+            return;
+        }
+        reasserted = false;
+        try {
+            endSpecial(top);
+        } catch (RuntimeException | LinkageError e) {
+            objectDepth = 0;
+            throw e;
+        }
+    }
+
+    /**
+     * A living entity renderer caught a failure and draws on, so the special draws started since the innermost object
+     * end now, innermost first, the same way as {@link #specialEnd}.
+     */
+    public void specialsAbandoned() {
+        int object = innermostObject(objectDepth);
+        if (objectDepth - 1 == object) {
+            return;
+        }
+        reasserted = false;
+        try {
+            endSpecialsAbove(object);
+        } catch (RuntimeException | LinkageError e) {
+            objectDepth = 0;
+            throw e;
+        }
+    }
+
+    private void endSpecialsAbove(int index) {
+        while (objectDepth - 1 > index) {
+            endSpecial(objectDepth - 1);
+        }
+    }
+
+    // The special draw at top, which has to be the innermost frame, ends.
+    private void endSpecial(int top) {
+        objectDepth = top;
+        if (objectModes[top] != SCOPED) {
+            return;
+        }
+        if (close(RenderStage.ENTITIES, objectKinds[top]) && objectOwnedAtStart[top]) {
+            ownedCurrent = true;
+        }
+        // The object's color may have changed while the special draw's program was current.
+        BuiltWorldPrograms.Build owned = ownedBuild();
+        if (owned != null) {
+            applyObjectIfCurrent(owned, activeObjectBelow(top));
+        }
+        if (activeFrameBelow(top) >= 0) {
+            ownedCurrent = false;
+        }
+    }
+
+    /**
      * The color vanilla multiplies the innermost entity with, like red while it's hurt, or (0, 0, 0, 0) for none. It goes
      * on the program when that is the one current.
      */
     public void objectColor(float red, float green, float blue, float alpha) {
-        if (objectDepth == 0) {
+        int top = innermostObject(objectDepth);
+        if (top < 0) {
             return;
         }
-        int top = objectDepth - 1;
         int at = top * 4;
         if (objectColors[at] == red && objectColors[at + 1] == green && objectColors[at + 2] == blue
                 && objectColors[at + 3] == alpha) {
@@ -544,12 +663,25 @@ public final class WorldProgramBinding implements DrawSuspension {
         }
     }
 
-    /** How many entities and block entities are being drawn, nested ones included. */
+    /** How many entities, block entities and special draws are being drawn, nested ones included. */
     public int objectDepth() {
         return objectDepth;
     }
 
-    private int pushObject(RenderDrawKind kind, int id) {
+    private static boolean isObject(RenderDrawKind kind) {
+        return kind == RenderDrawKind.ENTITY || isBlockEntity(kind);
+    }
+
+    private static boolean isBlockEntity(RenderDrawKind kind) {
+        return kind == RenderDrawKind.BLOCK_ENTITY || kind == RenderDrawKind.DAMAGED_BLOCK_ENTITY;
+    }
+
+    private static boolean isSpecial(RenderDrawKind kind) {
+        return kind == RenderDrawKind.ARMOR_GLINT || kind == RenderDrawKind.ITEM_GLINT || kind == RenderDrawKind.EYES
+                || kind == RenderDrawKind.BEACON_BEAM;
+    }
+
+    private int pushFrame(RenderDrawKind kind, int id) {
         int index = objectDepth;
         if (index == objectModes.length) {
             int grown = index * 2;
@@ -564,16 +696,38 @@ public final class WorldProgramBinding implements DrawSuspension {
         objectOwnedAtStart[index] = false;
         objectKinds[index] = kind;
         objectEntityIds[index] = kind == RenderDrawKind.ENTITY ? id : -1;
-        objectBlockEntityIds[index] = kind == RenderDrawKind.BLOCK_ENTITY ? id : -1;
+        objectBlockEntityIds[index] = isBlockEntity(kind) ? id : -1;
         Arrays.fill(objectColors, index * 4, index * 4 + 4, 0f);
         objectDepth = index + 1;
         return index;
     }
 
-    // The innermost object below index that is drawn with a Focalis program, or -1.
+    // The innermost object below index that is drawn with a Focalis program, or -1. Its values are the ones a program
+    // shows there, also inside a special draw of it.
     private int activeObjectBelow(int index) {
         for (int i = index - 1; i >= 0; i--) {
+            if (objectModes[i] != PASSIVE && isObject(objectKinds[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // The innermost object or special draw below index that is drawn with a Focalis program, whose code is still
+    // running, or -1.
+    private int activeFrameBelow(int index) {
+        for (int i = index - 1; i >= 0; i--) {
             if (objectModes[i] != PASSIVE) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // The innermost object below depth, passive or not, or -1.
+    private int innermostObject(int depth) {
+        for (int i = depth - 1; i >= 0; i--) {
+            if (isObject(objectKinds[i])) {
                 return i;
             }
         }
@@ -620,8 +774,8 @@ public final class WorldProgramBinding implements DrawSuspension {
         return null;
     }
 
-    // Objects whose end never came. Renderers also end when they throw, so this is only a safety net, like after a VM
-    // error. Their scopes close innermost first.
+    // Objects and special draws whose end never came. Renderers also end when they throw, so this is only a safety net,
+    // like after a VM error or a special draw that threw. Their scopes close innermost first.
     private void dropObjects() {
         while (objectDepth > 0) {
             int top = --objectDepth;

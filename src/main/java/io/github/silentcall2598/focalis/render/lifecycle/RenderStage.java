@@ -33,6 +33,12 @@ public enum RenderStage {
      * something glows, and for one more pass after that to clear the outlines.
      */
     ENTITY_OUTLINES,
+    /**
+     * Vanilla's block breaking overlay on blocks, once per world pass after the pass 0 entities. It is only reported
+     * while some block is being broken, since vanilla draws nothing otherwise. Block entities draw their own overlay
+     * inside ENTITIES.
+     */
+    BLOCK_DAMAGE,
     /** Lit particles and normal particles, one pair each with its own draw kind. */
     PARTICLES,
     /** The translucent chunk layer, draw kind TERRAIN_TRANSLUCENT. */
