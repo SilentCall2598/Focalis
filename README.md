@@ -3,8 +3,6 @@
 
 ![Focalis banner](assets/Focalis%20banner.png)
 
-# Focalis | A Minecraft 1.12.2 graphics and optimization project
-
 <br>
 
 [![status](https://img.shields.io/badge/status-experimental-4c6ef5)](https://github.com/SilentCall2598/Focalis)
