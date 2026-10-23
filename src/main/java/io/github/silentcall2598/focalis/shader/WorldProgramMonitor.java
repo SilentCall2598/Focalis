@@ -59,15 +59,27 @@ public interface WorldProgramMonitor {
     }
 
     /**
-     * Runs right after an entity ({@link RenderDrawKind#ENTITY}) or block entity ({@link RenderDrawKind#BLOCK_ENTITY})
-     * started and got its program and ID, before its renderer draws. {@code object} is the entity or block entity, or
-     * null for the batch of fast block entity renderers.
+     * Runs right after an entity ({@link RenderDrawKind#ENTITY}), block entity ({@link RenderDrawKind#BLOCK_ENTITY}) or
+     * block entity's breaking overlay ({@link RenderDrawKind#DAMAGED_BLOCK_ENTITY}) started and got its program and ID,
+     * before its renderer draws. {@code object} is the entity or block entity, or null for the batch of fast block
+     * entity renderers.
      */
     default void objectStarted(RenderDrawKind kind, @Nullable Object object, int id) {
     }
 
     /** Runs right after an object ended and the one around it, if any, got its program and values back. */
     default void objectEnded() {
+    }
+
+    /** Runs right after a special draw of the innermost object started and got its program, before it draws. */
+    default void specialDrawStarted(RenderDrawKind kind) {
+    }
+
+    /**
+     * Runs right after a special draw ended and the object's program is back. The kind is DEFAULT after a failure ended
+     * every special draw of the innermost object.
+     */
+    default void specialDrawEnded(RenderDrawKind kind) {
     }
 
     default void stopped(String reason) {

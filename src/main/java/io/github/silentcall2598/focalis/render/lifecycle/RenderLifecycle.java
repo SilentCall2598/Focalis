@@ -130,9 +130,10 @@ public final class RenderLifecycle {
         objectListeners = keptObjects.toArray(NO_OBJECTS);
     }
 
-    // Same failure handling as a checkpoint. The switch keeps one loop for every kind of object event.
-    void dispatchObject(int event, @Nullable Entity entity, @Nullable TileEntity blockEntity, float red, float green,
-            float blue, float alpha) {
+    // Same failure handling as a checkpoint. The switch keeps one loop for every kind of object event. kind is the
+    // special draw's, or for a block entity start DAMAGED_BLOCK_ENTITY when it draws its breaking overlay.
+    void dispatchObject(int event, @Nullable Entity entity, @Nullable TileEntity blockEntity, RenderDrawKind kind,
+            float red, float green, float blue, float alpha) {
         for (ObjectRegistration registration : objectListeners) {
             if (!registration.active) {
                 continue;
@@ -143,10 +144,20 @@ public final class RenderLifecycle {
                         registration.listener.entityStarted(entity);
                         break;
                     case BLOCK_ENTITY_STARTED:
-                        registration.listener.blockEntityStarted(blockEntity);
+                        registration.listener.blockEntityStarted(blockEntity,
+                                kind == RenderDrawKind.DAMAGED_BLOCK_ENTITY);
                         break;
                     case OBJECT_ENDED:
                         registration.listener.objectEnded();
+                        break;
+                    case SPECIAL_STARTED:
+                        registration.listener.specialDrawStarted(kind);
+                        break;
+                    case SPECIAL_ENDED:
+                        registration.listener.specialDrawEnded(kind);
+                        break;
+                    case SPECIALS_ABANDONED:
+                        registration.listener.specialDrawsAbandoned();
                         break;
                     default:
                         registration.listener.objectColor(red, green, blue, alpha);
@@ -155,7 +166,8 @@ public final class RenderLifecycle {
             } catch (Exception | LinkageError e) { // VM errors such as OutOfMemoryError deliberately propagate
                 removeOwner(registration.owner);
                 String during = event == OBJECT_ENDED ? "an entity or block entity end"
-                        : event == OBJECT_COLOR ? "an entity color" : "an entity or block entity start";
+                        : event == OBJECT_COLOR ? "an entity color"
+                        : event >= SPECIAL_STARTED ? "a special draw" : "an entity or block entity start";
                 FocalisLog.LOGGER.error("Render listener of '{}' failed at {}. All of its render listeners have been"
                         + " removed.", registration.owner, during, e);
                 failureHandler.onListenerFailure(registration.owner, during, e);
@@ -167,6 +179,9 @@ public final class RenderLifecycle {
     static final int BLOCK_ENTITY_STARTED = 1;
     static final int OBJECT_ENDED = 2;
     static final int OBJECT_COLOR = 3;
+    static final int SPECIAL_STARTED = 4;
+    static final int SPECIAL_ENDED = 5;
+    static final int SPECIALS_ABANDONED = 6;
 
     private static final class ObjectRegistration {
 

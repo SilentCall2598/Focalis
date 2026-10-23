@@ -35,6 +35,13 @@ public final class ShaderProgramResolver {
             "gbuffers_textured", "gbuffers_basic");
     private static final List<String> BLOCK_ENTITIES = chain("gbuffers_block", "gbuffers_terrain",
             "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic");
+    private static final List<String> ARMOR_GLINT = chain("gbuffers_armor_glint", "gbuffers_textured",
+            "gbuffers_basic");
+    private static final List<String> EYES = chain("gbuffers_spidereyes", "gbuffers_textured", "gbuffers_basic");
+    private static final List<String> BEACON_BEAM = chain("gbuffers_beaconbeam", "gbuffers_textured",
+            "gbuffers_basic");
+    private static final List<String> DAMAGED_BLOCK = chain("gbuffers_damagedblock", "gbuffers_terrain",
+            "gbuffers_textured_lit", "gbuffers_textured", "gbuffers_basic");
     private static final List<String> WEATHER = chain("gbuffers_weather", "gbuffers_textured_lit",
             "gbuffers_textured", "gbuffers_basic");
     private static final List<String> CLOUDS = chain("gbuffers_clouds", "gbuffers_textured", "gbuffers_basic");
@@ -101,6 +108,14 @@ public final class ShaderProgramResolver {
                 return ENTITIES;
             case BLOCK_ENTITIES:
                 return BLOCK_ENTITIES;
+            case ARMOR_GLINT:
+                return ARMOR_GLINT;
+            case EYES:
+                return EYES;
+            case BEACON_BEAM:
+                return BEACON_BEAM;
+            case DAMAGED_BLOCK:
+                return DAMAGED_BLOCK;
             case PARTICLES_LIT:
                 return TEXTURED_LIT;
             case PARTICLES_NORMAL:

@@ -31,6 +31,16 @@ public enum RenderDrawKind {
     ENTITY,
     /** One block entity drawn inside an entity render pass, or the batch of fast block entity renderers. */
     BLOCK_ENTITY,
+    /** The block breaking overlay of one block entity, drawn by its renderer with the destroy stage texture. */
+    DAMAGED_BLOCK_ENTITY,
+    /** The enchantment glint over worn armor or elytra, drawn inside the entity wearing it. */
+    ARMOR_GLINT,
+    /** The enchantment glint over an item, drawn inside whatever draws the item. */
+    ITEM_GLINT,
+    /** The glowing eyes of a spider, enderman or ender dragon, drawn inside the entity. */
+    EYES,
+    /** One segment of a beacon or end gateway beam, drawn inside its block entity. */
+    BEACON_BEAM,
     PARTICLES_LIT,
     PARTICLES_NORMAL
 }

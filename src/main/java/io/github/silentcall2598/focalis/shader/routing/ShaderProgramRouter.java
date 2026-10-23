@@ -52,7 +52,9 @@ public final class ShaderProgramRouter {
                         || kind == RenderDrawKind.ENTITY) {
                     return ShaderProgramRole.ENTITIES;
                 }
-                return only(kind, RenderDrawKind.BLOCK_ENTITY, ShaderProgramRole.BLOCK_ENTITIES);
+                return special(kind);
+            case BLOCK_DAMAGE:
+                return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.DAMAGED_BLOCK);
             case PARTICLES:
                 if (kind == RenderDrawKind.PARTICLES_LIT) {
                     return ShaderProgramRole.PARTICLES_LIT;
@@ -64,6 +66,26 @@ public final class ShaderProgramRouter {
                 return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.CLOUDS);
             case HAND:
                 return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.HAND);
+            default:
+                return ShaderProgramRole.UNCLASSIFIED;
+        }
+    }
+
+    // Block entities and the draws nested in entities and block entities.
+    private static ShaderProgramRole special(RenderDrawKind kind) {
+        switch (kind) {
+            case BLOCK_ENTITY:
+                return ShaderProgramRole.BLOCK_ENTITIES;
+            case DAMAGED_BLOCK_ENTITY:
+                return ShaderProgramRole.DAMAGED_BLOCK;
+            // The legacy format has one program for the glint on armor and on held items.
+            case ARMOR_GLINT:
+            case ITEM_GLINT:
+                return ShaderProgramRole.ARMOR_GLINT;
+            case EYES:
+                return ShaderProgramRole.EYES;
+            case BEACON_BEAM:
+                return ShaderProgramRole.BEACON_BEAM;
             default:
                 return ShaderProgramRole.UNCLASSIFIED;
         }

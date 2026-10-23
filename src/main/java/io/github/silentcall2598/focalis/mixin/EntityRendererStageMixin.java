@@ -10,8 +10,10 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.client.particle.ParticleManager;
+import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.RenderGlobal;
+import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.culling.ICamera;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.BlockRenderLayer;
@@ -115,6 +117,29 @@ public abstract class EntityRendererStageMixin {
             original.call(renderGlobal, entity, camera, partialTicks);
         } finally {
             RenderHooks.stageEnd(RenderStage.ENTITIES, kind, partialTicks);
+        }
+    }
+
+    // The breaking overlay on blocks. Vanilla calls this every pass, so the stage is only reported while some block is
+    // being broken, and no program is bound for a draw that doesn't happen. Without the accessor it's never reported.
+    @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/RenderGlobal;drawBlockDamageTexture("
+                    + "Lnet/minecraft/client/renderer/Tessellator;Lnet/minecraft/client/renderer/BufferBuilder;"
+                    + "Lnet/minecraft/entity/Entity;F)V"),
+            require = 0, expect = 1)
+    private void focalis$blockDamage(RenderGlobal renderGlobal, Tessellator tessellator, BufferBuilder buffer,
+            Entity entity, float partialTicks, Operation<Void> original) {
+        Object damage = renderGlobal;
+        if (!(damage instanceof RenderGlobalDamageAccessor)
+                || ((RenderGlobalDamageAccessor) damage).focalis$damagedBlocks().isEmpty()) {
+            original.call(renderGlobal, tessellator, buffer, entity, partialTicks);
+            return;
+        }
+        RenderHooks.stageStart(RenderStage.BLOCK_DAMAGE, partialTicks);
+        try {
+            original.call(renderGlobal, tessellator, buffer, entity, partialTicks);
+        } finally {
+            RenderHooks.stageEnd(RenderStage.BLOCK_DAMAGE, partialTicks);
         }
     }
 
