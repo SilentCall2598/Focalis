@@ -12,6 +12,8 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderObjectListener;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderPhase;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
+import io.github.silentcall2598.focalis.render.state.FragmentCache;
+import io.github.silentcall2598.focalis.render.state.FragmentHold;
 import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.shader.material.MaterialIds;
 import io.github.silentcall2598.focalis.shader.material.MaterialReport;
@@ -132,6 +134,7 @@ public final class WorldProgramsFeature extends Feature {
     private double pendingY;
     private double pendingZ;
     private boolean loggedSingularCamera;
+    private boolean checkedStateHooks;
     private boolean stopped;
     // What the last world pass selected, so a change of dimension or folder is noticed once.
     @Nullable
@@ -332,6 +335,25 @@ public final class WorldProgramsFeature extends Feature {
         LiveWorldPrograms current = live;
         if (current != null) {
             current.worldEnd();
+            checkStateHooks();
+        }
+    }
+
+    // Vanilla calls GlStateManager's alpha and blend methods in every world pass, so after the first one a hook that
+    // never ran didn't apply. Directives then still apply where each scope starts, the way they did before.
+    private void checkStateHooks() {
+        if (checkedStateHooks) {
+            return;
+        }
+        checkedStateHooks = true;
+        if (!FragmentHold.hooked()) {
+            logger.warn("The GlStateManager alpha and blend hooks never ran, so vanilla's own alpha and blend calls in"
+                    + " the sky, weather and clouds replace the pack's directives there. The Focalis Mixin probably"
+                    + " didn't apply. Mixin messages about mixins.focalis.json earlier in the log say why.");
+        }
+        if (!FragmentCache.available()) {
+            logger.warn("GlStateManager's alpha and blend cache wasn't found, so Focalis only compares the real GL"
+                    + " state when it applies or puts back directives.");
         }
     }
 
@@ -653,9 +675,23 @@ public final class WorldProgramsFeature extends Feature {
         if (pendingStream != null) {
             finishCamera();
         }
-        if (current.stageStart(stage, drawKind)) {
+        if (current.stageStart(stage, drawKind, vanillaDraws(stage))) {
             monitor.scopeStarted(stage, drawKind);
         }
+    }
+
+    // renderRainSnow and Forge's cloud dispatch hand the whole stage to the dimension's own renderer when it has one,
+    // and check that first, so the same check here tells whether vanilla's code draws the stage.
+    private static boolean vanillaDraws(RenderStage stage) {
+        if (stage != RenderStage.WEATHER && stage != RenderStage.CLOUDS) {
+            return true;
+        }
+        World world = Minecraft.getMinecraft().world;
+        if (world == null) {
+            return false;
+        }
+        return stage == RenderStage.WEATHER ? world.provider.getWeatherRenderer() == null
+                : world.provider.getCloudRenderer() == null;
     }
 
     // Vanilla's entity outlines bind their own shaders and draw the outlined entities expecting no program.

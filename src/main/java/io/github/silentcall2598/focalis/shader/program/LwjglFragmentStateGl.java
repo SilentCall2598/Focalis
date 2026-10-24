@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
+import io.github.silentcall2598.focalis.render.state.FragmentCache;
+import io.github.silentcall2598.focalis.render.state.FragmentHold;
 import net.minecraft.client.renderer.GlStateManager;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
@@ -10,7 +12,7 @@ import org.lwjgl.opengl.GL14;
  * {@link FragmentStateGl} on LWJGL 2 and GlStateManager. Each change goes through GlStateManager first, so vanilla's
  * next call compares against the right value, and then straight to GL. GlStateManager skips calls that match its
  * cache, and its blend cache keeps old alpha factors after the two factor blendFunc, so on its own it could leave GL
- * unchanged.
+ * unchanged. Changes are never held by {@link FragmentHold}, since they are Focalis's own.
  */
 final class LwjglFragmentStateGl implements FragmentStateGl {
 
@@ -36,19 +38,29 @@ final class LwjglFragmentStateGl implements FragmentStateGl {
 
     @Override
     public void alphaTest(boolean enabled) {
-        if (enabled) {
-            GlStateManager.enableAlpha();
-            GL11.glEnable(GL11.GL_ALPHA_TEST);
-        } else {
-            GlStateManager.disableAlpha();
-            GL11.glDisable(GL11.GL_ALPHA_TEST);
+        FragmentHold.writing(true);
+        try {
+            if (enabled) {
+                GlStateManager.enableAlpha();
+                GL11.glEnable(GL11.GL_ALPHA_TEST);
+            } else {
+                GlStateManager.disableAlpha();
+                GL11.glDisable(GL11.GL_ALPHA_TEST);
+            }
+        } finally {
+            FragmentHold.writing(false);
         }
     }
 
     @Override
     public void alphaFunction(int function, float reference) {
-        GlStateManager.alphaFunc(function, reference);
-        GL11.glAlphaFunc(function, reference);
+        FragmentHold.writing(true);
+        try {
+            GlStateManager.alphaFunc(function, reference);
+            GL11.glAlphaFunc(function, reference);
+        } finally {
+            FragmentHold.writing(false);
+        }
     }
 
     @Override
@@ -66,19 +78,96 @@ final class LwjglFragmentStateGl implements FragmentStateGl {
 
     @Override
     public void blend(boolean enabled) {
-        if (enabled) {
-            GlStateManager.enableBlend();
-            GL11.glEnable(GL11.GL_BLEND);
-        } else {
-            GlStateManager.disableBlend();
-            GL11.glDisable(GL11.GL_BLEND);
+        FragmentHold.writing(true);
+        try {
+            if (enabled) {
+                GlStateManager.enableBlend();
+                GL11.glEnable(GL11.GL_BLEND);
+            } else {
+                GlStateManager.disableBlend();
+                GL11.glDisable(GL11.GL_BLEND);
+            }
+        } finally {
+            FragmentHold.writing(false);
         }
     }
 
     // Separate factors are core since GL 1.4, and world programs already need 2.0.
     @Override
     public void blendFactors(int sourceColor, int destinationColor, int sourceAlpha, int destinationAlpha) {
-        GlStateManager.tryBlendFuncSeparate(sourceColor, destinationColor, sourceAlpha, destinationAlpha);
-        GL14.glBlendFuncSeparate(sourceColor, destinationColor, sourceAlpha, destinationAlpha);
+        FragmentHold.writing(true);
+        try {
+            GlStateManager.tryBlendFuncSeparate(sourceColor, destinationColor, sourceAlpha, destinationAlpha);
+            GL14.glBlendFuncSeparate(sourceColor, destinationColor, sourceAlpha, destinationAlpha);
+        } finally {
+            FragmentHold.writing(false);
+        }
+    }
+
+    @Override
+    public boolean cacheKnown() {
+        return FragmentCache.available();
+    }
+
+    @Override
+    public boolean cachedAlphaTestEnabled() {
+        return FragmentCache.alphaTestEnabled();
+    }
+
+    @Override
+    public int cachedAlphaFunction() {
+        return FragmentCache.alphaFunction();
+    }
+
+    @Override
+    public float cachedAlphaReference() {
+        return FragmentCache.alphaReference();
+    }
+
+    @Override
+    public boolean cachedBlendEnabled() {
+        return FragmentCache.blendEnabled();
+    }
+
+    @Override
+    public void cachedBlendFactors(int[] into) {
+        for (int i = 0; i < 4; i++) {
+            into[i] = FragmentCache.blendFactor(i);
+        }
+    }
+
+    @Override
+    public void hold(int components) {
+        FragmentHold.hold(components);
+    }
+
+    @Override
+    public int release() {
+        return FragmentHold.release();
+    }
+
+    @Override
+    public boolean requestedAlphaTest() {
+        return FragmentHold.requestedAlphaTest();
+    }
+
+    @Override
+    public int requestedAlphaFunction() {
+        return FragmentHold.requestedAlphaFunction();
+    }
+
+    @Override
+    public float requestedAlphaReference() {
+        return FragmentHold.requestedAlphaReference();
+    }
+
+    @Override
+    public boolean requestedBlend() {
+        return FragmentHold.requestedBlend();
+    }
+
+    @Override
+    public int requestedBlendFactor(int index) {
+        return FragmentHold.requestedFactor(index);
     }
 }
