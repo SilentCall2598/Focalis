@@ -84,6 +84,14 @@ public final class FragmentHold {
         return hooked;
     }
 
+    /**
+     * Whether a GlStateManager write of these components may go ahead. It can't while one of them is held, unless
+     * Focalis itself is writing. It records nothing, since the request was recorded when the call started.
+     */
+    public static boolean passes(int components) {
+        return (held & components) == 0 || writing;
+    }
+
     // The GlStateManager hooks. Each returns whether the call is held, which means it must not run.
 
     public static boolean alphaTest(boolean enabled) {
