@@ -248,10 +248,18 @@ public final class LiveWorldPrograms {
      * @return whether a scope was opened
      */
     public boolean stageStart(RenderStage stage, RenderDrawKind drawKind) {
+        return stageStart(stage, drawKind, false);
+    }
+
+    /**
+     * Like {@link #stageStart(RenderStage, RenderDrawKind)}, with whether vanilla's own code draws the stage, see
+     * {@link WorldProgramBinding#start(RenderStage, RenderDrawKind, boolean)}.
+     */
+    public boolean stageStart(RenderStage stage, RenderDrawKind drawKind, boolean vanillaDraws) {
         if (!worldOpen) {
             return false;
         }
-        binding.start(stage, drawKind);
+        binding.start(stage, drawKind, vanillaDraws);
         return true;
     }
 
@@ -277,7 +285,7 @@ public final class LiveWorldPrograms {
 
     /**
      * Right after one entity or block entity renderer returned. It may have bound its own programs and left another
-     * one bound, so the stage's program is bound again if needed.
+     * one bound, or changed the state the program's directives and textures need, so both are put back if needed.
      *
      * @return whether the program had to be bound again
      */

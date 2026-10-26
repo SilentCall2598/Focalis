@@ -15,15 +15,17 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Binds the built world program of each precise world stage around its draw and restores the previous program at
- * its END, using the programs selected for the current world pass. The program's alpha test, blend mode and custom
- * textures go with it and are put back the same way. A role without a ready program, or a pass without selected
- * programs, gets a scope that binds nothing. Where vanilla binds its own programs inside a stage, it steps aside
- * until that part is over. Terrain programs that read inputs only the chunk attribute stream supplies are bound only
- * while the stream can feed them, and a single chunk draw without a usable stream steps aside too. Programs of other
- * roles that read those inputs aren't bound at all. Inside the entity passes, each entity and block entity, and each
- * special draw nested in one like armor glint, gets its role's program the same nested way. It never owns, builds or
- * deletes programs or textures. Client thread only, with the GL context current.
+ * Binds the built world program of each precise world stage around its draw and restores the previous program at its
+ * END, using the programs selected for the current world pass. The program's alpha test, blend mode and custom textures
+ * go with it and are put back the same way. In the sky, weather and clouds vanilla draws, the directives are held
+ * against vanilla's own alpha and blend calls, and after each outermost entity or block entity renderer the directives
+ * and textures come back where the renderer changed them. A role without a ready program, or a pass without selected
+ * programs, gets a scope that binds nothing. Where vanilla binds its own programs inside a stage, it steps aside until
+ * that part is over. Terrain programs that read inputs only the chunk attribute stream supplies are bound only while
+ * the stream can feed them, and a single chunk draw without a usable stream steps aside too. Programs of other roles
+ * that read those inputs aren't bound at all. Inside the entity passes, each entity and block entity, and each special
+ * draw nested in one like armor glint, gets its role's program the same nested way. It never owns, builds or deletes
+ * programs or textures. Client thread only, with the GL context current.
  */
 public final class WorldProgramBinding implements DrawSuspension {
 
@@ -41,6 +43,15 @@ public final class WorldProgramBinding implements DrawSuspension {
      */
     public static final Set<RenderStage> VANILLA_PROGRAM_STAGES = Collections.unmodifiableSet(
             EnumSet.of(RenderStage.ENTITY_OUTLINES));
+
+    /**
+     * The stages whose vanilla code sets the alpha test and blending itself between the draws of the program bound,
+     * like the weather's alpha function or the sky turning the alpha test off for the sunrise and the stars. Their
+     * scopes hold the program's directives, see {@link ScopedProgramState#start(ProgramDrawState, boolean)}, so the
+     * directive is what the draws get. Read only.
+     */
+    public static final Set<RenderStage> HELD_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.SKY,
+            RenderStage.WEATHER, RenderStage.CLOUDS));
 
     /** The roles that draw chunk terrain, the only draws the chunk attribute stream can feed. Read only. */
     public static final Set<ShaderProgramRole> TERRAIN_ROLES = Collections.unmodifiableSet(EnumSet.of(
@@ -150,13 +161,25 @@ public final class WorldProgramBinding implements DrawSuspension {
      * @throws IllegalArgumentException for a stage that isn't bound yet, like HAND
      */
     public void start(RenderStage stage, RenderDrawKind drawKind) {
+        start(stage, drawKind, false);
+    }
+
+    /**
+     * Like {@link #start(RenderStage, RenderDrawKind)}. With {@code vanillaDraws}, the stage is drawn by vanilla's own
+     * code, so a scope of the {@link #HELD_STAGES} holds its program's directives. A sky Focalis classifies is always
+     * vanilla's, but the weather and the clouds can come from a dimension's own renderer, whose state is its own.
+     */
+    public void start(RenderStage stage, RenderDrawKind drawKind, boolean vanillaDraws) {
         if (!STAGES.contains(stage)) {
             abort();
             throw new IllegalArgumentException("World programs aren't bound for render stage " + stage);
         }
         reasserted = false;
         BuiltWorldPrograms.Build build = usableBuild(stage, drawKind);
-        open(stage, drawKind, build);
+        // A DEFAULT sky is a dimension's own renderer or the End, which bind nothing anyway.
+        boolean hold = vanillaDraws && HELD_STAGES.contains(stage)
+                && (stage != RenderStage.SKY || drawKind != RenderDrawKind.DEFAULT);
+        open(stage, drawKind, build, hold);
         // Nothing drawn by the stage itself is an entity or block entity.
         if (build != null) {
             applyObject(build, -1);
@@ -187,7 +210,8 @@ public final class WorldProgramBinding implements DrawSuspension {
         return build;
     }
 
-    private void open(RenderStage stage, RenderDrawKind drawKind, @Nullable BuiltWorldPrograms.Build build) {
+    private void open(RenderStage stage, RenderDrawKind drawKind, @Nullable BuiltWorldPrograms.Build build,
+            boolean hold) {
         CameraSnapshot snapshot = camera.current();
         boolean stream = build != null && TERRAIN_ROLES.contains(ShaderProgramRouter.route(stage, drawKind))
                 && build.program().vertexInputs().needsStream();
@@ -203,7 +227,7 @@ public final class WorldProgramBinding implements DrawSuspension {
         markStream(stream);
         scopeBuilds[scopes.depth() - 1] = build;
         try {
-            state.start(build == null ? null : build.drawState());
+            state.start(build == null ? null : build.drawState(), hold);
         } catch (RuntimeException | LinkageError e) {
             abortScopes(e);
             resetStreams(e);
@@ -376,16 +400,32 @@ public final class WorldProgramBinding implements DrawSuspension {
 
     /**
      * Right after the outermost entity or block entity renderer returned. Like {@link #reassert}, unless the object's own
-     * end just did that.
+     * end just did that. The renderer may also have changed the alpha test, blending or the textures the program
+     * samples, with or without GlStateManager, while keeping or restoring the program itself. So once the scopes'
+     * program is bound, what its directives and textures need is put back too, see
+     * {@link ScopedProgramState#reestablish}. Only the outermost renderer counts, so one drawing another inside itself
+     * keeps whatever it set for its own draws.
      *
      * @return whether the program had to be bound again
      */
     public boolean rendererReturned() {
+        boolean bound;
         if (reasserted) {
             reasserted = false;
-            return false;
+            bound = false;
+        } else {
+            bound = reassert();
         }
-        return reassert();
+        if (scopes.ownsProgram()) {
+            try {
+                state.reestablish();
+            } catch (RuntimeException | LinkageError e) {
+                abortScopes(e);
+                resetStreams(e);
+                throw e;
+            }
+        }
+        return bound;
     }
 
     private void checkVanillaStage(RenderStage stage) {
@@ -469,7 +509,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             } else {
                 objectModes[index] = SCOPED;
                 objectOwnedAtStart[index] = ownedCurrent;
-                open(RenderStage.ENTITIES, kind, build);
+                open(RenderStage.ENTITIES, kind, build, false);
                 applyObject(build, index);
             }
         } catch (RuntimeException | LinkageError e) {
@@ -561,7 +601,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             } else {
                 objectModes[index] = SCOPED;
                 objectOwnedAtStart[index] = ownedCurrent;
-                open(RenderStage.ENTITIES, kind, build);
+                open(RenderStage.ENTITIES, kind, build, false);
                 applyObject(build, activeObjectBelow(index));
             }
         } catch (RuntimeException | LinkageError e) {
