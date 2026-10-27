@@ -1,9 +1,6 @@
-
 <div align="center">
 
 ![Focalis banner](assets/Focalis%20banner.png)
-
-<br>
 
 [![status](https://img.shields.io/badge/status-experimental-4c6ef5)](https://github.com/SilentCall2598/Focalis)
 [![minecraft](https://img.shields.io/badge/Minecraft-1.12.2-3fa34d)](https://www.minecraft.net/)
@@ -11,8 +8,6 @@
 [![runtime](https://img.shields.io/badge/runtime-Java_8-1f6feb)](https://adoptium.net/)
 [![license](https://img.shields.io/badge/license-LGPL--3.0--only-6f42c1)](LICENSE)
 [![discord](https://img.shields.io/badge/Discord-Focalis-5865F2?logo=discord&logoColor=white)](https://discord.gg/wmJKKvkCMX)
-
-<br>
 
 [Discord](https://discord.gg/wmJKKvkCMX) •
 [Issues](https://github.com/SilentCall2598/Focalis/issues) •
@@ -25,67 +20,51 @@
 
 ## About
 
-Focalis is an independent, modular graphics and optimization project for **Minecraft Forge 1.12.2**. Its goal is to bring modern rendering features, shader support, and targeted performance improvements to a version of Minecraft with a large modding community.
+**Focalis** is an open-source rendering and optimization project for **Minecraft Forge 1.12.2**. I originally started working on it while playing Divine Journey 2, mostly because I wanted shader support without having to rely on OptiFine. It's grown into a larger project since then.
 
-The project is being built with modded environments in mind, with an emphasis on compatibility, maintainable systems, and predictable rendering behavior. Shader support is the first major milestone, with broader rendering and visual improvements planned over time.
+The first goal is to get shaderpacks working reliably, particularly in larger modpacks where rendering compatibility can be a problem. Beyond that, I want Focalis to be a foundation for other graphics and rendering improvements, rather than just another way to load shaders.
 
-**Focalis is experimental and is not yet a replacement for OptiFine or Iris.**
+**Focalis is still experimental.** It isn't a drop-in OptiFine or Iris replacement, and full shaderpack rendering isn't ready yet.
+
+## Design Philosophy
+
+Focalis is being built as its own rendering platform, not a recreation of an existing shader mod. I study other projects and public shader-format documentation to understand what needs to work, but the actual implementation is designed around Focalis and its own requirements.
+
+Legacy shaderpacks are important because they're what people already use on 1.12.2. I want to support those packs without making their old formats and limitations dictate how the rest of Focalis has to work.
+
+That means keeping the different systems modular, being careful about resource ownership and compatibility, and measuring performance changes instead of assuming they'll help. There's room to explore more advanced rendering features later, but getting the current shader pipeline working properly comes first.
 
 ## Current State
 
-Development currently focuses on the foundations of shader support and integration with Minecraft's existing renderer. Work so far includes:
+A fair amount of the groundwork is already in place. Focalis currently has experimental support for:
 
-- Shaderpack loading and program compilation
-- Render-stage handling and program routing
-- Framebuffer and OpenGL resource management
-- Texture, lightmap, and shader-input infrastructure
-- Terrain inputs and entity/block-entity shader contexts
-- Integration with Minecraft's existing rendering systems
+- Finding shaderpacks, reading supported settings, and compiling shader programs.
+- Routing terrain, entities, block entities, and certain special draws to shader programs.
+- Supplying terrain attributes such as normals, material IDs, texture midpoints, and tangents.
+- Shader uniforms, textures, lightmaps, and dimension-specific program handling.
+- Focalis-owned render targets and a basic experimental post-processing path.
+- Restoring shader-related state after vanilla and modded rendering, including selected alpha and blend directives.
 
-These systems have been exercised in development builds and modded testing, but the complete shader pipeline is still under construction. Full shaderpack compatibility and finished shader visuals are not available yet.
+These parts have been tested in development and in modded Minecraft, including DJ2. That doesn't mean full shaderpack support is working yet. Multiple render targets, depth handling, the full pass sequence, and several other effects still need to be integrated.
 
-## Project Direction
-
-Focalis is being designed around four main areas:
-
-**Shaders and Rendering**
-
-Shaderpack support, rendering targets, and improvements to Minecraft's rendering pipeline.
-
-**Optimization**
-
-Reducing unnecessary rendering work while improving performance where practical.
-
-**Visual Features**
-
-Lighting, textures, and other graphics used in modded Minecraft.
-
-**Compatibility**
-
-Keeping individual systems adaptable and minimizing conflicts with other Forge mods.
-
-The goal is for these areas to work together while remaining modular, without requiring every feature to be enabled.
-
-Development proceeds in phases. Each major addition is reviewed and tested before it becomes part of the main development branch.
+Right now I'm working on the **integrated shader session**, bringing the existing systems together so configuration, programs, inputs, render targets, and their lifecycles are managed more consistently.
 
 ## Roadmap and Progress
 
-The first major goal is a usable shader pipeline for modded 1.12.2. This is a public overview of that progression, followed by the project's broader direction.
+I'm developing Focalis in phases, with testing and review between major changes. There isn't a fixed release date yet.
 
-| Milestone | Status | Scope |
+| Milestone | Status | What it covers |
 | --- | --- | --- |
-| Shader foundations | Completed milestone | Shaderpack loading, compilation, program routing, resource management, and core shader inputs. |
-| Terrain and object inputs | Completed milestone | Extended terrain inputs, material IDs, and entity/block-entity shader contexts. |
-| Special draw handling | Current focus | Armor glint, glowing eyes, beacon beams, block-breaking overlays, and defined handling for custom skies. |
-| Render-state hardening | Planned | Stronger state restoration and enforcement of shaderpack settings at the affected draws. |
-| Full frame pipeline | Planned | Multiple render targets, depth textures, composite/final passes, and hand, water, and transparency integration. |
-| Shadows | Planned | Shadow rendering and integration with the world pipeline. |
-| First usable shader release | Planned | Validate the initial Complementary Reimagined target, add user-facing controls, and establish tested compatibility and installation guidance. |
-| Broader graphics and optimization | Longer term | Renderer improvements, dynamic lighting, resource-pack features, and wider hardware and platform validation. |
+| Shader foundations | Complete | Shaderpack loading, compilation, program routing, and initial shader inputs. |
+| Terrain and object integration | Complete | Terrain attributes, material IDs, entity and block-entity contexts, and special draws. |
+| Render-state handling | Complete | Restoring relevant rendering state and handling selected draw-time directives. |
+| Integrated shader session | In progress | Bringing program caches, configuration, inputs, targets, and resource lifecycles together. |
+| Full rendering pipeline | Planned | Multiple render targets, depth, composite/final passes, hand rendering, water, and transparency. |
+| First external shaderpack milestone | Planned | Getting a supported external shaderpack working through the integrated pipeline. |
+| First usable shader release | Planned | Wider compatibility testing, user-facing controls, installation guidance, and a build people can actually use. |
+| Other graphics and optimization work | Longer term | Renderer improvements, lighting, visual features, and broader mod and hardware compatibility. |
 
-A completed milestone means its current scope has been implemented and tested; it does not mean full shaderpack or mod compatibility. Later stages will build on and refine that work.
-
-The roadmap describes the intended order of development, without fixed release dates. Scope may change as compatibility testing reveals new requirements.
+"Complete" here means the planned work for that milestone has passed its checks. It doesn't mean every shaderpack or mod is supported. The first successful external pack also won't automatically mean Focalis is ready for a public beta.
 
 ## Requirements
 
@@ -98,60 +77,51 @@ The roadmap describes the intended order of development, without fixed release d
 | MixinBooter | [10.7](https://github.com/CleanroomMC/MixinBooter), installed separately |
 | Installation | Client-side only |
 
-Keep MixinBooter's original release filename unchanged so it loads before Focalis.
+Keep MixinBooter's original release filename unchanged so it loads before Focalis. Some experimental features also have additional OpenGL requirements.
 
-Some experimental rendering features will have additional OpenGL requirements.
-
-Focalis is a client-side mod and does not require installation on the server.
+Focalis doesn't need to be installed on the server. These are the requirements for the project and its experimental builds, not a claim that a general shader release is ready.
 
 ## Building
 
-Focalis uses Gradle and [RetroFuturaGradle](https://github.com/GTNewHorizons/RetroFuturaGradle).
+Focalis uses Gradle and [RetroFuturaGradle](https://github.com/GTNewHorizons/RetroFuturaGradle). You'll need a modern JDK for the build tools, although Focalis itself targets Java 8.
 
-Use a modern JDK for the Gradle build environment. The mod itself is compiled for Java 8.
-
-Build the project:
+Build the mod:
 
 ```bash
 ./gradlew build
 ```
 
-The compiled JAR will be available in `build/libs`.
+The JAR will be in `build/libs`.
 
-Launch the development client:
+To start the development client:
 
 ```bash
 ./gradlew runClient
 ```
 
+Development builds can contain unfinished rendering features. I wouldn't recommend treating them as stable shader releases or dropping them into a random modpack expecting everything to work.
+
 ## Testing and Contributions
 
-Focalis is independently developed and maintained.
+I'm developing and maintaining Focalis independently. I'm not recruiting an official development team or running a public testing program right now, but technical feedback, bug reports, and pull requests are welcome.
 
-I am not currently looking to form an official development team, but community testing and contributions are welcome and recognized.
+I've been testing it in development clients and real modpacks, with DJ2 as the main compatibility environment. Those results only cover the setups actually tested, not every GPU, driver, or collection of mods.
 
-If you encounter a bug or compatibility issue, please report it through [GitHub Issues](https://github.com/SilentCall2598/Focalis/issues) or the [Discord server](https://discord.gg/wmJKKvkCMX).
+If you run into a reproducible issue, you can report it through [GitHub Issues](https://github.com/SilentCall2598/Focalis/issues) or the [Discord server](https://discord.gg/wmJKKvkCMX). It helps to include:
 
-If you are reporting an issue, try to include:
+- Your Minecraft, Forge, and Java versions.
+- The modpack, relevant mods, shaderpack, and GPU.
+- What happened and how to reproduce it.
+- Logs, crash reports, or screenshots if you have them.
 
-- Minecraft and Forge versions
-- Modpack or mod list
-- Steps to reproduce the problem
-- Relevant logs or crash reports
-- Screenshots if available
-
-Pull requests are welcome. Contributions are reviewed for compatibility, performance, maintainability, code quality, and fit with the project's direction.
+Pull requests are welcome too. I review contributions with compatibility, correctness, performance, and maintainability in mind.
 
 ## Community
 
-If you want to follow development, share feedback, or help test Focalis:
-
-**[Join the Focalis Discord](https://discord.gg/wmJKKvkCMX)**
-
-Development updates, announcements, and future testing opportunities will be shared there.
+If you're interested in following the project or talking about its development, there's a **[Focalis Discord](https://discord.gg/wmJKKvkCMX)**. I'll also use it for updates and future testing opportunities when the project is ready for them.
 
 ## License
 
-Focalis is licensed under the **GNU Lesser General Public License, version 3 only** (`LGPL-3.0-only`).
+Focalis is licensed under **LGPL-3.0-only** (GNU Lesser General Public License, version 3 only).
 
 See [LICENSE](LICENSE) and [COPYING](COPYING) for the full license text.
