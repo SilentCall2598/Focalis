@@ -12,6 +12,7 @@ import io.github.silentcall2598.focalis.shader.WorldProgramMonitor;
 import io.github.silentcall2598.focalis.shader.material.MaterialIds;
 import io.github.silentcall2598.focalis.shader.material.MaterialReport;
 import io.github.silentcall2598.focalis.shader.pack.MaterialMappings;
+import io.github.silentcall2598.focalis.shader.pack.LegacyLighting;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.PackTextures;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
@@ -261,23 +262,28 @@ public final class SessionPrograms {
         if (selected != lastSelected || dimension != lastDimension) {
             selectionChanged(configuration.pack(), dimension, selected, selected == justBuilt);
         }
-        updateTerrainStreams(selected.programs(), dimension);
+        updateTerrainStreams(selected.programs(), dimension, configuration.lighting());
     }
 
-    private void updateTerrainStreams(BuiltWorldPrograms programs, int dimension) {
+    private void updateTerrainStreams(BuiltWorldPrograms programs, int dimension, LegacyLighting lighting) {
         boolean needed = false;
         for (ShaderProgramRole role : WorldProgramBinding.TERRAIN_ROLES) {
             BuiltWorldPrograms.Entry entry = programs.forRole(role);
             if (entry.ready()) {
                 VertexInputs inputs = entry.build().program().vertexInputs();
-                needed |= inputs.needsStream() && inputs.problem() == null;
+                needed |= (inputs.needsStream() || lighting.changesTerrainColors()) && inputs.problem() == null;
             }
         }
         MaterialIds ids = materialIds;
         if (needed && ids != null) {
-            if (streams.publish(ids)) {
+            if (streams.publish(ids, lighting)) {
                 logger.info("Chunk terrain in dimension {} gets gl_Normal, mc_Entity, mc_midTexCoord and at_tangent"
                         + " from Focalis's attribute stream, so the renderers reload once.", dimension);
+                if (lighting.changesTerrainColors()) {
+                    logger.info("The pack's lighting settings ({}) change the colors of chunk terrain, so the stream"
+                            + " carries them as gl_Color: {}. Chunk quads whose colors can't be taken from the"
+                            + " renderer that made them keep vanilla's.", lighting, lightingSummary(lighting));
+                }
                 logUnfitIds(ids);
             }
         } else if (streams.active()) {
@@ -285,6 +291,11 @@ public final class SessionPrograms {
             logger.info("No terrain program in dimension {} reads the attribute stream, so chunks are built"
                     + " without it.", dimension);
         }
+    }
+
+    private static String lightingSummary(LegacyLighting lighting) {
+        return (lighting.faceShading() ? "face shading in rgb" : "no face shading")
+                + (lighting.separateAo() ? ", ambient occlusion in alpha" : ", ambient occlusion in rgb");
     }
 
     private void logUnfitIds(MaterialIds ids) {

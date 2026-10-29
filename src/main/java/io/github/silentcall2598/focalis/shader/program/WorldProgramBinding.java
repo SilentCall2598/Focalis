@@ -44,6 +44,7 @@ public final class WorldProgramBinding implements DrawSuspension {
     @Nullable
     private CustomUniformValues customValues;
     private TerrainStreamGate streams = TerrainStreamGate.CLOSED;
+    private boolean terrainColors;
     private boolean[] streamScopes = new boolean[8];
     private BuiltWorldPrograms.Build[] scopeBuilds = new BuiltWorldPrograms.Build[8];
 
@@ -89,6 +90,14 @@ public final class WorldProgramBinding implements DrawSuspension {
 
     void customValues(@Nullable CustomUniformValues values) {
         customValues = values;
+    }
+
+    void terrainColors(boolean colors) {
+        if (!scopes.isEmpty()) {
+            abort();
+            throw new IllegalStateException("The terrain color mode can't change while a program scope is open");
+        }
+        terrainColors = colors;
     }
 
     void terrainStreams(TerrainStreamGate gate) {
@@ -137,7 +146,7 @@ public final class WorldProgramBinding implements DrawSuspension {
         if (build != null) {
             VertexInputs vertex = build.program().vertexInputs();
             if (TERRAIN_ROLES.contains(role)) {
-                if (vertex.needsStream() && (vertex.problem() != null || !streams.ready(drawKind))) {
+                if ((vertex.needsStream() || terrainColors) && (vertex.problem() != null || !streams.ready(drawKind))) {
                     return null;
                 }
             } else if (vertex.readsStreamAttributes()) {
@@ -151,7 +160,7 @@ public final class WorldProgramBinding implements DrawSuspension {
             boolean hold) {
         CameraSnapshot snapshot = camera.current();
         boolean terrain = TERRAIN_ROLES.contains(ShaderProgramRouter.route(stage, drawKind));
-        boolean stream = build != null && terrain && build.program().vertexInputs().needsStream();
+        boolean stream = build != null && terrain && (terrainColors || build.program().vertexInputs().needsStream());
         boolean atlas = terrain || stage == RenderStage.BLOCK_DAMAGE;
         ShaderProgram program = build == null ? null : build.program();
         try {
@@ -386,6 +395,7 @@ public final class WorldProgramBinding implements DrawSuspension {
         }
         try {
             if (activeFrameBelow(index) >= 0 && !ownedCurrent) {
+                // A renderer around this one may have bound its own program for what it draws inside, and keeps it.
                 if (!scopes.expectsCurrent()) {
                     return;
                 }
@@ -460,7 +470,6 @@ public final class WorldProgramBinding implements DrawSuspension {
         }
         try {
             if (activeFrameBelow(index) >= 0 && !ownedCurrent) {
-                // A renderer around this one may have bound its own program for what it draws inside, and keeps it.
                 if (!scopes.expectsCurrent()) {
                     return;
                 }

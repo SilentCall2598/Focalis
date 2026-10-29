@@ -17,16 +17,6 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * The option values and program states of one pack under one set of {@link PackSettings}. Everything is worked out
- * once when it's created, before any source is prepared, so nothing here parses or reads files while drawing.
- * Immutable. Two configurations are equal when they'd prepare the same sources and pick the same programs.
- *
- * <p>Option values start at the sources as written, then the selected profile applies, then the explicit entries.
- * Profiles are read with only the environment macros, and {@code program.<name>.enabled} with the option macros
- * added. A disabled program counts as missing when roles pick their programs, so they fall back like the format
- * documents.
- */
 public final class PackConfiguration {
 
     private static final ShaderPath PROPERTIES = ShaderPath.of(ShaderProperties.FILE_NAME);
@@ -45,12 +35,15 @@ public final class PackConfiguration {
     private final ProgramStates programStates;
     private final PackTextures textures;
     private final MaterialMappings materialMappings;
+    private final LegacyLighting lighting;
+    private final ShaderMacros standardMacros;
     private final List<PackIssue> issues;
 
     private PackConfiguration(ShaderPack pack, @Nullable String profile, Map<String, String> values,
             Map<String, String> changed, Map<String, String> disabled, Map<ShaderPath, String> texts,
             CustomUniforms customUniforms, ProgramStates programStates, PackTextures textures,
-            MaterialMappings materialMappings, List<PackIssue> issues) {
+            MaterialMappings materialMappings, LegacyLighting lighting, ShaderMacros standardMacros,
+            List<PackIssue> issues) {
         this.pack = pack;
         this.profile = profile;
         this.values = values;
@@ -61,18 +54,15 @@ public final class PackConfiguration {
         this.programStates = programStates;
         this.textures = textures;
         this.materialMappings = materialMappings;
+        this.lighting = lighting;
+        this.standardMacros = standardMacros;
         this.issues = issues;
     }
 
-    /** The pack as written, with its own program conditions applied and the standard environment. */
     public static PackConfiguration defaults(ShaderPack pack) {
         return resolve(pack, PackSettings.NONE, StandardMacros.environment());
     }
 
-    /**
-     * Works out the configuration. Settings that don't fit the pack are reported in {@link #issues()} and left
-     * out, and a program condition that can't be evaluated leaves its program enabled.
-     */
     public static PackConfiguration resolve(ShaderPack pack, PackSettings settings, ShaderMacros environment) {
         Objects.requireNonNull(pack, "pack");
         Objects.requireNonNull(settings, "settings");
@@ -83,6 +73,12 @@ public final class PackConfiguration {
         Map<String, ShaderProperties.Property> profiles = properties == null
                 ? Collections.<String, ShaderProperties.Property>emptyMap()
                 : ShaderProperties.read(PROPERTIES, properties, environment.asMap(), profileIssues);
+
+        List<PackIssue> lightingIssues = new ArrayList<>();
+        LegacyLighting lighting = properties == null ? LegacyLighting.UNSET
+                : LegacyLighting.read(PROPERTIES, properties, environment.asMap(), lightingIssues);
+        ShaderMacros standard = lighting.faceShading() ? environment.with(StandardMacros.OLD_LIGHTING, "")
+                : environment;
 
         Resolution resolution = new Resolution(pack, profiles);
         for (ShaderOption option : options.all().values()) {
@@ -101,20 +97,19 @@ public final class PackConfiguration {
         resolution.applyEntries(settings.options(), null, null, null);
 
         List<PackIssue> conditionIssues = new ArrayList<>();
-        Map<String, String> optionMacros = optionMacros(options, resolution.values, environment);
+        Map<String, String> optionMacros = optionMacros(options, resolution.values, standard);
         Map<String, ShaderProperties.Property> conditions = properties == null
                 ? Collections.<String, ShaderProperties.Property>emptyMap()
                 : ShaderProperties.read(PROPERTIES, properties, optionMacros, conditionIssues);
         resolution.applyConditions(conditions);
-        // Custom uniforms see the option macros like every other setting that isn't a profile.
         CustomUniforms customUniforms = CustomUniforms.compile(PROPERTIES, conditions, resolution.issues);
         ProgramStates programStates = ProgramStates.read(PROPERTIES, conditions, resolution.issues);
         PackTextures textures = PackTextures.read(PROPERTIES, conditions, pack, resolution.issues);
         List<PackIssue> materialIssues = new ArrayList<>();
         MaterialMappings materialMappings = MaterialMappings.read(pack, optionMacros, materialIssues);
 
-        // Both reads see the same file, so its problems would mostly show up twice.
         List<PackIssue> issues = new ArrayList<>(resolution.issues);
+        issues.addAll(lightingIssues);
         Set<String> reported = new HashSet<>();
         for (PackIssue issue : conditionIssues) {
             issues.add(issue);
@@ -137,11 +132,9 @@ public final class PackConfiguration {
         return new PackConfiguration(pack, profile, Collections.unmodifiableMap(resolution.values),
                 Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled),
                 Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms, programStates, textures,
-                materialMappings, Collections.unmodifiableList(issues));
+                materialMappings, lighting, standard, Collections.unmodifiableList(issues));
     }
 
-    // Value options become macros with their value and switches that are on become empty macros. Ambiguous options
-    // and consts don't, and the environment wins a name clash.
     private static Map<String, String> optionMacros(ShaderOptions options, Map<String, String> values,
             ShaderMacros environment) {
         Map<String, String> macros = new LinkedHashMap<>(environment.asMap());
@@ -179,23 +172,19 @@ public final class PackConfiguration {
         return pack;
     }
 
-    /** The profile that was applied, or null when none was selected or it doesn't exist. */
     @Nullable
     public String profile() {
         return profile;
     }
 
-    /** The value of every option in name order. Read only. */
     public Map<String, String> values() {
         return values;
     }
 
-    /** The options whose value differs from the sources as written. Read only. */
     public Map<String, String> changed() {
         return changed;
     }
 
-    /** Disabled programs like {@code world-1/composite} with what disabled them, in name order. Read only. */
     public Map<String, String> disabledPrograms() {
         return disabled;
     }
@@ -204,38 +193,34 @@ public final class PackConfiguration {
         return !disabled.containsKey(label(program));
     }
 
-    /**
-     * The custom uniforms and variables, compiled once for this configuration. Equal configurations have the same
-     * declarations, since both come from the same pack and option values.
-     */
     public CustomUniforms customUniforms() {
         return customUniforms;
     }
 
-    /** The alpha test and blend directives, read once for this configuration. */
     public ProgramStates programStates() {
         return programStates;
     }
 
-    /** The custom textures this configuration declares, read once. Equal configurations declare the same ones. */
     public PackTextures textures() {
         return textures;
     }
 
-    /**
-     * The block, item and entity mappings, read once with the option macros. Equal configurations declare the same
-     * ones, but each configuration has its own copy, so lookups built from it belong to it alone.
-     */
     public MaterialMappings materialMappings() {
         return materialMappings;
     }
 
-    /** Settings and pack lines that were ignored, and why. */
+    public LegacyLighting lighting() {
+        return lighting;
+    }
+
+    public ShaderMacros standardMacros() {
+        return standardMacros;
+    }
+
     public List<PackIssue> issues() {
         return issues;
     }
 
-    /** A file's text with the option values written in, or null when no option changed it. */
     @Nullable
     String text(ShaderPath file) {
         return texts.get(file);
@@ -252,12 +237,13 @@ public final class PackConfiguration {
         }
         PackConfiguration configuration = (PackConfiguration) other;
         return pack == configuration.pack && values.equals(configuration.values)
-                && disabled.keySet().equals(configuration.disabled.keySet());
+                && disabled.keySet().equals(configuration.disabled.keySet()) && lighting.equals(configuration.lighting)
+                && standardMacros.asMap().equals(configuration.standardMacros.asMap());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(System.identityHashCode(pack), values, disabled.keySet());
+        return Objects.hash(System.identityHashCode(pack), values, disabled.keySet(), lighting);
     }
 
     @Override
@@ -265,7 +251,6 @@ public final class PackConfiguration {
         return "profile " + profile + ", changed " + changed + ", disabled " + disabled.keySet();
     }
 
-    // The state built up while resolving.
     private static final class Resolution {
 
         final ShaderPack pack;
@@ -286,7 +271,6 @@ public final class PackConfiguration {
             chain.pop();
         }
 
-        // Entries apply in order, so a later one overrides an earlier one and anything a referenced profile set.
         void applyEntries(String entries, @Nullable String profile, @Nullable SourceLocation where,
                 @Nullable Deque<String> chain) {
             if (entries.isEmpty()) {
@@ -374,7 +358,6 @@ public final class PackConfiguration {
             }
         }
 
-        // Program conditions may only use switch options and true or false.
         private PackExpression.Names switches() {
             return new PackExpression.Names() {
                 @Override
@@ -396,7 +379,6 @@ public final class PackConfiguration {
             };
         }
 
-        // A name without a folder is a program in the shaders folder itself.
         @Nullable
         private ProgramSource find(String label) {
             int slash = label.lastIndexOf('/');

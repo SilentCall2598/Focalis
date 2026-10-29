@@ -19,7 +19,6 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
-/** The real calls. Its scratch buffers are made on first use and reused, so client thread only. */
 final class LwjglAttributeGl implements AttributeGl {
 
     static final LwjglAttributeGl INSTANCE = new LwjglAttributeGl();
@@ -29,10 +28,8 @@ final class LwjglAttributeGl implements AttributeGl {
     private static final int CORE_DIVISOR = 4;
 
     private IntBuffer ints;
-    // glGetFloat checks for room for 16 values whatever it reads.
     private FloatBuffer floats;
     private ByteBuffer pointer;
-    // Read on first use, when a context is current.
     private int features = -1;
 
     private LwjglAttributeGl() {
@@ -135,6 +132,66 @@ final class LwjglAttributeGl implements AttributeGl {
     @Override
     public void setCurrentNormal(float x, float y, float z) {
         GL11.glNormal3f(x, y, z);
+    }
+
+    @Override
+    public boolean colorArrayEnabled() {
+        return GL11.glIsEnabled(GL11.GL_COLOR_ARRAY);
+    }
+
+    @Override
+    public void colorArray(boolean enabled) {
+        if (enabled) {
+            GL11.glEnableClientState(GL11.GL_COLOR_ARRAY);
+        } else {
+            GL11.glDisableClientState(GL11.GL_COLOR_ARRAY);
+        }
+    }
+
+    @Override
+    public int colorArraySize() {
+        return GL11.glGetInteger(GL11.GL_COLOR_ARRAY_SIZE);
+    }
+
+    @Override
+    public int colorArrayType() {
+        return GL11.glGetInteger(GL11.GL_COLOR_ARRAY_TYPE);
+    }
+
+    @Override
+    public int colorArrayStride() {
+        return GL11.glGetInteger(GL11.GL_COLOR_ARRAY_STRIDE);
+    }
+
+    @Override
+    public int colorArrayBuffer() {
+        return GL11.glGetInteger(GL15.GL_COLOR_ARRAY_BUFFER_BINDING);
+    }
+
+    @Override
+    public long colorArrayPointer() {
+        ByteBuffer at = GL11.glGetPointer(GL11.GL_COLOR_ARRAY_POINTER, 1);
+        return at == null ? 0L : MemoryUtil.getAddress(at);
+    }
+
+    @Nullable
+    @Override
+    public ByteBuffer colorArrayClientPointer() {
+        return GL11.glGetPointer(GL11.GL_COLOR_ARRAY_POINTER, 1);
+    }
+
+    @Override
+    public void colorPointer(int size, int type, int stride, long offset) {
+        GL11.glColorPointer(size, type, stride, offset);
+    }
+
+    @Override
+    public void colorPointer(int size, int type, int stride, ByteBuffer client) {
+        if (type != GL11.GL_UNSIGNED_BYTE && type != GL11.GL_BYTE) {
+            throw new IllegalStateException("A color array of type 0x" + Integer.toHexString(type)
+                    + " in client memory can't be put back");
+        }
+        GL11.glColorPointer(size, type == GL11.GL_UNSIGNED_BYTE, stride, client);
     }
 
     @Override

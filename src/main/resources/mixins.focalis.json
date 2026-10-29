@@ -9,13 +9,18 @@
     "defaultRequire": 1
   },
   "client": [
+    "AmbientOcclusionFaceMixin",
+    "BlockFluidRendererColorMixin",
+    "BlockModelRendererColorMixin",
     "BlockRendererDispatcherStreamMixin",
+    "BufferBuilderColorMixin",
     "BufferBuilderStateMixin",
     "BufferBuilderStreamMixin",
     "ChunkRenderDispatcherStreamMixin",
     "EntityRendererFogAccessor",
     "EntityRendererMixin",
     "EntityRendererStageMixin",
+    "ForgeBlockModelRendererMixin",
     "GlStateManagerAlphaStateMixin",
     "GlStateManagerBlendStateMixin",
     "GlStateManagerBooleanStateMixin",
@@ -40,6 +45,9 @@
     "TileEntityBeaconRendererMixin",
     "TileEntityRendererDispatcherMixin",
     "VboRenderListStreamMixin",
-    "VertexBufferStreamMixin"
+    "VertexBufferConsumerMixin",
+    "VertexBufferStreamMixin",
+    "VertexLighterFlatMixin",
+    "VertexLighterSmoothAoMixin"
   ]
 }

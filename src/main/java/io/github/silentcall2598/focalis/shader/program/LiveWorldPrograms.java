@@ -60,6 +60,7 @@ public final class LiveWorldPrograms {
         this.binding = new WorldProgramBinding(scopes, state, frame, camera, environment, fog);
         this.customValues = new CustomUniformValues(configuration.customUniforms());
         binding.customValues(customValues);
+        binding.terrainColors(configuration.lighting().changesTerrainColors());
     }
 
     public static LiveWorldPrograms create(PackConfiguration configuration, ShaderMacros macros,
@@ -140,6 +141,7 @@ public final class LiveWorldPrograms {
         configuration = next;
         customValues = new CustomUniformValues(next.customUniforms());
         binding.customValues(customValues);
+        binding.terrainColors(next.lighting().changesTerrainColors());
         rethrow(deleteFolders(null));
         return true;
     }

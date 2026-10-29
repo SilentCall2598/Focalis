@@ -3,6 +3,7 @@
 package io.github.silentcall2598.focalis.shader.session;
 
 import io.github.silentcall2598.focalis.shader.material.MaterialIds;
+import io.github.silentcall2598.focalis.shader.pack.LegacyLighting;
 import io.github.silentcall2598.focalis.shader.program.TerrainStreamGate;
 import io.github.silentcall2598.focalis.shader.terrain.TerrainStreams;
 import org.apache.logging.log4j.Logger;
@@ -18,8 +19,8 @@ interface StreamControl {
         }
 
         @Override
-        public boolean publish(MaterialIds ids) {
-            return TerrainStreams.publish(ids);
+        public boolean publish(MaterialIds ids, LegacyLighting lighting) {
+            return TerrainStreams.publish(ids, lighting);
         }
 
         @Override
@@ -46,7 +47,7 @@ interface StreamControl {
 
     TerrainStreamGate gate();
 
-    boolean publish(MaterialIds ids);
+    boolean publish(MaterialIds ids, LegacyLighting lighting);
 
     void withdraw(boolean reload);
 

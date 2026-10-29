@@ -15,6 +15,8 @@ public final class StandardMacros {
 
     public static final int MC_VERSION = 11202;
 
+    public static final String OLD_LIGHTING = "MC_OLD_LIGHTING";
+
     private static final Pattern VERSION = Pattern.compile("^(\\d+)\\.(\\d+)");
     private static final String EXTENSION_PREFIX = "MC_GL_";
 

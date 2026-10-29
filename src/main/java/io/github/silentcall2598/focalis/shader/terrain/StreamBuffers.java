@@ -9,11 +9,6 @@ import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.Set;
 
-/**
- * Makes, checks and deletes the GL buffers of the streams of vertex buffer chunk layers, and knows which of them exist.
- * A stream is only valid once the driver named its buffer and kept every byte of the upload. That is read back from the
- * buffer and not from the error flag, which may hold errors that are anyone's. Client thread only.
- */
 final class StreamBuffers {
 
     static final String NO_NAME = "the driver gave no buffer name";
@@ -26,23 +21,21 @@ final class StreamBuffers {
         this.gl = Objects.requireNonNull(gl, "gl");
     }
 
-    /** How many stream buffers exist. */
     int live() {
         return owners.size();
     }
 
-    /**
-     * Puts the first {@code vertices} vertices of {@code data} into the stream's buffer, which is made if it has none,
-     * and only then marks the stream valid. A buffer that held a stream of the same size is emptied first, since a data
-     * store that a failed upload left behind would read back as the size asked for. The array buffer binding of the
-     * caller is back whatever happens, and a failure deletes the buffer, so nothing it held is taken for the new data.
-     *
-     * @return null when the stream is valid now, otherwise why not, and it has no buffer then
-     */
     @Nullable
     String upload(BufferStream stream, ByteBuffer data, int vertices, int generation) {
-        int bytes = vertices * StreamLayout.BUFFER.stride();
+        return upload(stream, data, vertices, generation, StreamLayout.BUFFER);
+    }
+
+    @Nullable
+    String upload(BufferStream stream, ByteBuffer data, int vertices, int generation, StreamLayout layout) {
+        int bytes = vertices * layout.stride();
         int previous = gl.arrayBuffer();
+        // A data store that a failed upload left behind would read back as the size asked for, so a buffer that held a
+        // stream of the same size is emptied first.
         boolean emptyFirst = stream.buffer != 0 && stream.vertices == vertices;
         stream.valid = false;
         if (stream.buffer == 0) {
@@ -81,19 +74,16 @@ final class StreamBuffers {
         return null;
     }
 
-    /** Deletes the stream's buffer, if it has one, and makes the stream invalid. Safe to repeat. */
     void release(BufferStream stream) {
         stream.valid = false;
         int name = stream.buffer;
         if (name != 0) {
-            // Forgotten first, so a failing delete can't be tried twice.
             stream.buffer = 0;
             owners.remove(stream);
             gl.deleteBuffer(name);
         }
     }
 
-    /** Deletes every stream buffer there is. All of them are tried, and the first failure is thrown after that. */
     void releaseAll() {
         Throwable failure = null;
         for (BufferStream stream : owners.toArray(new BufferStream[0])) {

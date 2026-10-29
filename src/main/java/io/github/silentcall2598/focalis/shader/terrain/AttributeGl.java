@@ -5,10 +5,6 @@ package io.github.silentcall2598.focalis.shader.terrain;
 import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 
-/**
- * The GL calls the stream makes on vertex arrays and buffers, so the state handling can be tested without a context.
- * Client thread only, with the context current.
- */
 interface AttributeGl {
 
     int arrayBuffer();
@@ -19,13 +15,10 @@ interface AttributeGl {
 
     void deleteBuffer(int buffer);
 
-    /** Uploads to the buffer bound to GL_ARRAY_BUFFER, as static draw data. */
     void bufferData(ByteBuffer data);
 
-    /** The bytes the driver kept for the buffer bound to GL_ARRAY_BUFFER, 0 when it never made a data store. */
     int arrayBufferSize();
 
-    /** Gives the buffer bound to GL_ARRAY_BUFFER an empty data store, so nothing it held is left. */
     void emptyArrayBuffer();
 
     boolean normalArrayEnabled();
@@ -38,10 +31,8 @@ interface AttributeGl {
 
     int normalArrayBuffer();
 
-    /** The normal array's pointer, an offset when its buffer isn't 0. 0 for a null pointer. */
     long normalArrayPointer();
 
-    /** The same pointer as a buffer to hand back to GL, or null for a null pointer. Allocates. */
     @Nullable
     ByteBuffer normalArrayClientPointer();
 
@@ -52,6 +43,27 @@ interface AttributeGl {
     void currentNormal(float[] into);
 
     void setCurrentNormal(float x, float y, float z);
+
+    boolean colorArrayEnabled();
+
+    void colorArray(boolean enabled);
+
+    int colorArraySize();
+
+    int colorArrayType();
+
+    int colorArrayStride();
+
+    int colorArrayBuffer();
+
+    long colorArrayPointer();
+
+    @Nullable
+    ByteBuffer colorArrayClientPointer();
+
+    void colorPointer(int size, int type, int stride, long offset);
+
+    void colorPointer(int size, int type, int stride, ByteBuffer client);
 
     boolean attribArrayEnabled(int index);
 
@@ -67,15 +79,12 @@ interface AttributeGl {
 
     int attribArrayBuffer(int index);
 
-    /** Whether the array was set up with glVertexAttribIPointer. False without GL 3.0. */
     boolean attribArrayInteger(int index);
 
-    /** The instancing divisor. 0 without instanced arrays. */
     int attribArrayDivisor(int index);
 
     long attribArrayPointer(int index);
 
-    /** The same pointer as a buffer to hand back to GL, or null for a null pointer. Allocates. */
     @Nullable
     ByteBuffer attribArrayClientPointer(int index);
 
