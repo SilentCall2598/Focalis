@@ -468,12 +468,13 @@ public final class WorldProgramBinding implements DrawSuspension {
             }
             BuiltWorldPrograms.Build owned = ownedBuild();
             BuiltWorldPrograms.Build build = usableBuild(RenderStage.ENTITIES, kind);
-            if (build == null || build == owned) {
+            boolean hold = HELD_SPECIAL_DRAWS.contains(kind);
+            if (build == null || build == owned && !hold) {
                 objectModes[index] = CONTEXT;
             } else {
                 objectModes[index] = SCOPED;
                 objectOwnedAtStart[index] = ownedCurrent;
-                open(RenderStage.ENTITIES, kind, build, HELD_SPECIAL_DRAWS.contains(kind));
+                open(RenderStage.ENTITIES, kind, build, hold);
                 applyObject(build, activeObjectBelow(index));
             }
         } catch (RuntimeException | LinkageError e) {
