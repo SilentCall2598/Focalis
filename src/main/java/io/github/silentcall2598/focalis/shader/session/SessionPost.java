@@ -105,7 +105,7 @@ public final class SessionPost {
         }
         PreparedProgram prepared;
         try {
-            prepared = PreparedProgram.prepare(configuration.pack(), source, session.macros(), configuration);
+            prepared = PreparedProgram.prepare(configuration.pack(), source, configuration);
         } catch (IncludeException e) {
             stop(e.getMessage());
             return null;

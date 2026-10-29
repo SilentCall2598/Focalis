@@ -62,8 +62,6 @@ public final class ShaderSession {
     private String packProblem;
     @Nullable
     private PackConfiguration configuration;
-    @Nullable
-    private ShaderMacros macros;
     private final FrameInputs frame = new FrameInputs();
     private final CameraInputs camera = new CameraInputs();
     private final EnvironmentInputs environment = new EnvironmentInputs();
@@ -232,10 +230,9 @@ public final class ShaderSession {
                 pack.mentions("MC_GL_"));
         PackConfiguration resolved = PackConfiguration.resolve(pack, PackSettings.of(profileName, optionEntries),
                 environment);
-        macros = environment;
         configuration = resolved;
         state = State.CONFIGURED;
-        logger.info("Shaderpack '{}' gets the standard macros {}", pack.name(), environment.asMap());
+        logger.info("Shaderpack '{}' gets the standard macros {}", pack.name(), resolved.standardMacros().asMap());
         logConfiguration(resolved);
         SessionPrograms current = programs;
         if (current != null) {
@@ -269,13 +266,6 @@ public final class ShaderSession {
                     + " modes wait for later support", pack.name(), states.alphaTests().keySet(),
                     states.blends().keySet(), states.bufferBlends().size());
         }
-    }
-
-    public ShaderMacros macros() {
-        if (macros == null) {
-            throw new IllegalStateException("The shaderpack configuration isn't worked out yet");
-        }
-        return macros;
     }
 
     GlContextInfo glContext() {

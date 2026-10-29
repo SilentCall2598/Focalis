@@ -341,8 +341,8 @@ public final class SessionPrograms {
                 logTextures(textures);
             }
         };
-        live = factory.create(configuration, session.macros(), listener, session.frame(), session.camera(),
-                session.environment(), session.fog());
+        live = factory.create(configuration, listener, session.frame(), session.camera(), session.environment(),
+                session.fog());
         live.terrainStreams(streams.gate());
         if (!session.fog().available()) {
             logger.warn("Minecraft's fog can't be read in this session, so programs that use the fog uniforms draw"

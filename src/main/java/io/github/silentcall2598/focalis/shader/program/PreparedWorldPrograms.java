@@ -8,7 +8,6 @@ import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 import io.github.silentcall2598.focalis.shader.pack.ProgramSource;
 import io.github.silentcall2598.focalis.shader.pack.ProgramStates;
-import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.routing.ProgramResolution;
 import io.github.silentcall2598.focalis.shader.routing.ResolutionState;
@@ -24,10 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * The prepared source for every program role in one program folder. Roles that land on the same pack program share
- * one {@link PreparedProgram}, so each pack program only has to be built once. Immutable, and no OpenGL is involved.
- */
 public final class PreparedWorldPrograms {
 
     private final Map<ShaderProgramRole, Entry> entries;
@@ -43,20 +38,10 @@ public final class PreparedWorldPrograms {
         this.programStates = programStates;
     }
 
-    /**
-     * Resolves every role in {@code directory} under the configuration and prepares the programs they select. Only
-     * that folder is used, so picking the folder for a dimension is up to the caller. Programs the configuration
-     * disables count as missing. A program that fails to prepare is recorded on the roles that selected it and
-     * doesn't stop the others.
-     *
-     * @throws IllegalArgumentException if {@code directory} isn't one of {@code pack}'s own folders or the
-     *     configuration is for another pack
-     */
-    public static PreparedWorldPrograms prepare(ShaderPack pack, ProgramDirectory directory, ShaderMacros environment,
+    public static PreparedWorldPrograms prepare(ShaderPack pack, ProgramDirectory directory,
             PackConfiguration configuration) {
         Objects.requireNonNull(pack, "pack");
         Objects.requireNonNull(directory, "directory");
-        Objects.requireNonNull(environment, "environment");
         Objects.requireNonNull(configuration, "configuration");
         if (!ownsDirectory(pack, directory)) {
             String folder = directory.name().isEmpty() ? "shaders" : "shaders/" + directory.name();
@@ -67,7 +52,6 @@ public final class PreparedWorldPrograms {
             throw new IllegalArgumentException("The configuration belongs to shaderpack '"
                     + configuration.pack().name() + "', not '" + pack.name() + "'");
         }
-        // ProgramSource has no equals, and each one is a distinct program the pack owns.
         Map<ProgramSource, Outcome> outcomes = new IdentityHashMap<>();
         Map<ShaderProgramRole, Entry> entries = new EnumMap<>(ShaderProgramRole.class);
         List<PreparedProgram> unique = new ArrayList<>();
@@ -80,7 +64,7 @@ public final class PreparedWorldPrograms {
             }
             Outcome outcome = outcomes.get(source);
             if (outcome == null) {
-                outcome = Outcome.prepare(pack, source, environment, configuration);
+                outcome = Outcome.prepare(pack, source, configuration);
                 outcomes.put(source, outcome);
                 if (outcome.program != null) {
                     unique.add(outcome.program);
@@ -106,32 +90,26 @@ public final class PreparedWorldPrograms {
         return false;
     }
 
-    /** The entry for a role. Every role has one, even the ones that don't draw anything. */
     public Entry forRole(ShaderProgramRole role) {
         return entries.get(Objects.requireNonNull(role, "role"));
     }
 
-    /** Every role's entry in role order. Read only. */
     public Map<ShaderProgramRole, Entry> entries() {
         return entries;
     }
 
-    /** The custom uniforms of the configuration these programs were prepared with. */
     public CustomUniforms customUniforms() {
         return customUniforms;
     }
 
-    /** The alpha test and blend directives of the configuration these programs were prepared with. */
     public ProgramStates programStates() {
         return programStates;
     }
 
-    /** Each successfully prepared program once, in the order roles first selected it. Read only. */
     public List<PreparedProgram> uniquePrograms() {
         return uniquePrograms;
     }
 
-    /** How one role came out. Roles that selected the same pack program share its program or its problem. */
     public static final class Entry {
 
         private final ShaderProgramRole role;
@@ -157,16 +135,11 @@ public final class PreparedWorldPrograms {
             return resolution;
         }
 
-        /** The prepared program, or null unless the role resolved and its program prepared cleanly. */
         @Nullable
         public PreparedProgram program() {
             return program;
         }
 
-        /**
-         * Why the selected program couldn't be prepared, or null when nothing was selected or it worked. A role whose
-         * programs are all disabled has no problem, its resolution says DISABLED instead.
-         */
         @Nullable
         public String problem() {
             return problem;
@@ -182,7 +155,6 @@ public final class PreparedWorldPrograms {
         }
     }
 
-    // What preparing one pack program gave, shared by every role that selected it.
     private static final class Outcome {
 
         @Nullable
@@ -195,11 +167,9 @@ public final class PreparedWorldPrograms {
             this.problem = problem;
         }
 
-        // A broken include only fails this program. Anything else propagates.
-        static Outcome prepare(ShaderPack pack, ProgramSource source, ShaderMacros environment,
-                PackConfiguration configuration) {
+        static Outcome prepare(ShaderPack pack, ProgramSource source, PackConfiguration configuration) {
             try {
-                return new Outcome(PreparedProgram.prepare(pack, source, environment, configuration), null);
+                return new Outcome(PreparedProgram.prepare(pack, source, configuration), null);
             } catch (IncludeException e) {
                 return new Outcome(null, e.getMessage());
             }

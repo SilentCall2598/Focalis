@@ -6,9 +6,7 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
-import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
-import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -30,7 +28,6 @@ public final class LiveWorldPrograms {
     }
 
     private final ShaderPack pack;
-    private final ShaderMacros macros;
     private PackConfiguration configuration;
     private CustomUniformValues customValues;
     private final BiFunction<PreparedWorldPrograms, ProgramTextures, BuiltWorldPrograms> builder;
@@ -46,14 +43,13 @@ public final class LiveWorldPrograms {
     private boolean worldOpen;
     private boolean deleted;
 
-    private LiveWorldPrograms(PackConfiguration configuration, ShaderMacros macros,
+    private LiveWorldPrograms(PackConfiguration configuration,
             BiFunction<PreparedWorldPrograms, ProgramTextures, BuiltWorldPrograms> builder,
             Function<PackConfiguration, ProgramTextures> textureMaker, BuildListener listener,
             ScopedProgramBinding scopes, ScopedProgramState state, FrameInputs frame, CameraInputs camera,
             EnvironmentInputs environment, FogSource fog) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.pack = configuration.pack();
-        this.macros = Objects.requireNonNull(macros, "macros");
         this.builder = builder;
         this.textureMaker = textureMaker;
         this.listener = Objects.requireNonNull(listener, "listener");
@@ -63,11 +59,11 @@ public final class LiveWorldPrograms {
         binding.terrainColors(configuration.lighting().changesTerrainColors());
     }
 
-    public static LiveWorldPrograms create(PackConfiguration configuration, ShaderMacros macros,
-            ShaderCapabilities capabilities, BuildListener listener, FrameInputs frame, CameraInputs camera,
-            EnvironmentInputs environment, FogSource fog) {
+    public static LiveWorldPrograms create(PackConfiguration configuration, ShaderCapabilities capabilities,
+            BuildListener listener, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
+            FogSource fog) {
         Objects.requireNonNull(capabilities, "capabilities");
-        return new LiveWorldPrograms(configuration, macros,
+        return new LiveWorldPrograms(configuration,
                 (prepared, textures) -> BuiltWorldPrograms.build(prepared, capabilities, textures),
                 ProgramTextures::create, listener, new ScopedProgramBinding(), new ScopedProgramState(), frame, camera,
                 environment, fog);
@@ -83,21 +79,10 @@ public final class LiveWorldPrograms {
     static LiveWorldPrograms create(PackConfiguration configuration, ProgramBuilder builder, BuildListener listener,
             ScopedProgramBinding scopes, ScopedProgramState state, TextureGl textureGl, FrameInputs frame,
             CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
-        return create(configuration, StandardMacros.environment(), builder, listener, scopes, state, textureGl, frame,
-                camera, environment, fog);
-    }
-
-    static LiveWorldPrograms create(PackConfiguration configuration, ShaderMacros macros, ProgramBuilder builder,
-            BuildListener listener, ScopedProgramBinding scopes, ScopedProgramState state, TextureGl textureGl,
-            FrameInputs frame, CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
-        return new LiveWorldPrograms(configuration, macros,
+        return new LiveWorldPrograms(configuration,
                 (prepared, textures) -> BuiltWorldPrograms.build(prepared, builder, textures),
                 next -> ProgramTextures.create(next, textureGl), listener, scopes, state, frame, camera, environment,
                 fog);
-    }
-
-    public ShaderMacros macros() {
-        return macros;
     }
 
     public PackConfiguration configuration() {
@@ -177,7 +162,7 @@ public final class LiveWorldPrograms {
             textures = textureMaker.apply(configuration);
             listener.texturesMade(textures);
         }
-        PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, macros, configuration);
+        PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, configuration);
         programs = new DirectoryPrograms(directory, prepared, builder.apply(prepared, textures));
         folders.put(directory, programs);
         listener.built(programs);
