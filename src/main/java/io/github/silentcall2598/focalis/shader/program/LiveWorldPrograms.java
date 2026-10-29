@@ -6,6 +6,7 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.shader.pack.PackConfiguration;
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
+import io.github.silentcall2598.focalis.shader.pack.ShaderMacros;
 import io.github.silentcall2598.focalis.shader.pack.ShaderPack;
 import io.github.silentcall2598.focalis.shader.pack.StandardMacros;
 
@@ -18,40 +19,26 @@ import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-/**
- * The world programs of one session and their binding, driven by the world pass. Each world pass binds the programs
- * of the folder its dimension selects. A folder's programs are prepared under the session's pack configuration and
- * built the first time a dimension needs them. They're kept, failures included, until the session ends or switches
- * to a configuration that prepares other sources or picks other programs, so going back to a dimension or rejoining
- * never builds again. The configuration's custom textures are made once, right before the first folder builds, and
- * every folder shares them until the configuration changes. Owns every program and texture it made. Client thread
- * only, with the GL context current.
- */
 public final class LiveWorldPrograms {
 
-    /** Hears about each folder right after its programs were built and before anything binds them. */
     public interface BuildListener {
 
         void built(DirectoryPrograms programs);
 
-        /** The configuration's custom textures were just made, before any program that samples them builds. */
         default void texturesMade(ProgramTextures textures) {
         }
     }
 
     private final ShaderPack pack;
+    private final ShaderMacros macros;
     private PackConfiguration configuration;
-    // Belongs to the configuration, so smoothing never carries over into another one.
     private CustomUniformValues customValues;
     private final BiFunction<PreparedWorldPrograms, ProgramTextures, BuiltWorldPrograms> builder;
     private final Function<PackConfiguration, ProgramTextures> textureMaker;
-    // The current configuration's textures, or null until a folder first needs them.
     @Nullable
     private ProgramTextures textures;
     private final BuildListener listener;
     private final WorldProgramBinding binding;
-    // ProgramDirectory has no equals, so this is keyed by the folder object. Dimensions without their own folder
-    // all share the entry of the shaders folder.
     private final Map<ProgramDirectory, DirectoryPrograms> folders = new LinkedHashMap<>();
     @Nullable
     private DirectoryPrograms selected;
@@ -59,13 +46,14 @@ public final class LiveWorldPrograms {
     private boolean worldOpen;
     private boolean deleted;
 
-    private LiveWorldPrograms(PackConfiguration configuration,
+    private LiveWorldPrograms(PackConfiguration configuration, ShaderMacros macros,
             BiFunction<PreparedWorldPrograms, ProgramTextures, BuiltWorldPrograms> builder,
             Function<PackConfiguration, ProgramTextures> textureMaker, BuildListener listener,
             ScopedProgramBinding scopes, ScopedProgramState state, FrameInputs frame, CameraInputs camera,
             EnvironmentInputs environment, FogSource fog) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.pack = configuration.pack();
+        this.macros = Objects.requireNonNull(macros, "macros");
         this.builder = builder;
         this.textureMaker = textureMaker;
         this.listener = Objects.requireNonNull(listener, "listener");
@@ -74,23 +62,11 @@ public final class LiveWorldPrograms {
         binding.customValues(customValues);
     }
 
-    /**
-     * Nothing is built until a world pass needs it.
-     *
-     * @param configuration the pack, with the option values and program states its programs are prepared with
-     * @param frame the frame values every program of the session gets. The caller captures it at the start of each
-     *     frame, and before the first world pass.
-     * @param camera the camera values every program of the session gets. The caller starts every world pass on it
-     *     and captures the pass's camera before its first world stage binds anything.
-     * @param environment the world and environment values every program of the session gets. The caller takes them
-     *     right after the camera of each world pass.
-     * @param fog read whenever a stage binds a program that uses fog values
-     */
-    public static LiveWorldPrograms create(PackConfiguration configuration, ShaderCapabilities capabilities,
-            BuildListener listener, FrameInputs frame, CameraInputs camera, EnvironmentInputs environment,
-            FogSource fog) {
+    public static LiveWorldPrograms create(PackConfiguration configuration, ShaderMacros macros,
+            ShaderCapabilities capabilities, BuildListener listener, FrameInputs frame, CameraInputs camera,
+            EnvironmentInputs environment, FogSource fog) {
         Objects.requireNonNull(capabilities, "capabilities");
-        return new LiveWorldPrograms(configuration,
+        return new LiveWorldPrograms(configuration, macros,
                 (prepared, textures) -> BuiltWorldPrograms.build(prepared, capabilities, textures),
                 ProgramTextures::create, listener, new ScopedProgramBinding(), new ScopedProgramState(), frame, camera,
                 environment, fog);
@@ -106,36 +82,40 @@ public final class LiveWorldPrograms {
     static LiveWorldPrograms create(PackConfiguration configuration, ProgramBuilder builder, BuildListener listener,
             ScopedProgramBinding scopes, ScopedProgramState state, TextureGl textureGl, FrameInputs frame,
             CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
-        return new LiveWorldPrograms(configuration,
+        return create(configuration, StandardMacros.environment(), builder, listener, scopes, state, textureGl, frame,
+                camera, environment, fog);
+    }
+
+    static LiveWorldPrograms create(PackConfiguration configuration, ShaderMacros macros, ProgramBuilder builder,
+            BuildListener listener, ScopedProgramBinding scopes, ScopedProgramState state, TextureGl textureGl,
+            FrameInputs frame, CameraInputs camera, EnvironmentInputs environment, FogSource fog) {
+        return new LiveWorldPrograms(configuration, macros,
                 (prepared, textures) -> BuiltWorldPrograms.build(prepared, builder, textures),
                 next -> ProgramTextures.create(next, textureGl), listener, scopes, state, frame, camera, environment,
                 fog);
+    }
+
+    public ShaderMacros macros() {
+        return macros;
     }
 
     public PackConfiguration configuration() {
         return configuration;
     }
 
-    /** The custom uniform values of the current configuration. */
     public CustomUniformValues customValues() {
         return customValues;
     }
 
-    /** The current configuration's custom textures, or null until a folder first needed them. */
     @Nullable
     public ProgramTextures textures() {
         return textures;
     }
 
-    /** The alpha test, blend mode and texture changes of the open scopes. */
     public ScopedProgramState state() {
         return binding.state();
     }
 
-    /**
-     * Where terrain programs that read the chunk attribute stream ask for it. Until this is set, those programs never
-     * bind. Only between world passes.
-     */
     public void terrainStreams(TerrainStreamGate gate) {
         checkNotDeleted();
         if (worldOpen) {
@@ -144,13 +124,6 @@ public final class LiveWorldPrograms {
         binding.terrainStreams(gate);
     }
 
-    /**
-     * Switches to another configuration of the same pack, between world passes. An equal configuration changes
-     * nothing, so nothing is uploaded again. Any other deletes every folder built so far and the textures, and they
-     * are made again under the new configuration the next time a world pass needs them.
-     *
-     * @return whether the built programs were dropped
-     */
     public boolean applyConfiguration(PackConfiguration next) {
         Objects.requireNonNull(next, "configuration");
         checkNotDeleted();
@@ -171,12 +144,6 @@ public final class LiveWorldPrograms {
         return true;
     }
 
-    /**
-     * Starts a world pass in {@code dimension} and selects the programs of the folder it uses, building them first if
-     * no world pass needed that folder before. Programs the pack or driver can't build stay unbound.
-     *
-     * @return the selected folder's programs
-     */
     public DirectoryPrograms worldStart(int dimension) {
         checkClosed("when a world pass started");
         checkNotDeleted();
@@ -191,7 +158,6 @@ public final class LiveWorldPrograms {
         return programs;
     }
 
-    /** Starts a world pass without a client world. It has no dimension, so nothing is bound in it. */
     public void worldStartWithoutWorld() {
         checkClosed("when a world pass started");
         checkNotDeleted();
@@ -200,32 +166,27 @@ public final class LiveWorldPrograms {
         worldOpen = true;
     }
 
-    // A folder only goes in once its build returned, so a build that throws never leaves half a folder behind.
     private DirectoryPrograms programsFor(ProgramDirectory directory) {
         DirectoryPrograms programs = folders.get(directory);
         if (programs != null) {
             return programs;
         }
         if (textures == null) {
-            // Owned before the listener hears about them, so a throwing listener can't leak them.
             textures = textureMaker.apply(configuration);
             listener.texturesMade(textures);
         }
-        PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, StandardMacros.environment(),
-                configuration);
+        PreparedWorldPrograms prepared = PreparedWorldPrograms.prepare(pack, directory, macros, configuration);
         programs = new DirectoryPrograms(directory, prepared, builder.apply(prepared, textures));
         folders.put(directory, programs);
         listener.built(programs);
         return programs;
     }
 
-    /** The programs the current or last world pass selected, or null when it had no world. */
     @Nullable
     public DirectoryPrograms selected() {
         return selected;
     }
 
-    /** Every folder built so far, in the order they were first needed. Read only. */
     public Collection<DirectoryPrograms> built() {
         return Collections.unmodifiableCollection(folders.values());
     }
@@ -235,26 +196,15 @@ public final class LiveWorldPrograms {
         checkClosed("at the end of a world pass");
     }
 
-    /** Catches a world pass whose end never came, since that end is a Forge event something could skip. */
     public void frameEnd() {
         worldOpen = false;
         checkClosed("at the end of a frame");
     }
 
-    /**
-     * Opens the program scope of a stage inside the world pass. Other mods can draw things like sky or entities
-     * outside it, and those are left alone along with their END.
-     *
-     * @return whether a scope was opened
-     */
     public boolean stageStart(RenderStage stage, RenderDrawKind drawKind) {
         return stageStart(stage, drawKind, false);
     }
 
-    /**
-     * Like {@link #stageStart(RenderStage, RenderDrawKind)}, with whether vanilla's own code draws the stage, see
-     * {@link WorldProgramBinding#start(RenderStage, RenderDrawKind, boolean)}.
-     */
     public boolean stageStart(RenderStage stage, RenderDrawKind drawKind, boolean vanillaDraws) {
         if (!worldOpen) {
             return false;
@@ -263,14 +213,12 @@ public final class LiveWorldPrograms {
         return true;
     }
 
-    // A START outside the world pass always has its END outside too, since a scope left open fails the next check.
     public void stageEnd(RenderStage stage, RenderDrawKind drawKind) {
         if (worldOpen) {
             binding.end(stage, drawKind);
         }
     }
 
-    /** Steps aside while vanilla binds its own programs inside the world pass, like for entity outlines. */
     public void vanillaProgramsStart(RenderStage stage, RenderDrawKind drawKind) {
         if (worldOpen) {
             binding.suspend(stage, drawKind);
@@ -283,20 +231,10 @@ public final class LiveWorldPrograms {
         }
     }
 
-    /**
-     * Right after one entity or block entity renderer returned. It may have bound its own programs and left another
-     * one bound, or changed the state the program's directives and textures need, so both are put back if needed.
-     *
-     * @return whether the program had to be bound again
-     */
     public boolean rendererReturned() {
         return worldOpen && binding.rendererReturned();
     }
 
-    /**
-     * An entity or block entity renderer starts. Inside a bound entity pass the object gets its role's program and its
-     * material ID, see {@link WorldProgramBinding#objectStart}. Every start needs its {@link #objectEnd}.
-     */
     public void objectStart(RenderDrawKind kind, int id) {
         if (worldOpen) {
             binding.objectStart(kind, id);
@@ -309,17 +247,12 @@ public final class LiveWorldPrograms {
         }
     }
 
-    /** The color vanilla blends the innermost entity with, (0, 0, 0, 0) for none. */
     public void objectColor(float red, float green, float blue, float alpha) {
         if (worldOpen) {
             binding.objectColor(red, green, blue, alpha);
         }
     }
 
-    /**
-     * A special draw of the innermost object starts, like its armor glint. See
-     * {@link WorldProgramBinding#specialStart}.
-     */
     public void specialStart(RenderDrawKind kind) {
         if (worldOpen) {
             binding.specialStart(kind);
@@ -332,15 +265,12 @@ public final class LiveWorldPrograms {
         }
     }
 
-    /** A living entity renderer caught a failure and draws on. See {@link WorldProgramBinding#specialsAbandoned}. */
     public void specialsAbandoned() {
         if (worldOpen) {
             binding.specialsAbandoned();
         }
     }
 
-    // A scope still open here never got its END, or a suspension its resume. Both are closed so no program stays
-    // bound, and this throws because Focalis lost track of the stages.
     private void checkClosed(String when) {
         if (binding.isEmpty() && !binding.isSuspended()) {
             return;
@@ -356,11 +286,6 @@ public final class LiveWorldPrograms {
         }
     }
 
-    /**
-     * Closes any open scope first, so no program is deleted while bound, then deletes the programs of every folder
-     * once and then the textures. Everything is attempted even if something throws, and the first failure is
-     * rethrown. Calling it again does nothing.
-     */
     public void delete() {
         worldOpen = false;
         deleted = true;
@@ -373,8 +298,6 @@ public final class LiveWorldPrograms {
         rethrow(deleteFolders(failure));
     }
 
-    // Aborting always empties the scopes, and a configuration only changes outside a world pass, so nothing can
-    // refuse the select.
     @Nullable
     private Throwable deleteFolders(@Nullable Throwable earlier) {
         Throwable failure = earlier;

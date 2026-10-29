@@ -11,15 +11,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * The inputs Focalis gives one built world program. Uniforms keep their values for as long as the program isn't
- * linked again, so the samplers are set once right after linking. The frame uniforms and the world values are set the
- * first time the program is bound in a frame, and the camera uniforms and the values in eye space the first time it's
- * bound with a new camera snapshot. The fog is draw state, so it's set every time a stage binds the program. Custom
- * uniforms are set the first time the program is bound after the session's values were computed again. The object
- * values entityId, blockEntityId and entityColor change with the entity or block entity being drawn and are only sent
- * when they differ from what the program holds. Every location is looked up once, right after linking.
- */
 public final class WorldProgramInputs {
 
     private static final int GL_FLOAT = 0x1406;
@@ -39,7 +30,6 @@ public final class WorldProgramInputs {
     private static final int GL_SAMPLER_3D = 0x8B5F;
     private static final int GL_SAMPLER_CUBE = 0x8B60;
     private static final int GL_SAMPLER_2D_SHADOW = 0x8B62;
-    // values() copies the array, and updates run every frame.
     private static final FrameUniform[] FRAME_UNIFORMS = FrameUniform.values();
     private static final CameraUniform[] CAMERA_UNIFORMS = CameraUniform.values();
     private static final EnvironmentUniform[] ENVIRONMENT_UNIFORMS = EnvironmentUniform.values();
@@ -52,7 +42,6 @@ public final class WorldProgramInputs {
     private final int entityIdLocation;
     private final int blockEntityIdLocation;
     private final int entityColorLocation;
-    // The object values this program holds, so an unchanged value isn't sent again. Nothing is known before the first.
     private boolean objectSet;
     private int setEntityId;
     private int setBlockEntityId;
@@ -69,25 +58,22 @@ public final class WorldProgramInputs {
     private final boolean anyWorldValue;
     private final boolean anyPassValue;
     private final boolean anyFogValue;
-    // Each used custom uniform's location, its slot in the session's values and whether it's a bool.
+    private boolean atlasSet;
+    private int setAtlasWidth;
+    private int setAtlasHeight;
     private final int[] customLocations;
     private final int[] customSlots;
     private final boolean[] customBools;
     private final List<String> unprovided;
-    // Each unit a custom texture sampler reads, once, and the texture that goes on it.
     private final int[] textureUnits;
     private final int[] textures;
-    // The values and the generation of them the custom uniforms were last set from.
     @Nullable
     private CustomUniformValues updatedCustomValues;
     private long updatedCustom;
     private long customUpdates;
-    // The FrameInputs sequence the frame uniforms were last set for, 0 before the first time.
     private long updatedFrame;
-    // The CameraSnapshot sequence the camera uniforms were last set for, 0 before the first time.
     private long updatedCamera;
     private long cameraUpdates;
-    // The EnvironmentInputs frame and pass the world and eye space values were last set for, 0 before the first time.
     private long updatedWorldValues;
     private long updatedPassValues;
     private long fogUpdates;
@@ -134,35 +120,15 @@ public final class WorldProgramInputs {
         return false;
     }
 
-    /**
-     * Finds the samplers and the frame, camera and environment uniforms the program uses and points each sampler at
-     * its texture unit. Everything but the samplers is left for {@link #update}. Must run on the client thread with
-     * the context current and no Focalis program scope open. The program is bound for a moment and whatever was
-     * current before is bound again. That is tried even when something throws, and if putting it back fails while
-     * the program is still current, no program is left bound instead.
-     *
-     * @throws ProgramBuildException if the program declares a supported uniform with another type or as an array
-     */
     static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program) throws ProgramBuildException {
         return connect(gl, program, CustomUniforms.NONE);
     }
 
-    /**
-     * Like {@link #connect(ShaderGl, ShaderProgram)}, and also finds the usable custom uniforms the program declares.
-     * One declared with another type than its custom declaration is left unset and counted as unprovided, since
-     * that's a pack mistake and not a reason to drop the whole program.
-     */
     static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program, CustomUniforms customs)
             throws ProgramBuildException {
         return connect(gl, program, customs, ProgramTextures.NONE);
     }
 
-    /**
-     * Like {@link #connect(ShaderGl, ShaderProgram, CustomUniforms)}, and also points the custom texture samplers the
-     * program uses at their documented units when the configuration declares a texture there. A sampler without a
-     * declared texture stays unprovided. One whose texture couldn't be made fails the program, so its stage draws the
-     * normal way instead of sampling nothing. A sampler the driver optimized out isn't active and never matters.
-     */
     static WorldProgramInputs connect(ShaderGl gl, ShaderProgram program, CustomUniforms customs,
             ProgramTextures declared) throws ProgramBuildException {
         int id = program.id();
@@ -181,7 +147,6 @@ public final class WorldProgramInputs {
         List<Integer> textureLocations = new ArrayList<>();
         List<Integer> textureLocationUnits = new ArrayList<>();
         for (ActiveUniform uniform : gl.activeUniforms(id)) {
-            // Drivers can report an array with only its first element used as name[0] with size 1.
             boolean array = uniform.name.endsWith("[0]") || uniform.size != 1;
             String name = uniform.name.endsWith("[0]")
                     ? uniform.name.substring(0, uniform.name.length() - 3) : uniform.name;
@@ -252,7 +217,6 @@ public final class WorldProgramInputs {
         }
         int[] textureLocationArray = new int[textureLocations.size()];
         int[] textureLocationUnitArray = new int[textureLocations.size()];
-        // Aliases like gaux4 and colortex7 read the same unit, which only needs its texture once.
         List<Integer> units = new ArrayList<>();
         for (int i = 0; i < textureLocationArray.length; i++) {
             textureLocationArray[i] = textureLocations.get(i);
@@ -289,18 +253,10 @@ public final class WorldProgramInputs {
         }
     }
 
-    /**
-     * Whether this program can draw with {@code camera}, the environment values and the fog. A program that uses no
-     * camera uniform always can as far as the camera goes. One that does needs a snapshot, and one with the inverse
-     * matrices it reads. A program with environment values needs the ones of {@code camera}'s world pass, and one
-     * with fog values needs fog that can be read. Otherwise its stage draws the vanilla way, since the values it would
-     * get are missing or would belong to another camera.
-     */
     boolean accepts(@Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog) {
         if ((anyWorldValue || anyPassValue || customLocations.length > 0) && !environment.readyFor(camera)) {
             return false;
         }
-        // Custom values read the camera of the pass.
         if (customLocations.length > 0 && camera == null) {
             return false;
         }
@@ -319,22 +275,17 @@ public final class WorldProgramInputs {
         return location(CameraUniform.PROJECTION_INVERSE) < 0 || camera.projectionInverse != null;
     }
 
-    /**
-     * Sets the frame uniforms and world values to the ones of the current frame, and the camera uniforms and values
-     * in eye space to those of {@code camera}, each unless this program already got them. The fog is set every time.
-     * The program has to be current, the frame captured and everything {@link #accepts accepted}. Nothing else in GL
-     * changes.
-     */
     void update(FrameInputs frame, @Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog) {
         update(frame, camera, environment, fog, null);
     }
 
-    /**
-     * Like {@link #update(FrameInputs, CameraSnapshot, EnvironmentInputs, FogSource)}, and also sets the custom
-     * uniforms from {@code custom}, computing them for this world pass first if no program did yet.
-     */
     void update(FrameInputs frame, @Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog,
             @Nullable CustomUniformValues custom) {
+        update(frame, camera, environment, fog, custom, false);
+    }
+
+    void update(FrameInputs frame, @Nullable CameraSnapshot camera, EnvironmentInputs environment, FogSource fog,
+            @Nullable CustomUniformValues custom, boolean atlas) {
         long sequence = frame.sequence();
         if (sequence == 0) {
             throw new IllegalStateException("A world program needed the frame values before any frame was captured");
@@ -352,7 +303,6 @@ public final class WorldProgramInputs {
                     }
                 }
             }
-            // Only marked once every value is in, so a failed update is never taken for a finished one.
             updatedFrame = sequence;
         }
         if (anyCameraUniform && camera.sequence() != updatedCamera) {
@@ -377,6 +327,17 @@ public final class WorldProgramInputs {
             setEnvironment(EnvironmentUniform.Update.BIND, environment, fog);
             fogUpdates++;
         }
+        int atlasLocation = environmentLocations[EnvironmentUniform.ATLAS_SIZE.ordinal()];
+        if (atlasLocation >= 0) {
+            int width = atlas ? environment.atlasWidth() : 0;
+            int height = atlas ? environment.atlasHeight() : 0;
+            if (!atlasSet || width != setAtlasWidth || height != setAtlasHeight) {
+                gl.uniform2i(atlasLocation, width, height);
+                setAtlasWidth = width;
+                setAtlasHeight = height;
+                atlasSet = true;
+            }
+        }
         if (customLocations.length > 0) {
             if (custom == null) {
                 throw new IllegalStateException("A world program with custom uniforms was bound without their values");
@@ -398,10 +359,6 @@ public final class WorldProgramInputs {
         }
     }
 
-    /**
-     * Sets the values of the object being drawn, or the defaults outside any object, on this program, which has to be
-     * current. Only values that differ from what the program already holds are sent.
-     */
     void object(int entityId, int blockEntityId, float red, float green, float blue, float alpha) {
         boolean known = objectSet;
         if (entityIdLocation >= 0 && (!known || setEntityId != entityId)) {
@@ -414,7 +371,6 @@ public final class WorldProgramInputs {
                 || setAlpha != alpha)) {
             gl.uniform4f(entityColorLocation, red, green, blue, alpha);
         }
-        // Only marked once every value is in, so a failed call is never taken for a value the program holds.
         setEntityId = entityId;
         setBlockEntityId = blockEntityId;
         setRed = red;
@@ -424,7 +380,6 @@ public final class WorldProgramInputs {
         objectSet = true;
     }
 
-    /** Whether {@link #object} with these values would send anything. */
     boolean objectDiffers(int entityId, int blockEntityId, float red, float green, float blue, float alpha) {
         if (!objectSet) {
             return entityIdLocation >= 0 || blockEntityIdLocation >= 0 || entityColorLocation >= 0;
@@ -488,8 +443,22 @@ public final class WorldProgramInputs {
             case EYE_ALTITUDE:
                 gl.uniform1f(location, environment.eyeAltitude());
                 break;
+            case NEAR:
+                gl.uniform1f(location, EnvironmentInputs.NEAR);
+                break;
+            case FAR:
+                gl.uniform1f(location, environment.far());
+                break;
+            case NIGHT_VISION:
+                gl.uniform1f(location, environment.nightVision());
+                break;
+            case BLINDNESS:
+                gl.uniform1f(location, environment.blindness());
+                break;
+            case SCREEN_BRIGHTNESS:
+                gl.uniform1f(location, environment.screenBrightness());
+                break;
             case FOG_MODE:
-                // With fog off nothing is fogged, and 0 is no GL fog mode.
                 gl.uniform1i(location, fog.enabled() ? fog.mode() : 0);
                 break;
             case FOG_START:
@@ -513,7 +482,6 @@ public final class WorldProgramInputs {
         gl.uniform3f(location, value[0], value[1], value[2]);
     }
 
-    // The positions stay doubles until here, since a vec3 only holds floats.
     private void set(CameraUniform uniform, int location, CameraSnapshot camera) {
         switch (uniform) {
             case CAMERA_POSITION:
@@ -571,7 +539,6 @@ public final class WorldProgramInputs {
         }
     }
 
-    // Uniforms can only be set on the current program, and GL 2.1 has no way around that.
     private static void assign(ShaderGl gl, int program, int[] locations, int[] textureLocations,
             int[] textureUnits) {
         boolean any = textureLocations.length > 0;
@@ -612,8 +579,6 @@ public final class WorldProgramInputs {
         }
     }
 
-    // The caller deletes the program next, and GL only flags a current program for deletion. So when it's still
-    // current, nothing is bound instead. If even that fails it stays current until something else binds a program.
     private static Throwable unbindAfterFailedRestore(ShaderGl gl, int program, Throwable failure) {
         try {
             if (gl.currentProgram() == program) {
@@ -695,23 +660,18 @@ public final class WorldProgramInputs {
         return array ? "an array with " + type : type;
     }
 
-    /** The uniform location of a sampler in this program, or -1 when the program doesn't use it. */
     public int location(WorldSampler sampler) {
         return locations[sampler.ordinal()];
     }
 
-    /** The uniform location of a frame uniform in this program, or -1 when the program doesn't use it. */
     public int location(FrameUniform uniform) {
         return frameLocations[uniform.ordinal()];
     }
 
-    /** The uniform location of a camera uniform in this program, or -1 when the program doesn't use it. */
     public int location(CameraUniform uniform) {
         return cameraLocations[uniform.ordinal()];
     }
 
-    /** The uniform location of an environment uniform in this program, or -1 when the program doesn't use it. */
-    /** The location of entityId, blockEntityId or entityColor, -1 when the program doesn't use it. */
     public int objectLocation(String name) {
         switch (name) {
             case ENTITY_ID:
@@ -729,62 +689,50 @@ public final class WorldProgramInputs {
         return environmentLocations[uniform.ordinal()];
     }
 
-    /** The EnvironmentInputs frame the world values were last set for, or 0 if they never were. */
     public long updatedWorldValues() {
         return updatedWorldValues;
     }
 
-    /** The EnvironmentInputs pass the values in eye space were last set for, or 0 if they never were. */
     public long updatedPassValues() {
         return updatedPassValues;
     }
 
-    /** How many times the fog values were set, once for every bind of a program that uses them. */
     public long fogUpdates() {
         return fogUpdates;
     }
 
-    /** The FrameInputs sequence the frame uniforms were last set for, or 0 if they never were. */
     long updatedFrame() {
         return updatedFrame;
     }
 
-    /** The CameraSnapshot sequence the camera uniforms were last set for, or 0 if they never were. */
     public long updatedCamera() {
         return updatedCamera;
     }
 
-    /** How many times the camera uniforms were set, which can only grow by one per camera snapshot. */
     public long cameraUpdates() {
         return cameraUpdates;
     }
 
-    /** How many custom uniforms this program sets. */
     public int customUniformCount() {
         return customLocations.length;
     }
 
-    /** How many times the custom uniforms were set, at most once per computation of the values. */
     public long customUpdates() {
         return customUpdates;
     }
 
-    /** Active uniforms Focalis doesn't set yet. They keep the zero they got when the program was linked. */
     public List<String> unprovided() {
         return unprovided;
     }
 
-    /** How many units the program reads custom textures from. */
     public int textureCount() {
         return textureUnits.length;
     }
 
-    /** The unit of one custom texture the program reads. */
     public int textureUnit(int index) {
         return textureUnits[index];
     }
 
-    /** The texture that goes on that unit while the program is bound. */
     public int texture(int index) {
         return textures[index];
     }

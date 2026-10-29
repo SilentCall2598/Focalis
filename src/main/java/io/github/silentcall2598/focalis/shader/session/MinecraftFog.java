@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Focalis contributors
 // SPDX-License-Identifier: LGPL-3.0-only
-package io.github.silentcall2598.focalis.shader;
+package io.github.silentcall2598.focalis.shader.session;
 
 import io.github.silentcall2598.focalis.mixin.EntityRendererFogAccessor;
 import io.github.silentcall2598.focalis.render.state.FixedFunctionFog;
@@ -8,8 +8,6 @@ import io.github.silentcall2598.focalis.shader.program.FogSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.EntityRenderer;
 
-// The fog mode, start, end and density come from GlStateManager's cache. The color only exists in EntityRenderer,
-// which hands it to GL every time setupFog runs, so it's what GL holds whenever a stage starts.
 final class MinecraftFog implements FogSource {
 
     @Override
@@ -58,7 +56,6 @@ final class MinecraftFog implements FogSource {
         return renderer().focalis$fogColorBlue();
     }
 
-    // Some mods replace the EntityRenderer with their own subclass, so it's looked up each time.
     private static EntityRendererFogAccessor renderer() {
         EntityRenderer renderer = Minecraft.getMinecraft().entityRenderer;
         return (EntityRendererFogAccessor) renderer;

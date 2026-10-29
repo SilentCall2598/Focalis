@@ -15,12 +15,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * The {@code uniform.<type>.<name>} and {@code variable.<type>.<name>} declarations of one pack configuration,
- * compiled once with their names resolved, types checked, cycles found and a dependency order fixed. A declaration
- * that can't be used is kept with the reason, and so is every declaration that needs it, while everything else stays
- * usable. Immutable and shared, so the values themselves live with whoever evaluates them.
- */
 public final class CustomUniforms {
 
     public static final CustomUniforms NONE = new CustomUniforms(Collections.<Declaration>emptyList(), new int[0], 0);
@@ -29,22 +23,19 @@ public final class CustomUniforms {
     private static final Pattern NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final Set<String> SUPPORTED_TYPES = new HashSet<>(Arrays.asList("float", "bool"));
     private static final Set<String> LATER_TYPES = new HashSet<>(Arrays.asList("int", "vec2", "vec3", "vec4"));
-    // The documented standard uniforms Focalis has no expression input for yet.
     private static final Set<String> UNAVAILABLE = new HashSet<>(Arrays.asList("heldItemId", "heldBlockLightValue",
-            "heldItemId2", "heldBlockLightValue2", "near", "far", "sunPosition", "moonPosition",
+            "heldItemId2", "heldBlockLightValue2", "sunPosition", "moonPosition",
             "shadowLightPosition", "upPosition", "gbufferModelView", "gbufferModelViewInverse",
             "gbufferPreviousModelView", "gbufferProjection", "gbufferProjectionInverse", "gbufferPreviousProjection",
             "shadowProjection", "shadowProjectionInverse", "shadowModelView", "shadowModelViewInverse", "wetness",
-            "eyeBrightnessSmooth", "terrainTextureSize", "terrainIconSize", "nightVision", "blindness",
-            "screenBrightness", "hideGUI", "centerDepthSmooth", "atlasSize", "playerMood", "biome", "biome_category",
+            "eyeBrightnessSmooth", "terrainTextureSize", "terrainIconSize", "hideGUI", "centerDepthSmooth",
+            "atlasSize", "playerMood", "biome", "biome_category",
             "temperature", "rainfall", "is_alive", "is_burning", "is_child", "is_glowing",
             "is_hurt", "is_in_lava", "is_in_water", "is_invisible", "is_on_ground", "is_ridden", "is_riding",
             "is_sneaking", "is_sprinting", "is_wet"));
-    // These change many times per program, so the format keeps them out of expressions.
     private static final Set<String> PER_DRAW = new HashSet<>(Arrays.asList("entityColor", "entityId",
             "blockEntityId", "fogMode", "fogColor", "fogStart", "fogEnd", "fogDensity"));
 
-    /** One declaration from shaders.properties. */
     public static final class Declaration {
 
         private final int index;
@@ -69,7 +60,6 @@ public final class CustomUniforms {
             this.location = location;
         }
 
-        /** Its slot in the value array an evaluation fills. */
         public int index() {
             return index;
         }
@@ -78,17 +68,14 @@ public final class CustomUniforms {
             return name;
         }
 
-        /** Whether it's a uniform sent to programs, otherwise a variable for other expressions. */
         public boolean uniform() {
             return uniform;
         }
 
-        /** The declared type as written, like float. */
         public String type() {
             return type;
         }
 
-        /** Whether its value is a bool, stored as 1 or 0. Only meaningful when it's {@link #usable()}. */
         public boolean bool() {
             return type.equals("bool");
         }
@@ -105,7 +92,6 @@ public final class CustomUniforms {
             return problem == null;
         }
 
-        /** Why it can't be used, or null when it can. */
         @Nullable
         public String problem() {
             return problem;
@@ -134,7 +120,6 @@ public final class CustomUniforms {
         this.uniforms = Collections.unmodifiableMap(usableUniforms);
     }
 
-    /** Compiles the declarations among the properties and reports each one that can't be used. */
     static CustomUniforms compile(ShaderPath file, Map<String, ShaderProperties.Property> properties,
             List<PackIssue> issues) {
         List<Declaration> declarations = new ArrayList<>();
@@ -225,7 +210,6 @@ public final class CustomUniforms {
         switch (name) {
             case "pi":
                 return new CustomExpression.Number((float) Math.PI);
-            // The documented numbers of biome_precipitation.
             case "PPT_NONE":
                 return new CustomExpression.Number(0);
             case "PPT_RAIN":
@@ -241,7 +225,6 @@ public final class CustomUniforms {
         }
         List<Declaration> declared = byName.get(name);
         if (declared != null) {
-            // A declaration that turns out unusable takes everything that uses it along, so any type does here.
             Declaration target = declared.get(0);
             from.dependencies.add(target.index);
             return new CustomExpression.Reference(target.index,
@@ -270,8 +253,6 @@ public final class CustomUniforms {
         throw new CustomExpressionParser.ParseException("there is nothing named " + name);
     }
 
-    // Finds cycles among the usable declarations, then fails everything that needs an unusable one, and returns the
-    // usable ones with every dependency before the declarations that use it.
     private static int[] orderAndPropagate(List<Declaration> declarations) {
         int count = declarations.size();
         int[] state = new int[count];
@@ -343,22 +324,18 @@ public final class CustomUniforms {
         return list;
     }
 
-    /** Every declaration in file order, usable or not. */
     public List<Declaration> declarations() {
         return declarations;
     }
 
-    /** The usable uniforms by name. */
     public Map<String, Declaration> uniforms() {
         return uniforms;
     }
 
-    /** How many smooth() call sites the usable and unusable expressions have, each with its own state. */
     public int smoothSites() {
         return smoothSites;
     }
 
-    /** How many usable declarations an evaluation computes. */
     public int evaluatedCount() {
         return order.length;
     }
@@ -367,10 +344,6 @@ public final class CustomUniforms {
         return uniforms.isEmpty();
     }
 
-    /**
-     * Computes every usable declaration into {@code values}, indexed like {@link #declarations()}, dependencies first.
-     * Unusable ones are left as they are. Allocates nothing.
-     */
     public void evaluate(CustomContext context, float[] values) {
         for (int index : order) {
             Declaration declaration = declarations.get(index);

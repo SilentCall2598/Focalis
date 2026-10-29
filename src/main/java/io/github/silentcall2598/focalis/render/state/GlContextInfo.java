@@ -18,16 +18,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// Only queries what the context says it supports, so capturing shouldn't raise GL errors. It also leaves
-// glGetError alone so vanilla's own per-frame check still reports real errors.
 public final class GlContextInfo {
 
-    /** Value of any limit or measurement the context does not report. */
     public static final int UNKNOWN = -1;
 
     private static final Pattern VERSION_PREFIX = Pattern.compile("^(\\d+)\\.(\\d+)");
@@ -39,7 +37,7 @@ public final class GlContextInfo {
     private final String shadingLanguageVersion;
     private final int majorVersion;
     private final int minorVersion;
-    private final Set<GlFeature> features = EnumSet.noneOf(GlFeature.class);
+    private final Set<GlFeature> features;
     private final int maxTextureSize;
     private final int maxTextureImageUnits;
     private final int maxDrawBuffers;
@@ -56,12 +54,12 @@ public final class GlContextInfo {
         version = orUnknown(GL11.glGetString(GL11.GL_VERSION));
         shadingLanguageVersion = caps.OpenGL20 ? GL11.glGetString(GL20.GL_SHADING_LANGUAGE_VERSION) : null;
 
-        // Parse the version string because LWJGL 2's capability flags stop at OpenGL 4.5.
         Matcher matcher = VERSION_PREFIX.matcher(version);
         boolean parsed = matcher.find();
         majorVersion = parsed ? Integer.parseInt(matcher.group(1)) : UNKNOWN;
         minorVersion = parsed ? Integer.parseInt(matcher.group(2)) : UNKNOWN;
 
+        features = EnumSet.noneOf(GlFeature.class);
         for (GlFeature feature : GlFeature.values()) {
             if (feature.isSupported(caps)) {
                 features.add(feature);
@@ -82,7 +80,7 @@ public final class GlContextInfo {
             dedicatedVideoMemoryKiB = GL11.glGetInteger(NVXGpuMemoryInfo.GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX);
             availableVideoMemoryKiB = GL11.glGetInteger(NVXGpuMemoryInfo.GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX);
         } else if (caps.GL_ATI_meminfo) {
-            IntBuffer values = BufferUtils.createIntBuffer(16); // LWJGL requires room for 16 values
+            IntBuffer values = BufferUtils.createIntBuffer(16);
             GL11.glGetInteger(ATIMeminfo.GL_TEXTURE_FREE_MEMORY_ATI, values);
             dedicatedVideoMemoryKiB = UNKNOWN;
             availableVideoMemoryKiB = values.get(0);
@@ -94,9 +92,37 @@ public final class GlContextInfo {
         extensions = queryExtensions(caps);
     }
 
-    // Throws a RuntimeException if no GL context is current on this thread.
+    private GlContextInfo(String vendor, String renderer, String version, @Nullable String shadingLanguageVersion,
+            Set<GlFeature> features, List<String> extensions) {
+        this.vendor = vendor;
+        this.renderer = renderer;
+        this.version = version;
+        this.shadingLanguageVersion = shadingLanguageVersion;
+        Matcher matcher = VERSION_PREFIX.matcher(version);
+        boolean parsed = matcher.find();
+        majorVersion = parsed ? Integer.parseInt(matcher.group(1)) : UNKNOWN;
+        minorVersion = parsed ? Integer.parseInt(matcher.group(2)) : UNKNOWN;
+        this.features = Collections.unmodifiableSet(new HashSet<>(features));
+        maxTextureSize = UNKNOWN;
+        maxTextureImageUnits = UNKNOWN;
+        maxDrawBuffers = UNKNOWN;
+        maxColorAttachments = UNKNOWN;
+        maxSamples = UNKNOWN;
+        maxAnisotropy = UNKNOWN;
+        dedicatedVideoMemoryKiB = UNKNOWN;
+        availableVideoMemoryKiB = UNKNOWN;
+        List<String> sorted = new ArrayList<>(extensions);
+        Collections.sort(sorted);
+        this.extensions = Collections.unmodifiableList(sorted);
+    }
+
     public static GlContextInfo capture() {
         return new GlContextInfo(GLContext.getCapabilities());
+    }
+
+    public static GlContextInfo describe(String vendor, String renderer, String version,
+            @Nullable String shadingLanguageVersion, Set<GlFeature> features, List<String> extensions) {
+        return new GlContextInfo(vendor, renderer, version, shadingLanguageVersion, features, extensions);
     }
 
     private static List<String> queryExtensions(ContextCapabilities caps) {
@@ -176,12 +202,10 @@ public final class GlContextInfo {
         return maxAnisotropy;
     }
 
-    // NVIDIA only.
     public int dedicatedVideoMemoryKiB() {
         return dedicatedVideoMemoryKiB;
     }
 
-    // Free video memory on NVIDIA, or free texture memory on AMD.
     public int availableVideoMemoryKiB() {
         return availableVideoMemoryKiB;
     }

@@ -4,8 +4,6 @@ package io.github.silentcall2598.focalis.config;
 
 import net.minecraftforge.common.config.Configuration;
 
-// Reading a missing option adds it with its default value. Forge's Configuration isn't thread-safe, so only read
-// sections during startup on the client thread.
 public final class ConfigSection {
 
     private final Configuration configuration;
@@ -20,12 +18,15 @@ public final class ConfigSection {
         return configuration.getBoolean(key, category, defaultValue, comment);
     }
 
-    // Forge clamps values outside min and max.
     public int getInt(String key, int defaultValue, int min, int max, String comment) {
         return configuration.getInt(key, category, defaultValue, min, max, comment);
     }
 
     public String getString(String key, String defaultValue, String comment) {
         return configuration.getString(key, category, defaultValue, comment);
+    }
+
+    public boolean has(String key) {
+        return configuration.hasKey(category, key);
     }
 }
