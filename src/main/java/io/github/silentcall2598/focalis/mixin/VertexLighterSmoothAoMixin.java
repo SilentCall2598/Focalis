@@ -16,7 +16,7 @@ public abstract class VertexLighterSmoothAoMixin {
     @ModifyExpressionValue(method = "updateColor", at = @At(value = "INVOKE", target = "Lnet/minecraftforge/client/"
             + "model/pipeline/VertexLighterSmoothAo;getAo(FFF)F"), require = 0, expect = 1)
     private float focalis$occlusion(float ao) {
-        BufferBuilder builder = ((LighterLink) (Object) this).focalis$builder();
+        BufferBuilder builder = LighterLink.builder(this);
         if (builder != null) {
             LightingCapture.forgeAo(builder, ao);
         }

@@ -27,13 +27,13 @@ public abstract class ForgeBlockModelRendererMixin {
     private static void focalis$linked(VertexLighterFlat lighter, IBlockAccess world, IBakedModel model,
             IBlockState state, BlockPos pos, BufferBuilder buffer, boolean checkSides, long rand,
             CallbackInfoReturnable<Boolean> cir) {
-        ((LighterLink) lighter).focalis$builder(buffer);
+        LighterLink.link(lighter, buffer);
     }
 
     @Inject(method = RENDER, at = @At("RETURN"), require = 0, expect = 1)
     private static void focalis$unlinked(VertexLighterFlat lighter, IBlockAccess world, IBakedModel model,
             IBlockState state, BlockPos pos, BufferBuilder buffer, boolean checkSides, long rand,
             CallbackInfoReturnable<Boolean> cir) {
-        ((LighterLink) lighter).focalis$builder(null);
+        LighterLink.link(lighter, null);
     }
 }

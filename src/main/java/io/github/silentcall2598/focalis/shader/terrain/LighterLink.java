@@ -12,4 +12,15 @@ public interface LighterLink {
     BufferBuilder focalis$builder();
 
     void focalis$builder(@Nullable BufferBuilder builder);
+
+    static void link(Object lighter, @Nullable BufferBuilder builder) {
+        if (lighter instanceof LighterLink) {
+            ((LighterLink) lighter).focalis$builder(builder);
+        }
+    }
+
+    @Nullable
+    static BufferBuilder builder(Object lighter) {
+        return lighter instanceof LighterLink ? ((LighterLink) lighter).focalis$builder() : null;
+    }
 }
