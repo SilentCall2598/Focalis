@@ -150,7 +150,8 @@ public final class StreamCompanion {
         if (current == null || problem != null) {
             return;
         }
-        ids.blockEnded(bufferVertices, StreamLayout.entityId(current.block(state)));
+        ids.blockEnded(bufferVertices, StreamLayout.entityWord(current.block(state),
+                stored.getRenderType().ordinal()));
         if (ids.broken()) {
             fail("a block render added part of a quad");
         }

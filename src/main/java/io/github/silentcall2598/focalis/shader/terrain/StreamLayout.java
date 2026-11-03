@@ -92,6 +92,10 @@ public final class StreamLayout {
         return id >= 0 && id <= MAX_ENTITY_ID ? (short) id : (short) -1;
     }
 
+    static int entityWord(int id, int renderType) {
+        return entityId(id) & 0xFFFF | renderType << 16;
+    }
+
     // A unit vector component as a normalized signed byte. -1 goes in as -128, which reads back as exactly -1 under
     // both the c/127 rule and the older (2c+1)/255 one. 127 is exactly 1 under both.
     static byte snorm8(double value) {

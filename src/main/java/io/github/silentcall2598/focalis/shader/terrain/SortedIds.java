@@ -6,22 +6,22 @@ import javax.annotation.Nullable;
 
 public final class SortedIds {
 
-    private final short[] ids;
+    private final int[] ids;
     private final int generation;
     @Nullable
     private final int[] colors;
 
-    SortedIds(short[] ids, int generation) {
+    SortedIds(int[] ids, int generation) {
         this(ids, generation, null);
     }
 
-    SortedIds(short[] ids, int generation, @Nullable int[] colors) {
+    SortedIds(int[] ids, int generation, @Nullable int[] colors) {
         this.ids = ids;
         this.generation = generation;
         this.colors = colors;
     }
 
-    short[] ids() {
+    int[] ids() {
         return ids;
     }
 
