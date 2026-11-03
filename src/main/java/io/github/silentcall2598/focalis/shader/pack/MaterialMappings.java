@@ -14,10 +14,10 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Declarations are in file order, which is the order matching tries them. Only one line per ID counts. When an ID is
- * declared again, with the same key or another spelling of the number like {@code block.010}, the later line
- * replaces the earlier one at its own place, as if the earlier line weren't written. The format only says one line
- * per ID is allowed, so this is Focalis's own rule for packs that break that.
+ * Declarations are in file order. A key written again replaces the earlier line at its own place, as if the earlier
+ * line weren't written. Keys are compared as written, so {@code block.10} and {@code block.010} are two lines with the
+ * same ID, and both count. Both rules follow OptiFine 1.12.2 HD U G5 as observed; the format only says one line per ID
+ * is allowed.
  */
 public final class MaterialMappings {
 
@@ -26,8 +26,11 @@ public final class MaterialMappings {
             Collections.<Layer>emptyList());
 
     static final String LAYER = "layer.";
-    private static final List<String> LAYERS = Arrays.asList("solid", "cutout", "translucent");
+    private static final List<String> LAYERS = Arrays.asList("solid", "cutout", "cutout_mipped", "translucent");
     private static final Pattern DIGITS = Pattern.compile("[0-9]+");
+    private static final Pattern METADATA = Pattern.compile("[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*");
+
+    public static final int ANY_METADATA = 0xFFFF;
 
     public enum Kind {
         BLOCK("block.properties", "block."),
@@ -94,21 +97,24 @@ public final class MaterialMappings {
     }
 
     /**
-     * One entry of a line, like {@code stone}, {@code botania:reeds} or {@code minecraft:stone:variant=granite,diorite}.
-     * Without a namespace it's {@code minecraft}. Names are lowercased like 1.12.2 resource locations. Property names
-     * and values are kept as written, and only blocks have them.
+     * One entry of a line, like {@code stone}, {@code botania:reeds}, {@code wool:1,3-5} or
+     * {@code minecraft:stone:variant=granite,diorite}. Without a namespace it's {@code minecraft}. Names are lowercased
+     * like 1.12.2 resource locations. Metadata is a bit per value, property names and values are kept as written, and
+     * only blocks have either.
      */
     public static final class Selector {
 
         private final String text;
         private final String namespace;
         private final String path;
+        private final int metadata;
         private final Map<String, List<String>> properties;
 
-        Selector(String text, String namespace, String path, Map<String, List<String>> properties) {
+        Selector(String text, String namespace, String path, int metadata, Map<String, List<String>> properties) {
             this.text = text;
             this.namespace = namespace;
             this.path = path;
+            this.metadata = metadata;
             this.properties = properties;
         }
 
@@ -126,6 +132,10 @@ public final class MaterialMappings {
 
         public String name() {
             return namespace + ":" + path;
+        }
+
+        public int metadata() {
+            return metadata;
         }
 
         public Map<String, List<String>> properties() {
@@ -175,7 +185,7 @@ public final class MaterialMappings {
         this.layers = layers;
     }
 
-    /** The macros should be the ones the pack's other properties see. */
+    /** Only the standard environment macros: the G5 format has no option macros in these files. */
     static MaterialMappings read(ShaderPack pack, Map<String, String> macros, List<PackIssue> issues) {
         Map<Kind, List<Declaration>> declarations = new EnumMap<>(Kind.class);
         List<Layer> layers = new ArrayList<>();
@@ -196,8 +206,8 @@ public final class MaterialMappings {
     private static List<Declaration> readFile(Kind kind, String text, Map<String, String> macros, List<Layer> layers,
             List<PackIssue> issues) {
         ShaderPath file = kind.file();
-        // Removing before putting moves a repeated ID to its latest line, so the order stays the file's.
-        Map<Integer, Declaration> byId = new LinkedHashMap<>();
+        // Removing before putting moves a repeated key to its latest line, so the order stays the file's.
+        Map<String, Declaration> byKey = new LinkedHashMap<>();
         for (ShaderProperties.Line line : ShaderProperties.readLines(file, text, macros, issues)) {
             SourceLocation here = new SourceLocation(file, line.line);
             if (line.key.startsWith(kind.prefix)) {
@@ -208,12 +218,12 @@ public final class MaterialMappings {
                             + " 0 to " + Integer.MAX_VALUE));
                     continue;
                 }
-                Declaration earlier = byId.remove(id);
+                Declaration earlier = byKey.remove(line.key);
                 if (earlier != null) {
-                    issues.add(new PackIssue(here, line.key + " repeats ID " + id + " from " + earlier.key() + " at "
-                            + earlier.location() + ", which no longer counts. Only one line per ID is allowed"));
+                    issues.add(new PackIssue(here, line.key + " is written again, so the line at " + earlier.location()
+                            + " no longer counts. Only one line per ID is allowed"));
                 }
-                byId.put(id, new Declaration(kind, id, line.key, selectors(kind, line, here, issues), here));
+                byKey.put(line.key, new Declaration(kind, id, line.key, selectors(kind, line, here, issues), here));
             } else if (kind == Kind.BLOCK && line.key.startsWith(LAYER)) {
                 String name = line.key.substring(LAYER.length());
                 if (!LAYERS.contains(name)) {
@@ -228,7 +238,7 @@ public final class MaterialMappings {
                         + "<id>" + (kind == Kind.BLOCK ? " and " + LAYER + "<layer>" : "") + " lines"));
             }
         }
-        return Collections.unmodifiableList(new ArrayList<>(byId.values()));
+        return Collections.unmodifiableList(new ArrayList<>(byKey.values()));
     }
 
     @Nullable
@@ -251,79 +261,100 @@ public final class MaterialMappings {
         }
         List<Selector> selectors = new ArrayList<>();
         for (String text : value.split("\\s+")) {
-            String problem = problem(kind, text);
-            if (problem != null) {
-                issues.add(new PackIssue(here, line.key + " skips '" + text + "', " + problem));
+            String[] problem = new String[1];
+            Selector selector = selector(kind, text, problem);
+            if (selector == null) {
+                issues.add(new PackIssue(here, line.key + " skips '" + text + "', " + problem[0]));
             } else {
-                selectors.add(selector(text));
+                selectors.add(selector);
             }
         }
         return Collections.unmodifiableList(selectors);
     }
 
     @Nullable
-    private static String problem(Kind kind, String text) {
+    private static Selector selector(Kind kind, String text, String[] problem) {
         String[] parts = text.split(":", -1);
-        int names = nameParts(parts);
-        if (names == 0 || names > 2) {
-            return "a name is either name or namespace:name, followed by property=value parts";
+        if (DIGITS.matcher(parts[0]).matches()) {
+            // Forge gives blocks and items other numbers in each world, see MaterialIds.
+            problem[0] = "numeric IDs aren't supported, use names";
+            return null;
         }
-        for (int i = 0; i < names; i++) {
-            if (parts[i].isEmpty()) {
-                return "it has an empty name part";
+        int next = 1;
+        String namespace = "minecraft";
+        String path = parts[0];
+        if (parts.length > 1 && parts[1].indexOf('=') < 0 && !METADATA.matcher(parts[1]).matches()) {
+            namespace = parts[0];
+            path = parts[1];
+            next = 2;
+        }
+        if (namespace.isEmpty() || path.isEmpty() || path.indexOf('=') >= 0) {
+            problem[0] = "a name is either name or namespace:name, followed by metadata and property=value parts";
+            return null;
+        }
+        int metadata = ANY_METADATA;
+        if (next < parts.length && METADATA.matcher(parts[next]).matches()) {
+            metadata = metadata(parts[next]);
+            if (metadata == 0) {
+                problem[0] = "metadata values go from 0 to 15";
+                return null;
             }
-            // Numeric IDs change between worlds in modded 1.12.2, and states are matched by property, not metadata.
-            if (DIGITS.matcher(parts[i]).matches()) {
-                return "numeric IDs and metadata values aren't supported, use names and properties";
-            }
+            next++;
         }
-        if (names < parts.length && kind != Kind.BLOCK) {
-            return (kind == Kind.ITEM ? "items" : "entities") + " can't have properties";
+        if ((metadata != ANY_METADATA || next < parts.length) && kind != Kind.BLOCK) {
+            problem[0] = (kind == Kind.ITEM ? "items" : "entities") + " can't have metadata or properties";
+            return null;
         }
-        List<String> seen = new ArrayList<>();
-        for (int i = names; i < parts.length; i++) {
+        Map<String, List<String>> properties = new LinkedHashMap<>();
+        for (int i = next; i < parts.length; i++) {
             int equals = parts[i].indexOf('=');
             if (equals < 0) {
-                return "a property has to look like name=value";
+                problem[0] = "a property has to look like name=value";
+                return null;
             }
             String property = parts[i].substring(0, equals);
             if (property.isEmpty()) {
-                return "a property has no name";
+                problem[0] = "a property has no name";
+                return null;
             }
-            for (String allowed : parts[i].substring(equals + 1).split(",", -1)) {
+            String[] values = parts[i].substring(equals + 1).split(",", -1);
+            for (String allowed : values) {
                 if (allowed.isEmpty()) {
-                    return "property " + property + " has an empty value";
+                    problem[0] = "property " + property + " has an empty value";
+                    return null;
                 }
             }
-            if (seen.contains(property)) {
-                return "property " + property + " is listed twice";
+            if (properties.containsKey(property)) {
+                problem[0] = "property " + property + " is listed twice";
+                return null;
             }
-            seen.add(property);
+            properties.put(property, Collections.unmodifiableList(Arrays.asList(values)));
         }
-        return null;
+        return new Selector(text, namespace.toLowerCase(Locale.ROOT), path.toLowerCase(Locale.ROOT), metadata,
+                properties.isEmpty() ? Collections.<String, List<String>>emptyMap()
+                        : Collections.unmodifiableMap(properties));
     }
 
-    private static int nameParts(String[] parts) {
-        int names = 0;
-        while (names < parts.length && parts[names].indexOf('=') < 0) {
-            names++;
+    private static int metadata(String text) {
+        int bits = 0;
+        for (String part : text.split(",")) {
+            int dash = part.indexOf('-');
+            int from;
+            int to;
+            try {
+                from = Integer.parseInt(dash < 0 ? part : part.substring(0, dash));
+                to = dash < 0 ? from : Integer.parseInt(part.substring(dash + 1));
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+            if (from > to || to > 15) {
+                return 0;
+            }
+            for (int value = from; value <= to; value++) {
+                bits |= 1 << value;
+            }
         }
-        return names;
-    }
-
-    private static Selector selector(String text) {
-        String[] parts = text.split(":", -1);
-        int names = nameParts(parts);
-        String namespace = names == 2 ? parts[0].toLowerCase(Locale.ROOT) : "minecraft";
-        String path = parts[names - 1].toLowerCase(Locale.ROOT);
-        Map<String, List<String>> properties = new LinkedHashMap<>();
-        for (int i = names; i < parts.length; i++) {
-            int equals = parts[i].indexOf('=');
-            properties.put(parts[i].substring(0, equals), Collections.unmodifiableList(
-                    Arrays.asList(parts[i].substring(equals + 1).split(","))));
-        }
-        return new Selector(text, namespace, path, properties.isEmpty()
-                ? Collections.<String, List<String>>emptyMap() : Collections.unmodifiableMap(properties));
+        return bits;
     }
 
     public List<Declaration> declarations(Kind kind) {

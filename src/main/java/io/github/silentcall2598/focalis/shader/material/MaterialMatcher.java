@@ -14,12 +14,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * A block state, item or entity type gets the ID of the first declaration that matches it, in the file order
- * {@link MaterialMappings} keeps, however specific a later one is. Later matches are reported as conflicts that name
- * the line above them that won. This is Focalis's own deterministic rule.
- *
- * <p>A property the block doesn't have is left out of the entry, so packs that add 1.13 properties to 1.12 names still
- * map those blocks. A value the property doesn't have matches nothing.
+ * In the file order {@link MaterialMappings} keeps, a block state gets the ID of the first declaration that matches it,
+ * however specific a later one is, and an item or entity type gets the ID of the last one. A property the block
+ * doesn't have, or a value the property doesn't have, makes the entry match nothing. These follow OptiFine 1.12.2
+ * HD U G5 as observed; conflicts are reported with the line that won.
  */
 final class MaterialMatcher {
 
@@ -37,6 +35,8 @@ final class MaterialMatcher {
         Collection<String> values(String property);
 
         String value(S state, String property);
+
+        int metadata(S state);
     }
 
     interface Names<T> {
@@ -106,7 +106,8 @@ final class MaterialMatcher {
             Collection<String> values = block.values(property.getKey());
             if (values == null) {
                 report.note(declaration, selector, MaterialReport.Problem.UNKNOWN_PROPERTY, "names property "
-                        + property.getKey() + ", which " + selector.name() + " doesn't have, so it's left out");
+                        + property.getKey() + ", which " + selector.name() + " doesn't have, so it matches nothing");
+                matchesNothing = true;
                 continue;
             }
             Set<String> kept = new HashSet<>();
@@ -127,14 +128,18 @@ final class MaterialMatcher {
             return states;
         }
         for (S state : block.states()) {
-            if (matches(block, state, names, allowed)) {
+            if (matches(block, state, selector.metadata(), names, allowed)) {
                 states.add(state);
             }
         }
         return states;
     }
 
-    private static <S> boolean matches(Block<S> block, S state, List<String> names, List<Set<String>> allowed) {
+    private static <S> boolean matches(Block<S> block, S state, int metadata, List<String> names,
+            List<Set<String>> allowed) {
+        if (metadata != MaterialMappings.ANY_METADATA && (metadata >> block.metadata(state) & 1) == 0) {
+            return false;
+        }
         for (int i = 0; i < names.size(); i++) {
             if (!allowed.get(i).contains(block.value(state, names.get(i)))) {
                 return false;
@@ -162,13 +167,11 @@ final class MaterialMatcher {
                             + (kind == MaterialMappings.Kind.ITEM ? "an item" : "an entity") + " in this game");
                     continue;
                 }
-                MaterialMappings.Declaration owner = owners.get(found);
-                if (owner == null) {
-                    owners.put(found, declaration);
-                    ids.put(found, id);
-                } else if (owner.id() != declaration.id()) {
-                    report.note(declaration, selector, MaterialReport.Problem.CONFLICT, "keeps the ID of "
-                            + owner.key() + " from " + owner.location());
+                MaterialMappings.Declaration owner = owners.put(found, declaration);
+                ids.put(found, id);
+                if (owner != null && owner.id() != declaration.id()) {
+                    report.note(owner, selector, MaterialReport.Problem.CONFLICT, "gives way to " + declaration.key()
+                            + " from " + declaration.location());
                 }
             }
         }
