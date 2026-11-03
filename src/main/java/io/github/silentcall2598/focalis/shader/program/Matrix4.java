@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
-/** 4x4 float matrices stored the way OpenGL returns and takes them, column by column. */
 final class Matrix4 {
 
     static final int SIZE = 16;
@@ -10,18 +9,12 @@ final class Matrix4 {
     private Matrix4() {
     }
 
-    /**
-     * Writes the inverse of {@code m} into {@code out}, worked out in double precision. Inverting a transposed matrix
-     * gives the transposed inverse, so this doesn't depend on the storage order.
-     *
-     * @return false, with {@code out} left untouched, when {@code m} has no finite inverse
-     */
+    /** Inverting a transposed matrix gives the transposed inverse, so this doesn't depend on the storage order. */
     static boolean invert(float[] m, float[] out) {
         double a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
         double a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
         double a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
         double a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
-        // 2x2 determinants of the first two rows and of the last two.
         double s0 = a00 * a11 - a10 * a01;
         double s1 = a00 * a12 - a10 * a02;
         double s2 = a00 * a13 - a10 * a03;

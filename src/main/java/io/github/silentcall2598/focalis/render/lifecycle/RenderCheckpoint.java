@@ -8,8 +8,6 @@ package io.github.silentcall2598.focalis.render.lifecycle;
  * so they are far more frequent than stages and carry nothing else. They happen anywhere, also outside the world pass.
  */
 public enum RenderCheckpoint {
-    /** An entity renderer returned, including multipass and outline draws. */
     ENTITY_RENDERED,
-    /** A block entity renderer returned, including damaged block overlays and fast renderers filling their batch. */
     BLOCK_ENTITY_RENDERED
 }

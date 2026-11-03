@@ -19,7 +19,6 @@ import java.util.Set;
  */
 public final class RenderHooks {
 
-    /** Stages the Mixins wrap around vanilla calls inside the world pass. Read only. */
     public static final Set<RenderStage> PRECISE_STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.CAMERA,
             RenderStage.SKY, RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.ENTITY_OUTLINES,
             RenderStage.BLOCK_DAMAGE, RenderStage.PARTICLES, RenderStage.TRANSLUCENT, RenderStage.WEATHER,
@@ -39,7 +38,6 @@ public final class RenderHooks {
     private RenderHooks() {
     }
 
-    /** Called once by the render subsystem during pre-init. */
     public static synchronized void install(RenderLifecycle target) {
         if (lifecycle != null) {
             throw new IllegalStateException("Render hooks are already installed");
@@ -56,7 +54,6 @@ public final class RenderHooks {
         return WORLD_START;
     }
 
-    // The start of EntityRenderer.renderWorldPass. WORLD END still comes from Forge, see ForgeRenderEventBridge.
     public static void worldPassStart(float partialTicks) {
         RenderLifecycle target = lifecycle;
         if (target == null) {
@@ -85,7 +82,6 @@ public final class RenderHooks {
         }
     }
 
-    // Called by the Mixins right before and after a wrapped vanilla render call, with the same kind both times.
     public static void stageStart(RenderStage stage, RenderDrawKind drawKind, float partialTicks) {
         RenderLifecycle target = lifecycle;
         if (target == null) {
@@ -160,7 +156,6 @@ public final class RenderHooks {
         entityReturned();
     }
 
-    // destroyStage is the dispatcher's argument, 0 to 9 while the renderer draws the block entity's breaking overlay.
     public static boolean blockEntityStarted(TileEntity blockEntity, int destroyStage) {
         RenderLifecycle target = lifecycle;
         if (target == null) {
@@ -222,7 +217,6 @@ public final class RenderHooks {
         }
     }
 
-    // RenderLivingBase.doRender caught a failure of its model or layers and draws on.
     public static void specialDrawsAbandoned() {
         RenderLifecycle target = lifecycle;
         if (target != null) {
@@ -231,7 +225,6 @@ public final class RenderHooks {
         }
     }
 
-    // The constant color a living entity renderer just set up for blending, or all zero when it stopped.
     public static void entityColor(float red, float green, float blue, float alpha) {
         RenderLifecycle target = lifecycle;
         if (target != null) {

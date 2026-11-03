@@ -10,8 +10,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Reports the armor glint. Vanilla's armor and elytra layers, and many mod armor layers, draw it through this shared
-// method inside the renderer of the entity wearing the armor. Quark and HammerLib recolor it inside the method.
+// Vanilla's armor and elytra layers, and many mod armor layers, draw the glint through this shared method inside the
+// renderer of the entity wearing the armor. Quark and HammerLib recolor it inside the method.
 @Mixin(LayerArmorBase.class)
 public abstract class LayerArmorBaseGlintMixin {
 

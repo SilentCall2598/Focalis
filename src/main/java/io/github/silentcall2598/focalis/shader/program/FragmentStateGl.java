@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.program;
 
-/**
- * The alpha test and blend calls program directives need. Queries read GL itself. Changes go through GlStateManager
- * so its cache keeps up, and to GL directly as well. Every method needs a current context on the calling thread.
- */
+/** Changes go through GlStateManager so its cache keeps up, and to GL directly as well. */
 interface FragmentStateGl {
 
     boolean alphaTestEnabled();
@@ -27,7 +24,6 @@ interface FragmentStateGl {
 
     void blendFactors(int sourceColor, int destinationColor, int sourceAlpha, int destinationAlpha);
 
-    /** Whether GlStateManager's cache of this state can be read. The cached methods need it. They ask nothing of GL. */
     boolean cacheKnown();
 
     boolean cachedAlphaTestEnabled();
@@ -38,20 +34,15 @@ interface FragmentStateGl {
 
     boolean cachedBlendEnabled();
 
-    /** The cached factors, in the same order as {@link #blendFactors(int[])}. */
     void cachedBlendFactors(int[] into);
 
     /**
-     * Holds the {@link io.github.silentcall2598.focalis.render.state.FragmentHold} components given, so GlStateManager
-     * calls changing them neither reach GL nor its cache until {@link #release}. This one's own changes still go
-     * through.
+     * GlStateManager calls changing the held components neither reach GL nor its cache until {@link #release}. This one's
+     * own changes still go through.
      */
     void hold(int components);
 
-    /**
-     * Ends the hold. Returns the components GlStateManager calls asked to change meanwhile, whose last requested values
-     * the requested methods give until the next hold.
-     */
+    /** Returns the components GlStateManager calls asked to change meanwhile. */
     int release();
 
     boolean requestedAlphaTest();
@@ -62,6 +53,5 @@ interface FragmentStateGl {
 
     boolean requestedBlend();
 
-    /** One requested factor, in the same order as {@link #blendFactors(int[])}. */
     int requestedBlendFactor(int index);
 }

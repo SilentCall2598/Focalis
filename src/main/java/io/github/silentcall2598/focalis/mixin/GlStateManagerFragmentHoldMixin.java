@@ -12,9 +12,7 @@ import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Lets a program's alpha test and blend directives stay in effect while vanilla code that sets that state itself
-// draws with the program, see FragmentHold. A held call changes neither the cache nor GL. The overloads taking
-// GlStateManager's factor enums call these methods, so they are held too.
+// The overloads taking GlStateManager's factor enums call these methods, so they are held too.
 //
 // None of these hooks may allocate. A cancellable injection creates a CallbackInfo on every call, held or not, and
 // Java 8u51's JIT didn't always remove it (24 bytes per call in DJ2). So the hold skips the writes instead of

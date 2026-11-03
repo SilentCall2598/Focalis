@@ -2,10 +2,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.routing;
 
-/**
- * What a shader program is for, in Focalis's own terms. These are not shaderpack program or file names. Which pack
- * program fills a role is decided separately.
- */
 public enum ShaderProgramRole {
     /**
      * Nothing at this boundary is for a Focalis program to draw, like a whole frame or world pass, or vanilla's entity
@@ -14,25 +10,17 @@ public enum ShaderProgramRole {
     NONE,
     /** Something is drawn here, but its context isn't understood well enough to give it a role. */
     UNCLASSIFIED,
-    /** The surface sky around the sun and moon, with its sunrise glow and stars. */
     SKY_BASIC,
-    /** The sun and moon. */
     SKY_TEXTURED,
     TERRAIN_SOLID,
     TERRAIN_CUTOUT_MIPPED,
     TERRAIN_CUTOUT,
     TERRAIN_TRANSLUCENT,
-    /** Both Forge entity render passes, and each entity drawn in them. */
     ENTITIES,
-    /** Each block entity drawn inside the entity render passes, and the batch of fast block entity renderers. */
     BLOCK_ENTITIES,
-    /** The enchantment glint over armor and items drawn in the world. */
     ARMOR_GLINT,
-    /** The glowing eye layers of spiders, endermen and the ender dragon. */
     EYES,
-    /** Beacon and end gateway beams. */
     BEACON_BEAM,
-    /** Block breaking overlays, on blocks and on block entities. */
     DAMAGED_BLOCK,
     PARTICLES_LIT,
     PARTICLES_NORMAL,

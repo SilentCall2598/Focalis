@@ -14,12 +14,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The custom textures one configuration declares with {@code texture.<stage>.<name>} and {@code texture.noise}. This
- * is only what the pack asks for. Reading and uploading the images happens elsewhere, so nothing here touches files
- * or GL. Immutable.
- *
- * <p>Only shaders-folder PNGs on the documented gbuffers units and the noise texture can be used for now. Everything
- * else is kept with its source line and a reason, so it's reported instead of quietly binding nothing.
+ * Everything that can't be used is kept with its source line and a reason, so it's reported instead of quietly binding
+ * nothing.
  */
 public final class PackTextures {
 
@@ -48,35 +44,25 @@ public final class PackTextures {
         GBUFFERS_UNITS.put("colortex7", 10);
     }
 
-    /** Which programs a declaration is for. */
     public enum Stage {
-        /** The noise texture, which every program can sample. */
         NOISE,
-        /** gbuffers and shadow programs. */
         GBUFFERS,
         DEFERRED,
-        /** composite and final programs. */
         COMPOSITE
     }
 
-    /** Whether Focalis can provide a declaration yet. */
     public enum Status {
-        /** A shaders-folder PNG on a unit Focalis binds. */
         USABLE,
-        /** The image doesn't exist in the pack. Programs that sample it can't get it. */
         MISSING,
-        /** Valid, but it needs something Focalis doesn't have yet, like deferred programs. */
         NEEDS_LATER_CAPABILITY,
         /**
          * A source form or unit Focalis doesn't support. On a unit Focalis binds, programs that sample it can't get it,
          * the same as a missing image.
          */
         UNSUPPORTED,
-        /** A later line declares the same unit, so this one is ignored. */
         REPLACED
     }
 
-    /** One declared texture. */
     public static final class Declaration {
 
         private final String key;
@@ -111,22 +97,18 @@ public final class PackTextures {
             return stage;
         }
 
-        /** The sampler or unit name as written, like {@code gaux4}, or {@code noisetex} for the noise texture. */
         public String sampler() {
             return sampler;
         }
 
-        /** The documented texture unit, or -1 when Focalis doesn't bind this stage yet. */
         public int unit() {
             return unit;
         }
 
-        /** The value as written. */
         public String value() {
             return value;
         }
 
-        /** The image in the shaders folder, or null for other source forms. */
         @Nullable
         public ShaderPath file() {
             return file;
@@ -136,7 +118,6 @@ public final class PackTextures {
             return status;
         }
 
-        /** Why it isn't usable, empty when it is. */
         public String reason() {
             return reason;
         }
@@ -157,10 +138,6 @@ public final class PackTextures {
         this.declarations = declarations;
     }
 
-    /**
-     * Reads the declarations from properties that already went through the preprocessor. Anything that can't be
-     * used is reported in {@code issues}.
-     */
     static PackTextures read(ShaderPath file, Map<String, ShaderProperties.Property> properties, ShaderPack pack,
             List<PackIssue> issues) {
         List<Declaration> declarations = new ArrayList<>();
@@ -256,10 +233,6 @@ public final class PackTextures {
         return new Declaration(key, stage, sampler, unit, value, image, Status.USABLE, "", here);
     }
 
-    /**
-     * The PNG in the shaders folder a {@code texture.} value names, or null for anything else. The loader uses this
-     * to read every image some configuration could bind.
-     */
     @Nullable
     static ShaderPath packImage(String value) {
         ShaderPath file = packFile(value);
@@ -302,7 +275,6 @@ public final class PackTextures {
         }
     }
 
-    /** Every declaration in file order. Read only. */
     public List<Declaration> all() {
         return declarations;
     }
@@ -322,7 +294,6 @@ public final class PackTextures {
         return null;
     }
 
-    /** The gbuffers unit a sampler name reads, or -1 when it isn't a custom texture sampler. */
     public static int gbuffersUnit(String sampler) {
         if (sampler.equals(NOISE_SAMPLER)) {
             return NOISE_UNIT;

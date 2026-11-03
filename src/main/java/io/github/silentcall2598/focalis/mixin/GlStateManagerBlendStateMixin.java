@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Lets Focalis read GlStateManager's cached blend factors, the same way as its fog.
 @Mixin(targets = "net.minecraft.client.renderer.GlStateManager$BlendState")
 public abstract class GlStateManagerBlendStateMixin implements FragmentCache.Blend {
 

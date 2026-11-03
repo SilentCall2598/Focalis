@@ -12,8 +12,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Splits a driver log into lines and points them back at pack files. Vendors format logs differently, so only
- * formats seen from real drivers are matched. Everything else is kept as plain text.
+ * Vendors format logs differently, so only formats seen from real drivers are matched. Everything else is kept as
+ * plain text.
  */
 final class DriverLogLocator {
 
@@ -25,7 +25,6 @@ final class DriverLogLocator {
     private DriverLogLocator() {
     }
 
-    /** @param source the source the log is about, or null for logs like link errors that span several stages */
     static List<DriverLogMessage> locate(String driverLog, @Nullable ResolvedSource source) {
         List<DriverLogMessage> messages = new ArrayList<>();
         for (String line : driverLog.split("\r?\n")) {

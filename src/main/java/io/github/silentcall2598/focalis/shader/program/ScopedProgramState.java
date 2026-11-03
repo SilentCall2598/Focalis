@@ -9,22 +9,17 @@ import javax.annotation.Nullable;
 import java.util.Arrays;
 
 /**
- * The alpha test, blend mode and custom textures of the programs the open scopes bound, next to
- * {@link ScopedProgramBinding}, which does the programs themselves. A scope with a program applies what that program
- * asks for, and its END puts back what was there before. A program without a directive gets back what was there
- * before the one around it changed anything, so a directive only ever applies while its own program is bound. Only
- * what Focalis changed is put back, and only while it still holds what Focalis set, since vanilla changes the same
- * state inside the stages it draws and that has to stay. Client thread only, with the GL context current.
+ * A program without a directive gets back what was there before the one around it changed anything, so a directive
+ * only ever applies while its own program is bound. Only what Focalis changed is put back, and only while it still
+ * holds what Focalis set, since vanilla changes the same state inside the stages it draws and that has to stay.
  *
  * <p>A scope can also hold its directives while its program is the one bound, for vanilla code that sets that state
  * itself between the program's draws. GlStateManager calls changing held state then neither reach GL nor its cache.
  * What they ask for is what the scope's END puts back instead of the state from before, so the code after the scope
  * sees the state it would have had anyway.
  *
- * <p>Whatever this changes goes to GL and to GlStateManager's cache together. A directive also counts as not in effect
- * while only the cache disagrees, so applying it leaves the cache matching GL.
- *
- * <p>Like the programs, every open scope is unwound before anything is thrown.
+ * <p>Whatever this changes goes to GL and to GlStateManager's cache together. A directive also counts as not in
+ * effect while only the cache disagrees, so applying it leaves the cache matching GL.
  */
 public final class ScopedProgramState {
 
@@ -42,15 +37,11 @@ public final class ScopedProgramState {
     private final int[] wantFactors = new int[4];
     private final int[] cachedFactors = new int[4];
 
-    // One slot per open scope, innermost last. Null for a scope that bound nothing.
     private ProgramDrawState[] targets = new ProgramDrawState[INITIAL_DEPTH];
-    // Per open scope, whether it holds its directives while it's the innermost one with a program.
     private boolean[] holds = new boolean[INITIAL_DEPTH];
     private int depth;
     private boolean suspended;
-    // Set when a resume left the open scopes without their state because the program bound wasn't Focalis's.
     private boolean stripped;
-    // The scope whose directives are held right now, or -1.
     private int holding = -1;
 
     // One entry per change still in effect, newest last. A scope's changes always sit above the ones of the scopes
@@ -81,19 +72,14 @@ public final class ScopedProgramState {
         this.textures = textures;
     }
 
-    /**
-     * Opens a scope. With a target, which is the state of the program the scope just bound or found bound, that
-     * program's directives and textures apply. A null target is a scope that bound nothing, so the state of the
-     * program around it stays.
-     */
     public void start(@Nullable ProgramDrawState target) {
         start(target, false);
     }
 
     /**
-     * Like {@link #start(ProgramDrawState)}, and with {@code hold} the target's directives are also held while this is
-     * the innermost scope with a program. Vanilla code that draws with the program and sets that state itself, like the
-     * weather or the sky, then can't replace the directive before its draws.
+     * With {@code hold} the target's directives are also held while this is the innermost scope with a program. Vanilla
+     * code that draws with the program and sets that state itself, like the weather or the sky, then can't replace the
+     * directive before its draws.
      */
     public void start(@Nullable ProgramDrawState target, boolean hold) {
         try {
@@ -119,7 +105,6 @@ public final class ScopedProgramState {
         }
     }
 
-    /** Closes the innermost scope and puts back what it changed. */
     public void end() {
         try {
             checkNotSuspended("END");
@@ -150,10 +135,6 @@ public final class ScopedProgramState {
         }
     }
 
-    /**
-     * Puts back everything the open scopes changed while a region that binds its own programs runs. The scopes stay
-     * open, and nothing can start or end until {@link #resume}.
-     */
     public void suspend() {
         try {
             checkNotSuspended("suspension");
@@ -167,11 +148,7 @@ public final class ScopedProgramState {
         }
     }
 
-    /**
-     * Ends the suspension. With {@code programBound}, which is when the Focalis program was bound again, every open
-     * scope applies its program's state again from the outside in. Otherwise nothing is applied, since the program
-     * bound now isn't Focalis's.
-     */
+    /** Otherwise nothing is applied, since the program bound now isn't Focalis's. */
     public void resume(boolean programBound) {
         try {
             if (!suspended) {
@@ -189,11 +166,6 @@ public final class ScopedProgramState {
         }
     }
 
-    /**
-     * After the Focalis program was bound again by something other than a resume, like after a renderer returned.
-     * If an earlier resume left the open scopes without their state, every one applies its program's state again
-     * from the outside in. Otherwise nothing changes.
-     */
     public void programBoundAgain() {
         if (!stripped || suspended) {
             return;
@@ -211,10 +183,7 @@ public final class ScopedProgramState {
      * Right after code Focalis doesn't control returned with the program of the innermost scope bound, like one entity
      * renderer. It may have changed the alpha test, blending or the textures on the program's units while it drew, with
      * or without GlStateManager. What that program's directives and textures need is put back in GL and in
-     * GlStateManager's cache, so the next draw with it gets them again. The state from before the scopes, which their
-     * ENDs restore, stays as it is. Programs without directives and textures cost no GL call.
-     *
-     * @return whether anything had to be put back
+     * GlStateManager's cache, so the next draw with it gets them again.
      */
     public boolean reestablish() {
         if (suspended || depth == 0 || holding >= 0) {
@@ -261,10 +230,6 @@ public final class ScopedProgramState {
         engageInnermost(false);
     }
 
-    /**
-     * Emergency cleanup. Closes every scope and puts back everything still changed, newest first. If that throws,
-     * the rest is still attempted and the first failure is rethrown with later ones suppressed.
-     */
     public void abort() {
         rethrow(unwind(null));
     }
@@ -281,47 +246,38 @@ public final class ScopedProgramState {
         return suspended;
     }
 
-    /** Whether directives are held right now. */
     public boolean isHolding() {
         return holding >= 0;
     }
 
-    /** How many changes are in effect right now. */
     public int changesInEffect() {
         return changes;
     }
 
-    /** How many state changes were made, counting a directive's enable and values as one. */
     public long applied() {
         return applied;
     }
 
-    /** How many changes were put back. */
     public long restored() {
         return restored;
     }
 
-    /** How many changes weren't put back, or only partly, since something else had changed that state since. */
     public long leftAlone() {
         return leftAlone;
     }
 
-    /** How many GL state queries were made, for checking that only directive programs cost any. */
     public long queries() {
         return queries;
     }
 
-    /** How many times directives started being held. */
     public long holds() {
         return held;
     }
 
-    /** How many held components GlStateManager calls asked to change, counted once per component and hold. */
     public long heldRequests() {
         return requests;
     }
 
-    /** How many times {@link #reestablish} looked at a program's state, and how many times it had to put any back. */
     public long reestablishChecks() {
         return checks;
     }
@@ -356,7 +312,6 @@ public final class ScopedProgramState {
                 }
             }
         } finally {
-            // Also when a bind threw, so unwinding reads the unit that was really active.
             textures.restoreUnit(active);
         }
     }
@@ -493,8 +448,8 @@ public final class ScopedProgramState {
         }
     }
 
-    // Puts the scope's alpha test back where GL or the cache lost it. With requests, what GL held instead counts as
-    // what vanilla asked for, so the scope's END puts that back. Returns whether anything changed.
+    // Puts the scope's alpha test back where GL or the cache lost it. With requests, what GL held instead counts as what
+    // vanilla asked for, so the scope's END puts that back.
     private boolean ensureAlpha(int scope, ProgramStates.AlphaTest test, boolean requests) {
         boolean enabled = fragment.alphaTestEnabled();
         queries++;
@@ -690,7 +645,6 @@ public final class ScopedProgramState {
         }
     }
 
-    // The scope whose program the scopes leave bound, the innermost one with a target, or -1.
     private int innermostTarget() {
         for (int i = depth - 1; i >= 0; i--) {
             if (targets[i] != null) {
@@ -700,7 +654,6 @@ public final class ScopedProgramState {
         return -1;
     }
 
-    // The newest entry of that kind the scope made, or -1.
     private int entryOf(int scope, int kind) {
         for (int i = changes - 1; i >= 0 && changeScope[i] >= scope; i--) {
             if (changeScope[i] == scope && changeKind[i] == kind) {
@@ -710,7 +663,6 @@ public final class ScopedProgramState {
         return -1;
     }
 
-    // Whether the factors read last are the four stored at this offset plus one.
     private boolean sameFactors(int[] values, int at) {
         return factors[0] == values[at + 1] && factors[1] == values[at + 2] && factors[2] == values[at + 3]
                 && factors[3] == values[at + 4];
@@ -747,8 +699,6 @@ public final class ScopedProgramState {
         return changes++;
     }
 
-    // Puts back changes newest first until only keep are left. Every one gets its attempt. Returns the first failure,
-    // or the one passed in, with later ones suppressed onto it.
     @Nullable
     private Throwable restoreDownTo(int keep, @Nullable Throwable failure) {
         int active = -1;

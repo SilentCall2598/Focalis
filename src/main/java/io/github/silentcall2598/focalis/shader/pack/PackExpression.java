@@ -5,15 +5,8 @@ package io.github.silentcall2598.focalis.shader.pack;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * The integer expressions of {@code #if} lines in {@code shaders.properties} and the boolean conditions of
- * {@code program.<name>.enabled}. Numbers, names, {@code defined NAME}, parentheses, {@code ! -}, {@code * / %},
- * {@code + -}, comparisons, {@code && ||}, with the usual C precedence. Only used while a pack is configured, never
- * while drawing.
- */
 final class PackExpression {
 
-    /** What a name means. Throws for a name the expression may not use. */
     interface Names {
 
         double value(String name) throws ExpressionException;
@@ -200,7 +193,6 @@ final class PackExpression {
         }
     }
 
-    /** Parses a number the way packs write them, with an optional {@code f} after a float. */
     static double number(String token) throws ExpressionException {
         String digits = token.endsWith("f") || token.endsWith("F") ? token.substring(0, token.length() - 1) : token;
         try {

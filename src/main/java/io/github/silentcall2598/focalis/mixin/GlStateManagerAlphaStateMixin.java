@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Lets Focalis read GlStateManager's cached alpha function, the same way as its fog.
 @Mixin(targets = "net.minecraft.client.renderer.GlStateManager$AlphaState")
 public abstract class GlStateManagerAlphaStateMixin implements FragmentCache.Alpha {
 

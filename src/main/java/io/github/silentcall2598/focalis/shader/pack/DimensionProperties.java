@@ -10,10 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/**
- * The folder mapping from {@code dimension.properties}, like {@code dimension.world-1=minecraft:the_nether}.
- * Dimension ids are kept exactly as written. Matching them against 1.12.2 dimensions happens later.
- */
+/** Dimension ids are kept exactly as written. Matching them against 1.12.2 dimensions happens later. */
 public final class DimensionProperties {
 
     static final String FILE_NAME = "dimension.properties";
@@ -29,12 +26,10 @@ public final class DimensionProperties {
         this.dimensionsByFolder = dimensionsByFolder;
     }
 
-    /** Folder name to the dimension ids listed for it, in file order and exactly as written, including {@code *}. */
     public Map<String, List<String>> dimensionsByFolder() {
         return dimensionsByFolder;
     }
 
-    /** Parses the file, skipping lines it can't understand and reporting them in {@code issues}. */
     static DimensionProperties parse(ShaderPath file, String text, List<PackIssue> issues) {
         Map<String, List<String>> result = new LinkedHashMap<>();
         boolean reportedDirective = false;

@@ -21,9 +21,8 @@ import java.io.IOException;
 import java.util.Iterator;
 
 /**
- * A custom texture decoded from a pack PNG, with the blur and clamp settings of its {@code .mcmeta}. Pixels are RGBA
- * with one byte each, rows from the top of the image down, the order Minecraft uploads its own textures in. Plain
- * data, nothing here touches GL.
+ * Pixels are RGBA with one byte each, rows from the top of the image down, the order Minecraft uploads its own
+ * textures in.
  */
 public final class PackImage {
 
@@ -46,7 +45,6 @@ public final class PackImage {
         this.clamp = clamp;
     }
 
-    /** Decodes an image the loader kept, with the {@code .mcmeta} next to it if there is one. */
     public static PackImage read(ShaderPack pack, ShaderPath file) throws IOException {
         byte[] bytes = pack.image(file);
         if (bytes == null) {
@@ -198,17 +196,14 @@ public final class PackImage {
         return height;
     }
 
-    /** A copy of the RGBA pixels, rows from the top down. */
     public byte[] pixels() {
         return pixels.clone();
     }
 
-    /** Linear filtering instead of nearest, from the {@code .mcmeta}. */
     public boolean blur() {
         return blur;
     }
 
-    /** Clamping to the edge instead of repeating, from the {@code .mcmeta}. */
     public boolean clamp() {
         return clamp;
     }

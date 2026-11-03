@@ -48,7 +48,6 @@ final class ZipPackSource implements ShaderPackSource {
             zip.close();
             throw e;
         } catch (RuntimeException e) {
-            // ZipFile reports badly encoded entry names this way.
             zip.close();
             throw new ShaderPackException("'" + name + "' is not a readable ZIP file: " + e.getMessage(), e);
         }

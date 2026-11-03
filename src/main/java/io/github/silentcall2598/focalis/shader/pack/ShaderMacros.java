@@ -8,7 +8,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** An immutable, ordered set of preprocessor macros. An empty value means a plain {@code #define NAME}. */
 public final class ShaderMacros {
 
     private static final ShaderMacros EMPTY = new ShaderMacros(Collections.<String, String>emptyMap());
@@ -24,7 +23,6 @@ public final class ShaderMacros {
         return EMPTY;
     }
 
-    /** Returns a copy with {@code name} defined as {@code value}, replacing any earlier value. */
     public ShaderMacros with(String name, String value) {
         if (!NAME.matcher(name).matches()) {
             throw new IllegalArgumentException("Invalid macro name '" + name + "'");

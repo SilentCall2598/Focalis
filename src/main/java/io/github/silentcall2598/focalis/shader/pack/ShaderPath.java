@@ -5,10 +5,7 @@ package io.github.silentcall2598.focalis.shader.pack;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
-/**
- * A normalized path to a file inside a pack's {@code shaders} directory, such as {@code lib/common.glsl}.
- * Construction fails for anything that would point outside that directory.
- */
+/** Construction fails for anything that would point outside the shaders directory. */
 public final class ShaderPath implements Comparable<ShaderPath> {
 
     private final String path;
@@ -32,11 +29,6 @@ public final class ShaderPath implements Comparable<ShaderPath> {
         return new ShaderPath(String.join("/", segments));
     }
 
-    /**
-     * Splits {@code raw} into normalized segments. The result is empty for paths like {@code ./}.
-     *
-     * @throws IllegalArgumentException if the path escapes its root or looks like a filesystem path
-     */
     static Deque<String> normalize(String raw) {
         // Backslashes show up in ZIP entries made on Windows.
         String unified = raw.replace('\\', '/');
@@ -60,13 +52,11 @@ public final class ShaderPath implements Comparable<ShaderPath> {
         return segments;
     }
 
-    /** Resolves {@code relative} against this file's directory, the way a relative include does. */
     public ShaderPath resolveSibling(String relative) {
         int slash = path.lastIndexOf('/');
         return slash < 0 ? of(relative) : of(path.substring(0, slash + 1) + relative);
     }
 
-    /** The directory part of this path, or an empty string for files directly in the shaders directory. */
     public String directory() {
         int slash = path.lastIndexOf('/');
         return slash < 0 ? "" : path.substring(0, slash);

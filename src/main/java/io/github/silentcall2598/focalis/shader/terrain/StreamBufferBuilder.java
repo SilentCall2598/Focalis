@@ -4,7 +4,6 @@ package io.github.silentcall2598.focalis.shader.terrain;
 
 import javax.annotation.Nullable;
 
-/** Added to BufferBuilder, which keeps its stream companion once a chunk build with the stream needed one. */
 public interface StreamBufferBuilder {
 
     @Nullable

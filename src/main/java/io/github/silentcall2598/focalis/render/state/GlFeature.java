@@ -6,7 +6,6 @@ import org.lwjgl.opengl.ContextCapabilities;
 
 import java.util.function.Predicate;
 
-// A capability counts if either the core GL version or the matching extension provides it.
 public enum GlFeature {
     FRAMEBUFFER_OBJECT("framebuffer objects",
             caps -> caps.OpenGL30 || caps.GL_ARB_framebuffer_object || caps.GL_EXT_framebuffer_object),

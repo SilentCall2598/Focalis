@@ -12,14 +12,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 
-/**
- * Picks the pack program for a role in one program folder, using the program names and fallbacks of 1.12.2 era
- * shaderpacks. It only looks at that one folder, so a dimension folder never falls back to the root programs.
- * Nothing is compiled or bound here.
- */
+/** It only looks at that one folder, so a dimension folder never falls back to the root programs. */
 public final class ShaderProgramResolver {
 
-    // The legacy fallback order. A program falls back when the pack doesn't have it or has it disabled.
     private static final List<String> SKY_BASIC = chain("gbuffers_skybasic", "gbuffers_basic");
     private static final List<String> SKY_TEXTURED = chain("gbuffers_skytextured", "gbuffers_textured",
             "gbuffers_basic");
@@ -52,15 +47,10 @@ public final class ShaderProgramResolver {
     private ShaderProgramResolver() {
     }
 
-    /** Resolves with every program in the folder enabled. */
     public static ProgramResolution resolve(ProgramDirectory directory, ShaderProgramRole role) {
         return resolve(directory, role, program -> true);
     }
 
-    /**
-     * Resolves with some programs disabled. A disabled program counts as missing, so the role falls back past it,
-     * which is what the format documents for programs that shaders.properties turns off.
-     */
     public static ProgramResolution resolve(ProgramDirectory directory, ShaderProgramRole role,
             Predicate<ProgramSource> enabled) {
         Objects.requireNonNull(directory, "directory");
@@ -88,7 +78,6 @@ public final class ShaderProgramResolver {
                 : ResolutionState.DISABLED, null, candidates, -1, frozen(disabled));
     }
 
-    /** The program names that can draw a role, most specific first. Empty for roles that can't be resolved. */
     public static List<String> candidates(ShaderProgramRole role) {
         if (role == null) {
             return NO_CHAIN;

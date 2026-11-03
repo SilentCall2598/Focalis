@@ -6,7 +6,6 @@ import io.github.silentcall2598.focalis.Focalis;
 import io.github.silentcall2598.focalis.feature.FeatureManager;
 import net.minecraftforge.fml.common.ICrashCallable;
 
-// Adds a Focalis line with the version and feature states to the System Details of crash reports.
 public final class FocalisCrashSection implements ICrashCallable {
 
     private final FeatureManager features;

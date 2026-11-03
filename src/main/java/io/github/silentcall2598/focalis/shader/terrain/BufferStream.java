@@ -3,12 +3,11 @@
 package io.github.silentcall2598.focalis.shader.terrain;
 
 /**
- * The stream buffer next to one chunk layer's vertex buffer. It's only drawn while it holds the stream of exactly the
- * data last uploaded to that vertex buffer, under the current plan. Client thread only.
+ * It's only drawn while it holds the stream of exactly the data last uploaded to that vertex buffer, under the current
+ * plan. Client thread only.
  */
 public final class BufferStream {
 
-    // The GL buffer, or 0 when there is none.
     int buffer;
     int vertices;
     int generation;

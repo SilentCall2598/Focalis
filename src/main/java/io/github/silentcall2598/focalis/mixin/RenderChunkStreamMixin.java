@@ -18,9 +18,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Follows a chunk layer build for the attribute stream: where it starts, which blocks add which quads, vanilla's
-// translucent sort and the data it saves for sorting again, and the finished layer. Each wrapper calls the original
-// once with the same arguments and returns what it returned.
+// Each wrapper calls the original once with the same arguments and returns what it returned.
 @Mixin(RenderChunk.class)
 public abstract class RenderChunkStreamMixin {
 

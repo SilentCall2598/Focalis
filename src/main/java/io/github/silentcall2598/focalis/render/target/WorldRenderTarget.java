@@ -6,19 +6,11 @@ import javax.annotation.Nullable;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/**
- * Draws a world pass into a Focalis-owned {@link RenderTarget} and copies the result back to Minecraft's framebuffer
- * at its end, so everything after the world pass works on the finished image as usual. Owns the target and replaces
- * it when Minecraft's framebuffer changes size or depth format. Client thread only, with the GL context current.
- */
 public final class WorldRenderTarget {
 
     public enum Start {
-        /** The world pass now draws into the target. */
         REDIRECTED,
-        /** Something other than Minecraft's framebuffer is being drawn to, so this pass is left alone. */
         OTHER_TARGET,
-        /** The target stopped for this session and the world renders the normal way. */
         STOPPED
     }
 
@@ -38,7 +30,6 @@ public final class WorldRenderTarget {
     private int checkedSource;
     private int checkedDepth;
 
-    /** @param onStop called once, with the reason, when the target stops for the session */
     public WorldRenderTarget(WorldTargetMonitor monitor, Consumer<String> onStop) {
         this(LwjglRenderTargetGl.INSTANCE, LwjglWorldTargetGl.INSTANCE, monitor, onStop);
     }
@@ -51,14 +42,7 @@ public final class WorldRenderTarget {
         this.onStop = Objects.requireNonNull(onStop, "onStop");
     }
 
-    /**
-     * Starts drawing the world pass into the target, creating or replacing it to match Minecraft's framebuffer. Only
-     * the read and draw framebuffer bindings change, and {@link #end()} puts them back.
-     *
-     * @param framebuffer Minecraft's framebuffer, which has to be the one bound for drawing
-     * @param depthRenderbuffer the depth renderbuffer Minecraft created for it
-     * @throws IllegalStateException if a world pass is already being redirected
-     */
+    /** Only the read and draw framebuffer bindings change, and {@link #end()} puts them back. */
     public Start start(int framebuffer, int depthRenderbuffer, int width, int height, DepthFormat depthFormat) {
         Objects.requireNonNull(depthFormat, "depthFormat");
         if (stopReason != null) {
@@ -114,7 +98,6 @@ public final class WorldRenderTarget {
         return Start.REDIRECTED;
     }
 
-    /** Copies color and depth back to Minecraft's framebuffer and puts back the bindings {@link #start} found. */
     public void end() {
         if (!active) {
             throw new IllegalStateException("The world target isn't drawing a world pass");
@@ -144,10 +127,7 @@ public final class WorldRenderTarget {
         return stopReason;
     }
 
-    /**
-     * Stops redirecting for the rest of the session and frees the target. Only valid between world passes. Calling
-     * it again does nothing.
-     */
+    /** Only valid between world passes. */
     public void stop(String reason) {
         if (active) {
             throw new IllegalStateException("The world target can't stop in the middle of a world pass");
@@ -165,8 +145,8 @@ public final class WorldRenderTarget {
     }
 
     /**
-     * Frees the target. If a world pass is still being redirected, Minecraft's framebuffer is put back first, so the
-     * target is never deleted while bound. Calling it again does nothing.
+     * If a world pass is still being redirected, Minecraft's framebuffer is put back first, so the target is never deleted
+     * while bound.
      */
     public void delete() {
         Throwable failure = active ? unwind(null) : null;
@@ -188,8 +168,6 @@ public final class WorldRenderTarget {
         }
     }
 
-    // Leaves the redirected pass and puts back the bindings start found. Returns the first failure, or the one
-    // passed in, with later ones suppressed onto it.
     @Nullable
     private Throwable unwind(@Nullable Throwable failure) {
         active = false;

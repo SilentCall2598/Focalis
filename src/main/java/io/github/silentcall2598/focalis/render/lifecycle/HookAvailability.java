@@ -34,7 +34,6 @@ public final class HookAvailability {
         return true;
     }
 
-    // Called where the hook should already have fired. True only when that decides it is unavailable.
     boolean hookExpected() {
         if (state != State.UNKNOWN) {
             return false;

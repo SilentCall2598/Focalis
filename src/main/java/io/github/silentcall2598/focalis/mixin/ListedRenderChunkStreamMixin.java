@@ -10,7 +10,6 @@ import org.spongepowered.asm.mixin.Unique;
 
 import javax.annotation.Nullable;
 
-// Remembers which of a chunk's display lists were compiled with the stream, and under which plan generation.
 @Mixin(ListedRenderChunk.class)
 public abstract class ListedRenderChunkStreamMixin implements StreamDisplayLists {
 

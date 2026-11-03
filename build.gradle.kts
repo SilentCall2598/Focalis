@@ -1,6 +1,5 @@
 plugins {
     java
-    // RetroFuturaGradle is a maintained ForgeGradle fork that supports 1.12.2 on modern Gradle.
     id("com.gtnewhorizons.retrofuturagradle") version "2.0.4"
 }
 
@@ -25,7 +24,6 @@ minecraft {
     mcpMappingVersion = "39"
     username = "Developer"
 
-    // Exposed to code as Tags.VERSION, which the @Mod annotation uses.
     injectedTags.put("VERSION", project.version)
 
     extraRunJvmArguments.add("-ea:${project.group}")
@@ -65,7 +63,6 @@ listOf(tasks.jar, tasks.named<Jar>("sourcesJar")).forEach { task ->
 
 repositories {
     maven {
-        // MixinBooter
         name = "CleanroomMC"
         url = uri("https://maven.cleanroommc.com")
         mavenContent {

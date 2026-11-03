@@ -43,7 +43,6 @@ public abstract class EntityRendererStageMixin {
         }
     }
 
-    // The sun and moon inside it are reported by RenderGlobalSkyMixin.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderSky(FI)V"), require = 0, expect = 1)
     private void focalis$sky(RenderGlobal renderGlobal, float partialTicks, int pass, Operation<Void> original) {
@@ -66,7 +65,6 @@ public abstract class EntityRendererStageMixin {
                 provider.isSurfaceWorld());
     }
 
-    // All four block layers go through this one call, and the layer argument says which one it is.
     @WrapOperation(method = "renderWorldPass(IFJ)V", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/RenderGlobal;renderBlockLayer("
                     + "Lnet/minecraft/util/BlockRenderLayer;DILnet/minecraft/entity/Entity;)I"),
@@ -97,7 +95,6 @@ public abstract class EntityRendererStageMixin {
         if (layer == BlockRenderLayer.TRANSLUCENT) {
             return RenderDrawKind.TERRAIN_TRANSLUCENT;
         }
-        // A layer some mod added isn't classified.
         return RenderDrawKind.DEFAULT;
     }
 

@@ -6,9 +6,8 @@ import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 
 /**
- * Turns a render stage and draw kind into the program role that should draw it. Pure and allocation free. A
- * combination it doesn't expect is {@link ShaderProgramRole#UNCLASSIFIED} instead of a guess, and it never returns
- * null.
+ * Pure and allocation free. A combination it doesn't expect is {@link ShaderProgramRole#UNCLASSIFIED} instead of a
+ * guess, and it never returns null.
  */
 public final class ShaderProgramRouter {
 
@@ -23,17 +22,14 @@ public final class ShaderProgramRouter {
             case FRAME:
             case WORLD:
             case GUI:
-            // Vanilla draws the outlines with its own shaders.
             case ENTITY_OUTLINES:
                 return only(kind, RenderDrawKind.DEFAULT, ShaderProgramRole.NONE);
-            // Setting up the camera draws nothing, whichever world pass it's for.
             case CAMERA:
                 return ShaderProgramRole.NONE;
             case SKY:
                 if (kind == RenderDrawKind.SKY_BASIC) {
                     return ShaderProgramRole.SKY_BASIC;
                 }
-                // A DEFAULT sky is one Focalis can't classify, like a Forge sky renderer or the End.
                 return only(kind, RenderDrawKind.SKY_TEXTURED, ShaderProgramRole.SKY_TEXTURED);
             case TERRAIN:
                 if (kind == RenderDrawKind.TERRAIN_SOLID) {
@@ -42,7 +38,6 @@ public final class ShaderProgramRouter {
                 if (kind == RenderDrawKind.TERRAIN_CUTOUT_MIPPED) {
                     return ShaderProgramRole.TERRAIN_CUTOUT_MIPPED;
                 }
-                // A layer some mod added shows up as DEFAULT and stays unclassified.
                 return only(kind, RenderDrawKind.TERRAIN_CUTOUT, ShaderProgramRole.TERRAIN_CUTOUT);
             case TRANSLUCENT:
                 return only(kind, RenderDrawKind.TERRAIN_TRANSLUCENT, ShaderProgramRole.TERRAIN_TRANSLUCENT);
@@ -71,7 +66,6 @@ public final class ShaderProgramRouter {
         }
     }
 
-    // Block entities and the draws nested in entities and block entities.
     private static ShaderProgramRole special(RenderDrawKind kind) {
         switch (kind) {
             case BLOCK_ENTITY:

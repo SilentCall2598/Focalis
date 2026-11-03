@@ -18,7 +18,7 @@ import java.util.Arrays;
  */
 final class PassGlState {
 
-    private final IntBuffer viewport = BufferUtils.createIntBuffer(16); // LWJGL wants room for 16 values
+    private final IntBuffer viewport = BufferUtils.createIntBuffer(16);
     private final int[] units;
     private final int[] unitTextures;
     private final boolean[] unitRecorded;
@@ -33,7 +33,6 @@ final class PassGlState {
 
     PassGlState(int... units) {
         for (int unit : units) {
-            // Unit 0 holds the block atlas and unit 1 the lightmap.
             if (unit < 2) {
                 throw new IllegalArgumentException("Texture unit " + unit + " is reserved");
             }
@@ -43,7 +42,6 @@ final class PassGlState {
         this.unitRecorded = new boolean[units.length];
     }
 
-    /** Queries everything except texture bindings and changes nothing. */
     void record() {
         readFramebuffer = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         drawFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);

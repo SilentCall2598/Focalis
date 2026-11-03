@@ -11,10 +11,9 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * The {@code alphaTest.<program>} and {@code blend.<program>} directives of one configuration, keyed by the pack
- * program name like {@code gbuffers_water}. A role that falls back to another program gets that program's
- * directives, not the ones of the program it would have liked. {@code blend.<program>.<buffer>} needs per-buffer
- * blending, which Focalis can't do yet, so those are only kept with their source line. Immutable.
+ * A role that falls back to another program gets that program's directives, not the ones of the program it would have
+ * liked. {@code blend.<program>.<buffer>} needs per-buffer blending, which Focalis can't do yet, so those are only
+ * kept with their source line.
  */
 public final class ProgramStates {
 
@@ -56,7 +55,6 @@ public final class ProgramStates {
         FACTORS.put("SRC_ALPHA_SATURATE", 0x0308);
     }
 
-    /** One program's alpha test. Disabled means {@code off}, and the function and reference are then unused. */
     public static final class AlphaTest {
 
         private final boolean enabled;
@@ -75,7 +73,6 @@ public final class ProgramStates {
             return enabled;
         }
 
-        /** The GL comparison like GL_GREATER. */
         public int function() {
             return function;
         }
@@ -94,7 +91,6 @@ public final class ProgramStates {
         }
     }
 
-    /** A blend mode with separate color and alpha factors, or blending turned off. */
     public static final class Blend {
 
         private final boolean enabled;
@@ -144,7 +140,6 @@ public final class ProgramStates {
         }
     }
 
-    /** A blend mode for one color buffer of a program. Kept for when Focalis can blend per buffer. */
     public static final class BufferBlend {
 
         private final String program;
@@ -161,7 +156,6 @@ public final class ProgramStates {
             return program;
         }
 
-        /** The buffer as written, like {@code colortex4} or {@code gaux1}. */
         public String buffer() {
             return buffer;
         }
@@ -170,7 +164,6 @@ public final class ProgramStates {
             return blend;
         }
 
-        /** What Focalis still needs before it can apply this. */
         public String requires() {
             return "per-buffer blending";
         }
@@ -187,10 +180,7 @@ public final class ProgramStates {
         this.bufferBlends = bufferBlends;
     }
 
-    /**
-     * Reads the directives from properties that already went through the preprocessor. A malformed one is reported
-     * and left out, so its program keeps whatever state it would have had without it.
-     */
+    /** A malformed directive is reported and left out, so its program keeps whatever state it would have had without it. */
     static ProgramStates read(ShaderPath file, Map<String, ShaderProperties.Property> properties,
             List<PackIssue> issues) {
         Map<String, AlphaTest> alphaTests = new LinkedHashMap<>();
@@ -294,29 +284,24 @@ public final class ProgramStates {
         return new Blend(true, factors[0], factors[1], factors[2], factors[3], here);
     }
 
-    /** The alpha test the pack sets for a program, or null when it leaves it alone. */
     @Nullable
     public AlphaTest alphaTest(String program) {
         return alphaTests.get(program);
     }
 
-    /** The blend mode the pack sets for a whole program, or null when it leaves it alone. */
     @Nullable
     public Blend blend(String program) {
         return blends.get(program);
     }
 
-    /** Every alpha test by program name, in file order. Read only. */
     public Map<String, AlphaTest> alphaTests() {
         return alphaTests;
     }
 
-    /** Every program-wide blend mode by program name, in file order. Read only. */
     public Map<String, Blend> blends() {
         return blends;
     }
 
-    /** The per-buffer blend modes, in file order. None of them is applied yet. Read only. */
     public List<BufferBlend> bufferBlends() {
         return bufferBlends;
     }

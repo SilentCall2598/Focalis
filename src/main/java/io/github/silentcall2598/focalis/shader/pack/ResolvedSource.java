@@ -10,10 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Shader source with every {@code #include} expanded. Each output line remembers which pack file and line it
- * came from, so compile errors can later point at the file the pack author actually wrote.
- */
 public final class ResolvedSource {
 
     private final String text;
@@ -34,7 +30,6 @@ public final class ResolvedSource {
         return lineByLine.length;
     }
 
-    /** Where a one-based line of {@link #text()} came from. */
     public SourceLocation origin(int line) {
         if (line < 1 || line > lineByLine.length) {
             throw new IndexOutOfBoundsException("Line " + line + " of " + lineByLine.length);
@@ -43,7 +38,6 @@ public final class ResolvedSource {
         return file == null ? SourceLocation.ADDED_BY_FOCALIS : new SourceLocation(file, lineByLine[line - 1]);
     }
 
-    /** Every pack file that contributed a line, in the order they first appear. */
     Set<ShaderPath> files() {
         Set<ShaderPath> files = new LinkedHashSet<>();
         for (ShaderPath file : fileByLine) {
@@ -54,12 +48,7 @@ public final class ResolvedSource {
         return files;
     }
 
-    /**
-     * Returns a copy with {@code #define} lines for the environment macros followed by the pack option macros,
-     * placed right after {@code #version} since GLSL requires that to come first.
-     *
-     * @throws IllegalArgumentException if an option uses the name of an environment macro
-     */
+    /** The defines are placed right after {@code #version} since GLSL requires that to come first. */
     public ResolvedSource withDefines(ShaderMacros environment, ShaderMacros options) {
         for (String name : options.asMap().keySet()) {
             if (environment.isDefined(name)) {
@@ -122,7 +111,6 @@ public final class ResolvedSource {
         return lines;
     }
 
-    /** Collects lines in order. Every line ends with a newline in the final text. */
     static final class Builder {
 
         private final StringBuilder text = new StringBuilder();

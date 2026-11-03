@@ -15,8 +15,7 @@ import java.util.Set;
 
 public final class CompatibilityReport {
 
-    // Mods worth noting in the log when chasing rendering problems. Each id was checked against the @Mod
-    // annotation in that mod's 1.12.2 source, and nothing is disabled because of this list.
+    // Each id was checked against the @Mod annotation in that mod's 1.12.2 source. Nothing is disabled by this list.
     private static final List<String> RENDERING_RELATED_MOD_IDS = Collections.unmodifiableList(Arrays.asList(
             "betterfoliage", "ctm", "dynamiclights", "foamfix", "nothirium", "vanillafix"));
 
@@ -30,7 +29,6 @@ public final class CompatibilityReport {
 
     // Only valid once FML has discovered every mod, so from pre-init on.
     public static CompatibilityReport scan() {
-        // Forge already detects OptiFine at startup by looking for its Config class.
         return of(Loader.instance().getIndexedModList().keySet(), FMLClientHandler.instance().hasOptifine());
     }
 

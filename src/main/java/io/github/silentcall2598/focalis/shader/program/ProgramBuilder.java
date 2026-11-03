@@ -9,8 +9,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Compiles and links pack programs. Only the returned {@link ShaderProgram} outlives a build. Every stage shader is
- * deleted whether the build works or not.
+ * Only the returned {@link ShaderProgram} outlives a build. Every stage shader is deleted whether the build works or
+ * not.
  */
 public final class ProgramBuilder {
 
@@ -29,8 +29,7 @@ public final class ProgramBuilder {
     }
 
     /**
-     * Must run on the client thread with the OpenGL context current. Doesn't bind the program or change other GL
-     * state.
+     * Doesn't bind the program or change other GL state.
      *
      * @throws ProgramBuildException if the pack's program can't be built. Anything else thrown is a Focalis problem.
      */

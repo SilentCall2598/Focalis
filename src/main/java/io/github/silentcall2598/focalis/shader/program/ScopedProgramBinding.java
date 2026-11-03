@@ -10,9 +10,8 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Binds programs for nested render scopes and puts back whatever program was active before each one, even when that
- * program belongs to Minecraft or another mod. Only changes Focalis made are undone. It never owns or deletes the
- * programs it binds. Client thread only, with the OpenGL context current.
+ * Puts back whatever program was active before each scope, even when that program belongs to Minecraft or another
+ * mod. Only changes Focalis made are undone. It never owns or deletes the programs it binds.
  *
  * <p>The open scopes can step aside for a region that binds its own programs, like vanilla's entity outline shaders.
  * While suspended they stay open but leave the program alone, and resuming binds the Focalis program again. Code that
@@ -33,12 +32,10 @@ public final class ScopedProgramBinding {
     private int[] targets = new int[INITIAL_DEPTH];
     private boolean[] changed = new boolean[INITIAL_DEPTH];
     private int depth;
-    // The region the scopes stepped aside for, or null while they own the program.
     @Nullable
     private RenderStage suspendedStage;
     @Nullable
     private RenderDrawKind suspendedKind;
-    // What resuming binds again, or NO_PROGRAM when stepping aside took nothing away.
     private int resumeProgram = NO_PROGRAM;
 
     public ScopedProgramBinding() {
@@ -49,10 +46,7 @@ public final class ScopedProgramBinding {
         this.gl = gl;
     }
 
-    /**
-     * Opens a scope and binds {@code target}, unless it's already active. A null target opens a scope that changes
-     * nothing, so START and END still have to match. Throws if the target was deleted or the scopes are suspended.
-     */
+    /** A null target opens a scope that changes nothing, so START and END still have to match. */
     public void start(RenderStage stage, RenderDrawKind drawKind, @Nullable ShaderProgram target) {
         try {
             Objects.requireNonNull(stage, "stage");
@@ -73,12 +67,6 @@ public final class ScopedProgramBinding {
         }
     }
 
-    /**
-     * Closes the innermost scope, which has to be the same stage and kind, and restores its previous program. Throws
-     * while the scopes are suspended.
-     *
-     * @return whether it bound the program from before the scope again
-     */
     public boolean end(RenderStage stage, RenderDrawKind drawKind) {
         try {
             Objects.requireNonNull(stage, "stage");
@@ -133,12 +121,7 @@ public final class ScopedProgramBinding {
         }
     }
 
-    /**
-     * Ends the suspension, which has to be for the same stage and kind, and binds the innermost Focalis program again
-     * if suspending took it away. Whatever the region left bound is replaced.
-     *
-     * @return whether the Focalis program was bound again
-     */
+    /** Whatever the region left bound is replaced. */
     public boolean resume(RenderStage stage, RenderDrawKind drawKind) {
         try {
             Objects.requireNonNull(stage, "stage");
@@ -166,12 +149,8 @@ public final class ScopedProgramBinding {
     }
 
     /**
-     * Binds the Focalis program the open scopes own again if something else is current now. Meant for right after code
-     * Focalis doesn't control returned, like one entity renderer, which may bind whatever it wants while it runs. The
-     * scopes, and what their ENDs restore, stay as they are. Does nothing while suspended or when the open scopes own
-     * no program.
-     *
-     * @return whether the program had to be bound again
+     * Meant for right after code Focalis doesn't control returned, like one entity renderer, which may bind whatever it
+     * wants while it runs. The scopes, and what their ENDs restore, stay as they are.
      */
     public boolean reassert() {
         int owned = ownedProgram();
@@ -191,9 +170,9 @@ public final class ScopedProgramBinding {
     }
 
     /**
-     * Emergency cleanup. Closes every open scope newest first and restores what each one changed. If a restore
-     * throws, the rest are still attempted and the first failure is rethrown with later ones suppressed. Suspended
-     * scopes are only dropped, since their programs already went back when they stepped aside.
+     * Emergency cleanup. If a restore throws, the rest are still attempted and the first failure is rethrown with later
+     * ones suppressed. Suspended scopes are only dropped, since their programs already went back when they stepped
+     * aside.
      */
     public void abort() {
         Throwable failure = unwind(null);
@@ -205,29 +184,19 @@ public final class ScopedProgramBinding {
         }
     }
 
-    /** How many scopes are open, suspended or not. */
     public int depth() {
         return depth;
     }
 
-    /**
-     * Whether the open scopes own a program, the one {@link #reassert} makes current. Asks nothing of GL. False while
-     * suspended.
-     */
     public boolean ownsProgram() {
         return ownedProgram() != NO_PROGRAM;
     }
 
-    /** The stage of the innermost open scope, or null when none is open. */
     @Nullable
     public RenderStage innermostStage() {
         return depth == 0 ? null : stages[depth - 1];
     }
 
-    /**
-     * Whether the program the open scopes own is the one current right now, so its uniforms can be set. False while
-     * suspended, when the open scopes own no program, or when something else is bound.
-     */
     public boolean ownsCurrent() {
         int owned = ownedProgram();
         if (owned == NO_PROGRAM) {
@@ -280,7 +249,6 @@ public final class ScopedProgramBinding {
         resumeProgram = NO_PROGRAM;
     }
 
-    // The scope whose program should be current, or -1 when no open scope bound one.
     private int innermostChanged() {
         for (int i = depth - 1; i >= 0; i--) {
             if (changed[i]) {
@@ -336,8 +304,6 @@ public final class ScopedProgramBinding {
         depth++;
     }
 
-    // Restores every open scope that changed the program, newest first, and empties the stack. Returns the first
-    // failure, or the one passed in, with any later failures suppressed onto it.
     @Nullable
     private Throwable unwind(@Nullable Throwable failure) {
         if (suspendedStage != null) {

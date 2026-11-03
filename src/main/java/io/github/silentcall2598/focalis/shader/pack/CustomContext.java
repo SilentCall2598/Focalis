@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.pack;
 
-/** What custom uniform expressions read while they're evaluated. The runtime implements it, the pack never does. */
 public interface CustomContext {
 
-    /** The current value of a built-in, by {@link CustomInput} ordinal. */
     float input(int input);
 
     /**

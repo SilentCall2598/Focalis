@@ -9,13 +9,10 @@ import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Set;
 
-/** Read access to the {@code shaders} directory of a pack stored as a folder or a ZIP file. */
 public interface ShaderPackSource extends Closeable {
 
-    /** The folder or file name the user sees in the shaderpacks directory. */
     String name();
 
-    /** Every regular file under {@code shaders}, whether or not Focalis ever reads it. */
     Set<ShaderPath> files();
 
     /**
@@ -24,10 +21,8 @@ public interface ShaderPackSource extends Closeable {
      */
     Set<String> folders();
 
-    /** Reads a file as UTF-8 text. */
     String readText(ShaderPath path) throws IOException;
 
-    /** Reads a file as it is, like an image. Throws for files over {@code limit} bytes. */
     byte[] readBytes(ShaderPath path, int limit) throws IOException;
 
     static ShaderPackSource open(Path pack) throws ShaderPackException, IOException {

@@ -8,10 +8,6 @@ import io.github.silentcall2598.focalis.config.ConfigSection;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-/**
- * A major Focalis system that can be turned on or off by itself. If any of its steps or render listeners throw,
- * only this feature fails and the rest of Focalis keeps running.
- */
 public abstract class Feature {
 
     private static final Pattern ID_PATTERN = Pattern.compile("[a-z][a-z0-9_]*");
@@ -46,7 +42,6 @@ public abstract class Feature {
     protected void loadConfig(ConfigSection config) {
     }
 
-    /** Return unavailable when this feature can't safely run next to something that's installed. */
     protected Availability checkAvailability(CompatibilityReport compat) {
         return Availability.AVAILABLE;
     }

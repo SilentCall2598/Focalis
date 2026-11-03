@@ -2,15 +2,10 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.pack;
 
-/**
- * Finds GLSL comments one line at a time, carrying an open block comment over to the next line. This is just
- * enough lexing to tell real preprocessor directives from ones inside comments.
- */
 final class CommentScanner {
 
     private boolean inBlockComment;
 
-    /** One scanned line. */
     static final class ScannedLine {
 
         private final String code;
@@ -28,12 +23,10 @@ final class CommentScanner {
             return code;
         }
 
-        /** Whether the line began inside a block comment from an earlier line. */
         boolean startedInComment() {
             return startedInComment;
         }
 
-        /** Where a block comment that's still open at the end of the line starts, or -1. */
         int openCommentStart() {
             return openCommentStart;
         }

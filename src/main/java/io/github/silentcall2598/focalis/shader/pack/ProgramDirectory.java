@@ -10,7 +10,6 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** The programs in one folder of a pack, either the shaders folder itself or a dimension folder like world-1. */
 public final class ProgramDirectory {
 
     private static final Pattern WORLD_FOLDER = Pattern.compile("world(-?\\d+)");
@@ -23,17 +22,14 @@ public final class ProgramDirectory {
         this.programs = Collections.unmodifiableMap(new TreeMap<>(programs));
     }
 
-    /** The folder name, empty for the shaders folder itself. */
     public String name() {
         return name;
     }
 
-    /** The folder as a pack path for messages, like {@code shaders/world-1}. */
     public String path() {
         return name.isEmpty() ? "shaders" : "shaders/" + name;
     }
 
-    /** The program with this name, or null if this folder doesn't provide it. */
     @Nullable
     public ProgramSource find(String programName) {
         return programs.get(programName);
@@ -43,13 +39,11 @@ public final class ProgramDirectory {
         return programs.values();
     }
 
-    /** The dimension id in a {@code world<id>} folder name, such as -1 for {@code world-1}, otherwise null. */
     @Nullable
     public Integer worldId() {
         return worldId(name);
     }
 
-    /** The exact folder name a dimension id selects, like {@code world-1}. */
     public static String worldFolder(int dimension) {
         return "world" + dimension;
     }

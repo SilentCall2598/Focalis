@@ -8,14 +8,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Compiles one custom uniform expression into typed {@link CustomExpression} nodes. Operators follow C precedence.
- * Names are resolved through the caller while parsing, so the result never looks anything up again. Only used while
- * a pack is configured.
- */
 final class CustomExpressionParser {
 
-    /** Turns a name into its node, or explains why it can't be used. */
     interface Names {
 
         CustomExpression resolve(String name) throws ParseException;
@@ -47,9 +41,6 @@ final class CustomExpressionParser {
         this.nextSite = nextSite;
     }
 
-    /**
-     * @param nextSite the next free smooth() call site, advanced for every one this expression has
-     */
     static CustomExpression parse(String text, Names names, int[] nextSite) throws ParseException {
         CustomExpressionParser parser = new CustomExpressionParser(tokenize(text), names, nextSite);
         if (parser.tokens.isEmpty()) {
@@ -302,7 +293,6 @@ final class CustomExpressionParser {
         return Character.isLetter(c) || c == '_';
     }
 
-    // Names keep their dotted components, like cameraPosition.x, so they resolve as one.
     private static List<String> tokenize(String text) throws ParseException {
         List<String> tokens = new ArrayList<>();
         int i = 0;

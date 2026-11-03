@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Reads pack files with a size limit, since packs are untrusted input. */
 final class PackFileReader {
 
     /** Far above any real shader file, but keeps a bad ZIP entry from eating the heap. */

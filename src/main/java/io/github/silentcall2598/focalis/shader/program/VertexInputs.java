@@ -11,13 +11,11 @@ import java.util.List;
 import java.util.function.ToIntFunction;
 
 /**
- * The vertex inputs of a linked program that only the chunk attribute stream supplies, which are gl_Normal for terrain
- * and mc_Entity, mc_midTexCoord and at_tangent. Also whether the driver kept the locations they were bound to, since
- * the stream points its arrays at exactly those. Immutable.
+ * Also whether the driver kept the locations they were bound to, since the stream points its arrays at exactly
+ * those.
  */
 public final class VertexInputs {
 
-    /** A program that reads none of them. */
     public static final VertexInputs NONE = new VertexInputs(false, false, false, false, null);
 
     private final boolean normal;
@@ -36,13 +34,6 @@ public final class VertexInputs {
         this.problem = problem;
     }
 
-    /**
-     * Reads the active attributes of a program linked with the stream locations bound.
-     *
-     * @param locations the location the driver gives a generic attribute name, -1 when it isn't active
-     * @param refused why the driver wouldn't link with the locations bound, or null when it did. The program was then
-     *     linked without them, so it works for draws that don't need the stream.
-     */
     static VertexInputs read(List<ActiveAttribute> active, ToIntFunction<String> locations, @Nullable String refused) {
         boolean normal = false;
         boolean entity = false;
@@ -110,17 +101,14 @@ public final class VertexInputs {
         return tangent;
     }
 
-    /** Whether terrain needs the stream to draw this program with meaningful inputs. */
     public boolean needsStream() {
         return normal || entity || midTexCoord || tangent;
     }
 
-    /** Whether the program reads attributes nothing but the chunk stream supplies. */
     public boolean readsStreamAttributes() {
         return entity || midTexCoord || tangent;
     }
 
-    /** Why the stream can't feed this program, or null when it can. */
     @Nullable
     public String problem() {
         return problem;

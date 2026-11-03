@@ -11,14 +11,12 @@ import javax.annotation.Nullable;
  */
 public final class FragmentCache {
 
-    /** GlStateManager's cached alpha function and reference. */
     public interface Alpha {
         int focalis$function();
 
         float focalis$reference();
     }
 
-    /** GlStateManager's cached blend factors. Its two factor blendFunc only updates the color ones. */
     public interface Blend {
         int focalis$factor(int index);
     }

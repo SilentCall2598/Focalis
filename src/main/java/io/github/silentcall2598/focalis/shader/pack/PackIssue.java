@@ -4,7 +4,6 @@ package io.github.silentcall2598.focalis.shader.pack;
 
 import javax.annotation.Nullable;
 
-/** Something wrong with part of a pack that didn't stop the rest of it from loading. */
 public final class PackIssue {
 
     @Nullable

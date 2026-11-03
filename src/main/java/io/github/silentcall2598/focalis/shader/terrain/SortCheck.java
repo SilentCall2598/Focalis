@@ -24,14 +24,12 @@ final class SortCheck {
     private int observations;
     private boolean unreadable;
 
-    /** Copies the quads aside before the sort and starts listening for it. */
     void prepare(ByteBuffer data, int quadCount, int bytesPerQuad) {
         if (bytesPerQuad <= 0 || bytesPerQuad % 8 != 0) {
             throw new IllegalArgumentException("A quad of " + bytesPerQuad + " bytes can't be compared in longs");
         }
         int bytes = quadCount * bytesPerQuad;
         if (before.capacity() < bytes) {
-            // Headroom, so a slightly bigger layer next time doesn't allocate again.
             before = newBuffer(Math.max(bytes, before.capacity() + (before.capacity() >> 1)));
         }
         if (order.length < quadCount) {
@@ -52,7 +50,6 @@ final class SortCheck {
         unreadable = false;
     }
 
-    /** The index array right after the sort sorted it. */
     void observed(Object[] sorted) {
         if (!armed) {
             return;
@@ -72,11 +69,6 @@ final class SortCheck {
         }
     }
 
-    /**
-     * Stops listening and checks the data after the sort.
-     *
-     * @return null when the order can be used, otherwise why not
-     */
     String verify(ByteBuffer data) {
         if (!armed) {
             return "vanilla's translucent sort wasn't prepared for";
@@ -109,7 +101,6 @@ final class SortCheck {
         return null;
     }
 
-    /** Quad p after the sort came from order()[p] before it. Valid up to the sorted count after a good verify. */
     int[] order() {
         return order;
     }
@@ -122,12 +113,10 @@ final class SortCheck {
         armed = false;
     }
 
-    /** The bytes the buffers hold on to. */
     int capacity() {
         return before.capacity() + (order.length + seen.length) * 4;
     }
 
-    /** Stops listening and lets go of the buffers, which grow to the biggest layer there was. */
     void release() {
         abandon();
         if (before.capacity() > 0) {
@@ -141,7 +130,6 @@ final class SortCheck {
         quads = -1;
     }
 
-    // The quad after the sort at one offset against the saved quad at another.
     private boolean sameQuad(ByteBuffer data, int dataOffset, int savedOffset) {
         for (int i = 0; i < quadBytes; i += 8) {
             if (data.getLong(dataOffset + i) != before.getLong(savedOffset + i)) {

@@ -6,10 +6,7 @@ import io.github.silentcall2598.focalis.render.state.GlContextInfo;
 import io.github.silentcall2598.focalis.render.state.GlFeature;
 import io.github.silentcall2598.focalis.shader.pack.ProgramStage;
 
-/**
- * Which shader stages the current OpenGL context can compile. It says nothing about whether a pack's GLSL
- * version will be accepted, which only the driver can decide.
- */
+/** It says nothing about whether a pack's GLSL version will be accepted, which only the driver can decide. */
 public final class ShaderCapabilities {
 
     private final boolean vertexAndFragment;
@@ -42,7 +39,6 @@ public final class ShaderCapabilities {
         }
     }
 
-    /** What an unsupported stage would need, for error messages. */
     static String requirement(ProgramStage stage) {
         switch (stage) {
             case GEOMETRY:

@@ -10,7 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Reports the ender dragon's eye layer, on the typed method like LayerSpiderEyesMixin.
 @Mixin(LayerEnderDragonEyes.class)
 public abstract class LayerEnderDragonEyesMixin {
 

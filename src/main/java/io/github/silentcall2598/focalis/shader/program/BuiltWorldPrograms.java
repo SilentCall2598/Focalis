@@ -16,9 +16,9 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * The OpenGL programs built from one {@link PreparedWorldPrograms}. Each unique prepared program is built once, and
- * every role that shares it shares the result. This set owns every program it built and nothing else may delete or
- * replace them. Nothing is bound, and nothing is freed automatically, so {@link #delete()} has to be called.
+ * Each unique prepared program is built once, and every role that shares it shares the result. This set owns every
+ * program it built and nothing else may delete or replace them. Nothing is freed automatically, so {@link #delete()}
+ * has to be called.
  */
 public final class BuiltWorldPrograms {
 
@@ -32,19 +32,13 @@ public final class BuiltWorldPrograms {
     }
 
     /**
-     * Builds every unique program in {@code prepared} and connects its samplers. Must run on the client thread with
-     * the OpenGL context current and no Focalis program scope open.
-     * A program the pack or driver can't build is recorded as a failure and the others are still built. Any other
-     * exception deletes the programs built so far and is rethrown.
+     * No Focalis program scope may be open. A program the pack or driver can't build is recorded as a failure and the
+     * others are still built. Any other exception deletes the programs built so far and is rethrown.
      */
     public static BuiltWorldPrograms build(PreparedWorldPrograms prepared, ShaderCapabilities capabilities) {
         return build(prepared, capabilities, ProgramTextures.NONE);
     }
 
-    /**
-     * Like {@link #build(PreparedWorldPrograms, ShaderCapabilities)}, with the custom textures of the configuration the
-     * programs were prepared with. A program that samples one of them that couldn't be made is recorded as a failure.
-     */
     public static BuiltWorldPrograms build(PreparedWorldPrograms prepared, ShaderCapabilities capabilities,
             ProgramTextures textures) {
         Objects.requireNonNull(prepared, "prepared");
@@ -83,8 +77,6 @@ public final class BuiltWorldPrograms {
         }
     }
 
-    // Every program gets its delete attempt even when an earlier one throws. Returns the first failure, or the one
-    // passed in, with any later failures suppressed onto it.
     @Nullable
     private static Throwable deleteNewestFirst(List<Build> builds, @Nullable Throwable failure) {
         for (int i = builds.size() - 1; i >= 0; i--) {
@@ -105,17 +97,14 @@ public final class BuiltWorldPrograms {
         return failure;
     }
 
-    /** One result for every unique prepared program, in the same order, failures included. Read only. */
     public List<Build> builds() {
         return builds;
     }
 
-    /** The entry for a role. Every role has one, even the ones nothing was built for. */
     public Entry forRole(ShaderProgramRole role) {
         return entries.get(Objects.requireNonNull(role, "role"));
     }
 
-    /** Every role's entry in role order. Read only. */
     public Map<ShaderProgramRole, Entry> entries() {
         return entries;
     }
@@ -125,10 +114,8 @@ public final class BuiltWorldPrograms {
     }
 
     /**
-     * Deletes every program this set built, each one once, newest first. Must run on the client thread with the
-     * same OpenGL context current. If a delete throws, the rest are still attempted and the first failure is
-     * rethrown afterwards. Either way the set counts as deleted and calling it again does nothing. Builds and
-     * entries stay readable afterwards.
+     * If a delete throws, the rest are still attempted and the first failure is rethrown afterwards. Builds and entries
+     * stay readable afterwards.
      */
     public void delete() {
         if (deleted) {
@@ -144,10 +131,7 @@ public final class BuiltWorldPrograms {
         }
     }
 
-    /**
-     * The one build attempt for a unique prepared program. Exactly one of program and failure is set, and a built
-     * program always has its inputs.
-     */
+    /** A built program always has its inputs. */
     public static final class Build {
 
         private final PreparedProgram prepared;
@@ -203,25 +187,21 @@ public final class BuiltWorldPrograms {
             return prepared;
         }
 
-        /** The built program, owned by the set, or null if the build failed. */
         @Nullable
         public ShaderProgram program() {
             return program;
         }
 
-        /** The inputs Focalis set up for the built program, or null if the build failed. */
         @Nullable
         public WorldProgramInputs inputs() {
             return inputs;
         }
 
-        /** Why the pack or driver couldn't build the program, or null if it built. */
         @Nullable
         public ProgramFailure failure() {
             return failure;
         }
 
-        /** The alpha test, blend mode and textures the program gets while bound. Empty for a failed build. */
         public ProgramDrawState drawState() {
             return drawState;
         }
@@ -231,7 +211,6 @@ public final class BuiltWorldPrograms {
         }
     }
 
-    /** How one role came out. Roles that share a prepared program share its {@link Build}. */
     public static final class Entry {
 
         private final PreparedWorldPrograms.Entry prepared;
@@ -247,12 +226,10 @@ public final class BuiltWorldPrograms {
             return prepared.role();
         }
 
-        /** How the role resolved and prepared, including any source problem. */
         public PreparedWorldPrograms.Entry prepared() {
             return prepared;
         }
 
-        /** The build this role uses, or null when the role had no prepared program to build. */
         @Nullable
         public Build build() {
             return build;
@@ -268,7 +245,6 @@ public final class BuiltWorldPrograms {
             return build == null ? null : build.failure;
         }
 
-        /** True when the role has a built program that hasn't been deleted. */
         public boolean ready() {
             ShaderProgram program = program();
             return program != null && !program.isDeleted();
