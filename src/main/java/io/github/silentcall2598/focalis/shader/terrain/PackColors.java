@@ -6,6 +6,9 @@ package io.github.silentcall2598.focalis.shader.terrain;
  * Each path repeats its renderer's float operations in the renderer's order and only leaves factors out, so a kept
  * factor rounds exactly as in vanilla's own color, and with every factor kept the result is vanilla's color. Colors
  * are packed with red in the low byte and alpha in the high one.
+ *
+ * <p>separateAo moves the smooth path's shade, AO times the face factor when face shading is kept, from rgb to alpha.
+ * Flat quads and fluids have no AO and keep their face factor in rgb. That is what OptiFine 1.12.2 HD U G5 does.
  */
 final class PackColors {
 
@@ -49,12 +52,15 @@ final class PackColors {
                 forgeByte(forgeChannel(base[2], tinted, multiplier, 2, ao, diffuse, true, true)), forgeByte(base[3]));
     }
 
-    static int forgePack(float[] base, boolean tinted, int multiplier, float ao, float diffuse, boolean faceShading,
-            boolean separateAo) {
-        int alpha = forgeByte(separateAo ? base[3] * ao : base[3]);
-        return pack(forgeByte(forgeChannel(base[0], tinted, multiplier, 0, ao, diffuse, !separateAo, faceShading)),
-                forgeByte(forgeChannel(base[1], tinted, multiplier, 1, ao, diffuse, !separateAo, faceShading)),
-                forgeByte(forgeChannel(base[2], tinted, multiplier, 2, ao, diffuse, !separateAo, faceShading)), alpha);
+    static int forgePack(float[] base, boolean tinted, int multiplier, float ao, float diffuse, boolean smooth,
+            boolean faceShading, boolean separateAo) {
+        boolean shadeInAlpha = separateAo && smooth;
+        boolean diffuseInRgb = faceShading && !shadeInAlpha;
+        int alpha = forgeByte(!shadeInAlpha ? base[3] : faceShading ? base[3] * ao * diffuse : base[3] * ao);
+        return pack(forgeByte(forgeChannel(base[0], tinted, multiplier, 0, ao, diffuse, !shadeInAlpha, diffuseInRgb)),
+                forgeByte(forgeChannel(base[1], tinted, multiplier, 1, ao, diffuse, !shadeInAlpha, diffuseInRgb)),
+                forgeByte(forgeChannel(base[2], tinted, multiplier, 2, ao, diffuse, !shadeInAlpha, diffuseInRgb)),
+                alpha);
     }
 
     private static int vanillaByte(int base, float multiplier) {
@@ -79,16 +85,18 @@ final class PackColors {
 
     static int modelPack(int base, boolean smooth, boolean tinted, int multiplier, float ao, boolean diffused,
             float diffuse, boolean faceShading, boolean separateAo) {
+        boolean shadeInAlpha = separateAo && smooth;
+        boolean diffuseInRgb = faceShading && !shadeInAlpha;
         int alpha = channel(base, 3);
-        if (separateAo) {
-            alpha = vanillaByte(alpha, ao);
+        if (shadeInAlpha) {
+            alpha = vanillaByte(alpha, diffused && faceShading ? ao * diffuse : ao);
         }
         return pack(vanillaByte(channel(base, 0), modelMultiplier(smooth, tinted, multiplier, 0, ao, diffused, diffuse,
-                        !separateAo, faceShading)),
+                        !shadeInAlpha, diffuseInRgb)),
                 vanillaByte(channel(base, 1), modelMultiplier(smooth, tinted, multiplier, 1, ao, diffused, diffuse,
-                        !separateAo, faceShading)),
+                        !shadeInAlpha, diffuseInRgb)),
                 vanillaByte(channel(base, 2), modelMultiplier(smooth, tinted, multiplier, 2, ao, diffused, diffuse,
-                        !separateAo, faceShading)), alpha);
+                        !shadeInAlpha, diffuseInRgb)), alpha);
     }
 
     static int modelVanilla(int base, float red, float green, float blue) {
