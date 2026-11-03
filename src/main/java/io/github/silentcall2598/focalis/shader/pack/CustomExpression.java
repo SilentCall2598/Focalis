@@ -3,9 +3,8 @@
 package io.github.silentcall2598.focalis.shader.pack;
 
 /**
- * One compiled custom uniform expression node. Every node knows its type when it's built, so evaluation never checks
- * types or looks up names, and nothing in here allocates. Values of other declarations are read from the array the
- * evaluation fills in dependency order. A bool declaration is stored there as 1 or 0.
+ * Every node knows its type when it's built, so evaluation never checks types or looks up names, and nothing in here
+ * allocates. A bool declaration is stored in the evaluation array as 1 or 0.
  */
 abstract class CustomExpression {
 
@@ -213,7 +212,6 @@ abstract class CustomExpression {
         }
     }
 
-    /** abs, sqrt, floor and ceil. */
     static final class Unary extends CustomExpression {
 
         private final String function;
@@ -241,7 +239,6 @@ abstract class CustomExpression {
         }
     }
 
-    /** min and max over two or more values. */
     static final class Extreme extends CustomExpression {
 
         private final boolean max;
@@ -314,7 +311,6 @@ abstract class CustomExpression {
         }
     }
 
-    /** in(x, a, b, ...) is true when x equals one of the others. */
     static final class OneOf extends CustomExpression {
 
         private final CustomExpression[] arguments;

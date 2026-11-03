@@ -4,12 +4,11 @@ package io.github.silentcall2598.focalis.config;
 
 import net.minecraftforge.common.config.Configuration;
 
+import javax.annotation.Nullable;
 import java.io.File;
 
-// Options are only read at startup, so changes to focalis.cfg need a restart.
 public final class FocalisConfig {
 
-    // Stored in the file so later versions can migrate renamed options.
     static final String CONFIG_VERSION = "1";
 
     private static final String CATEGORY_DIAGNOSTICS = "diagnostics";
@@ -29,7 +28,6 @@ public final class FocalisConfig {
                 "Independently toggleable Focalis features. Changes take effect after a restart.");
     }
 
-    // Forge renames an unreadable file to *.errored and starts over with defaults instead of failing.
     public static FocalisConfig load(File file) {
         return new FocalisConfig(new Configuration(file, CONFIG_VERSION));
     }
@@ -39,9 +37,28 @@ public final class FocalisConfig {
     }
 
     public ConfigSection featureSection(String featureId, String description) {
-        String category = CATEGORY_FEATURES + Configuration.CATEGORY_SPLITTER + featureId;
-        configuration.setCategoryComment(category, description);
-        return new ConfigSection(configuration, category);
+        configuration.setCategoryComment(featureCategory(featureId), description);
+        return new ConfigSection(configuration, featureCategory(featureId));
+    }
+
+    public ConfigSection section(String name, String comment) {
+        configuration.setCategoryComment(name, comment);
+        return new ConfigSection(configuration, name);
+    }
+
+    @Nullable
+    public String removeFeatureOption(String featureId, String key) {
+        String category = featureCategory(featureId);
+        if (!configuration.hasKey(category, key)) {
+            return null;
+        }
+        String value = configuration.getCategory(category).get(key).getString();
+        configuration.getCategory(category).remove(key);
+        return value;
+    }
+
+    private static String featureCategory(String featureId) {
+        return CATEGORY_FEATURES + Configuration.CATEGORY_SPLITTER + featureId;
     }
 
     public void saveIfChanged() {

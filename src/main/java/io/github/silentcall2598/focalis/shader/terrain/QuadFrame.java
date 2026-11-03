@@ -3,17 +3,15 @@
 package io.github.silentcall2598.focalis.shader.terrain;
 
 /**
- * The per-quad stream values worked out from a quad's four positions and texture coordinates, in stored order. Reused
- * for every quad, so a chunk build allocates nothing per quad. Not thread safe.
+ * Reused for every quad, so a chunk build allocates nothing per quad. Not thread safe.
  *
  * <p>The normal is the direction of the quad's vector area, so it points out of the side vanilla's winding faces. The
- * tangent is where the position moves while U grows and V stays put, made perpendicular to the normal. {@code tangentW}
- * is 1 when V grows along cross(tangent, normal) and -1 when the texture is mirrored against that. The midpoint is the
- * mean of the four texture coordinates.
+ * tangent is where the position moves while U grows and V stays put, made perpendicular to the normal.
+ * {@code tangentW} is 1 when V grows along cross(tangent, normal) and -1 when the texture is mirrored against that.
+ * The midpoint is the mean of the four texture coordinates.
  */
 final class QuadFrame {
 
-    // Below these, a quad or triangle is treated as having no area, or its texture coordinates as having no direction.
     private static final double FLAT = 1.0e-12;
     private static final double PARALLEL = 1.0e-6;
 
@@ -49,14 +47,11 @@ final class QuadFrame {
             midU = 0.0;
             midV = 0.0;
         }
-        // The other half of the quad when the first has no area or no texture direction, like a triangle stored
-        // with a repeated vertex.
         if (!tangent(0, 1, 2) && !tangent(0, 2, 3)) {
             fallbackTangent();
         }
     }
 
-    // The cross product of the diagonals is twice the vector area, whichever way the quad is split into triangles.
     private void normal() {
         double ax = x[2] - x[0];
         double ay = y[2] - y[0];
@@ -70,7 +65,6 @@ final class QuadFrame {
         double length = Math.sqrt(nx * nx + ny * ny + nz * nz);
         double scale = Math.max(diagonal(ax, ay, az), diagonal(bx, by, bz));
         if (!(length > FLAT * scale * scale) || !finite(length)) {
-            // A quad without area draws nothing, so any unit normal does.
             normalX = 0.0;
             normalY = 1.0;
             normalZ = 0.0;
@@ -109,7 +103,6 @@ final class QuadFrame {
         if (!(Math.abs(det) > PARALLEL * spans)) {
             return false;
         }
-        // Solves e1 = du1 T + dv1 B and e2 = du2 T + dv2 B for T and B, the directions U and V grow in.
         double tx = (e1x * dv2 - e2x * dv1) / det;
         double ty = (e1y * dv2 - e2y * dv1) / det;
         double tz = (e1z * dv2 - e2z * dv1) / det;

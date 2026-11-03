@@ -11,7 +11,6 @@ import javax.annotation.Nullable;
  */
 public final class FixedFunctionFog {
 
-    /** GlStateManager's cached fog mode, density, start and end. */
     public interface Cache {
         int focalis$mode();
 
@@ -22,7 +21,6 @@ public final class FixedFunctionFog {
         float focalis$end();
     }
 
-    /** One of GlStateManager's cached GL capabilities. */
     public interface Capability {
         boolean focalis$enabled();
     }

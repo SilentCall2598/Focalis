@@ -8,7 +8,6 @@ import org.lwjgl.opengl.GL30;
 
 import java.nio.IntBuffer;
 
-/** {@link RenderTargetGl} on LWJGL 2, which throws if no context is current on the calling thread. */
 final class LwjglRenderTargetGl implements RenderTargetGl {
 
     static final LwjglRenderTargetGl INSTANCE = new LwjglRenderTargetGl();

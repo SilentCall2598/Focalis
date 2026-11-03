@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 
 import java.util.Map;
 
-// The blocks being broken. drawBlockDamageTexture draws nothing while this is empty.
 @Mixin(RenderGlobal.class)
 public interface RenderGlobalDamageAccessor {
 

@@ -10,10 +10,8 @@ import javax.annotation.Nullable;
 import java.util.Objects;
 
 /**
- * A Focalis-owned framebuffer with one RGBA8 color texture and one depth texture, both sampled with nearest
- * filtering. Whoever creates it owns it and has to call {@link #delete()} on the client thread while the context that
- * created it is current. Nothing frees it automatically. Its size never changes, so a new size means a new target.
- * The contents are undefined until something draws into it.
+ * Whoever creates it owns it and has to call {@link #delete()} on the client thread while the context that created it is
+ * current. Nothing frees it automatically.
  */
 public final class RenderTarget {
 
@@ -34,10 +32,8 @@ public final class RenderTarget {
     }
 
     /**
-     * Must run on the client thread with the OpenGL context current. The texture and draw framebuffer bindings it
-     * uses are put back before it returns, and nothing stays allocated if it throws.
-     *
-     * @throws RenderTargetException if the driver reports the framebuffer as incomplete
+     * The texture and draw framebuffer bindings it uses are put back before it returns, and nothing stays allocated if it
+     * throws.
      */
     public static RenderTarget create(int width, int height, DepthFormat depthFormat) throws RenderTargetException {
         return create(LwjglRenderTargetGl.INSTANCE, width, height, depthFormat);
@@ -112,7 +108,6 @@ public final class RenderTarget {
         gl.allocateTexture(internalFormat, width, height, format, type);
     }
 
-    /** Whether this target already has exactly this size and depth format. */
     public boolean matches(int width, int height, DepthFormat depthFormat) {
         return this.width == width && this.height == height && this.depthFormat == depthFormat;
     }
@@ -129,19 +124,16 @@ public final class RenderTarget {
         return depthFormat;
     }
 
-    /** The OpenGL framebuffer name. Throws once the target has been deleted. */
     public int framebuffer() {
         checkNotDeleted();
         return framebuffer;
     }
 
-    /** The OpenGL name of the RGBA8 color texture. Throws once the target has been deleted. */
     public int colorTexture() {
         checkNotDeleted();
         return colorTexture;
     }
 
-    /** The OpenGL name of the depth texture. Throws once the target has been deleted. */
     public int depthTexture() {
         checkNotDeleted();
         return depthTexture;
@@ -158,9 +150,8 @@ public final class RenderTarget {
     }
 
     /**
-     * Frees the framebuffer and both textures. Must run on the client thread with the context that created them
-     * current. If one delete throws, the others are still attempted and the first failure is rethrown. Calling it
-     * again does nothing.
+     * If one delete throws, the others are still attempted and the first failure is rethrown. Calling it again does
+     * nothing.
      */
     public void delete() {
         if (deleted) {
@@ -192,7 +183,6 @@ public final class RenderTarget {
         }
     }
 
-    // The first failure wins and later ones are kept as suppressed.
     private static Throwable collect(@Nullable Throwable first, Throwable next) {
         if (first == null) {
             return next;

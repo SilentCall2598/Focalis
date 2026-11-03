@@ -4,10 +4,6 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import javax.annotation.Nullable;
 
-/**
- * The legacy view and frame uniforms world programs get from {@link FrameInputs}, with the names and types of the
- * OptiFine shader documentation.
- */
 public enum FrameUniform {
 
     VIEW_WIDTH("viewWidth", false),
@@ -29,7 +25,6 @@ public enum FrameUniform {
         return uniformName;
     }
 
-    /** True for an int uniform, false for a float. */
     public boolean integer() {
         return integer;
     }

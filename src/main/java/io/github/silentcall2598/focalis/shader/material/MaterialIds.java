@@ -25,21 +25,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One configuration's material IDs, resolved against the game's registries. Block states match by every listed
- * property, so the state the renderer works out from the world can have another ID than the stored state it came
- * from, like grass under snow. Nothing here goes through numeric IDs or metadata. Immutable, so any thread can read
- * it once it's published.
+ * Block states match by every listed property, so the state the renderer works out from the world can have another ID
+ * than the stored state it came from, like grass under snow. Nothing here goes through numeric IDs or metadata.
+ * Immutable, so any thread can read it once it's published.
  */
 public final class MaterialIds {
 
-    /** What every lookup returns for something the pack doesn't map. Declared IDs are never negative. */
     public static final int UNMAPPED = -1;
 
     private static final ResourceLocation PLAYER = new ResourceLocation("player");
 
     private final MaterialMappings mappings;
     private final Map<IBlockState, Integer> blocks;
-    // Per block with Forge extended states, the properties map of each mapped state to its ID. See extendedCopy.
     private final Map<Block, Map<ImmutableMap<IProperty<?>, Comparable<?>>, Integer>> extended;
     private final Map<Item, Integer> items;
     private final Map<Class<?>, Integer> entities;
@@ -60,10 +57,7 @@ public final class MaterialIds {
         this.report = report;
     }
 
-    /**
-     * Resolves the mappings against the registries as they are now. Mods register their content after pre-init, so
-     * this has to wait until mod loading is complete. Only the blocks, items and entities the mappings name are read.
-     */
+    /** Mods register their content after pre-init, so this has to wait until mod loading is complete. */
     public static MaterialIds resolve(MaterialMappings mappings) {
         long start = System.nanoTime();
         MaterialReport.Builder report = new MaterialReport.Builder();
@@ -125,7 +119,6 @@ public final class MaterialIds {
         return PLAYER.equals(key) ? EntityPlayer.class : null;
     }
 
-    /** The mappings these IDs came from. */
     public MaterialMappings mappings() {
         return mappings;
     }
@@ -134,11 +127,7 @@ public final class MaterialIds {
         return report;
     }
 
-    /**
-     * The ID of a block state, normally the actual state the renderer draws, before Forge's extended render data is
-     * added. An extended copy counts as the listed state it stands for, since unlisted values don't take part in
-     * matching.
-     */
+    /** An extended copy counts as the listed state it stands for, since unlisted values don't take part in matching. */
     public int block(IBlockState state) {
         Integer id = blocks.get(state);
         if (id == null && state instanceof IExtendedBlockState) {
@@ -164,7 +153,6 @@ public final class MaterialIds {
         return id == null ? UNMAPPED : id;
     }
 
-    /** The ID of an entity's type. A subclass without its own registry entry has no ID, like in vanilla. */
     public int entity(Entity entity) {
         Integer id = entities.get(entity.getClass());
         if (id != null) {
@@ -179,7 +167,6 @@ public final class MaterialIds {
         return entity instanceof EntityLightningBolt ? lightningBolt : UNMAPPED;
     }
 
-    // The registry's own state objects, with values written the way the game writes them in blockstate files.
     private static final class RegistryBlock implements MaterialMatcher.Block<IBlockState> {
 
         private final BlockStateContainer container;

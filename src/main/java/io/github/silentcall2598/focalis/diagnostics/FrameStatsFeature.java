@@ -13,7 +13,6 @@ import org.apache.logging.log4j.Logger;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-// Handy for checking that the lifecycle hooks fire and for rough frame time baselines.
 public final class FrameStatsFeature extends Feature {
 
     public static final String ID = "frame_stats";
@@ -91,7 +90,6 @@ public final class FrameStatsFeature extends Feature {
             }
         }
 
-        // Counted at END only, so each world pass counts once.
         void onWorld(RenderStage stage, RenderPhase phase, RenderDrawKind drawKind, float partialTicks) {
             if (phase == RenderPhase.END) {
                 worldPasses++;

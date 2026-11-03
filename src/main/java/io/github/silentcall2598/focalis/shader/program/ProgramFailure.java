@@ -16,13 +16,10 @@ import java.util.Locale;
 public final class ProgramFailure {
 
     public enum Kind {
-        /** The program doesn't have a usable set of stages, like a fragment shader with no vertex shader. */
         INVALID_STAGES,
-        /** A stage needs something this OpenGL context doesn't offer. */
         UNSUPPORTED_STAGE,
         COMPILE,
         LINK,
-        /** The program declares an input Focalis provides in a way it can't provide it, like a sampler as a float. */
         INPUTS
     }
 
@@ -74,18 +71,15 @@ public final class ProgramFailure {
         return kind;
     }
 
-    /** The program name as users see it, like {@code world-1/composite}. */
     public String program() {
         return program;
     }
 
-    /** The stage file that failed, or null when the failure isn't about one file, like a link error. */
     @Nullable
     public ShaderPath file() {
         return file;
     }
 
-    /** A short plain-English line such as "gbuffers_terrain.fsh failed to compile". */
     public String summary() {
         return summary;
     }
@@ -95,12 +89,10 @@ public final class ProgramFailure {
         return driverLog;
     }
 
-    /** The driver log split into lines, with pack locations where the log format is understood. */
     public List<DriverLogMessage> messages() {
         return messages;
     }
 
-    /** The summary plus the driver's first error, with its pack location when that's known. */
     @Override
     public String toString() {
         DriverLogMessage headline = headline();

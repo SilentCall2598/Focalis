@@ -36,7 +36,6 @@ public final class ShaderPackLoader {
     static ShaderPack load(ShaderPackSource source) throws ShaderPackException, IOException {
         List<PackIssue> issues = new ArrayList<>();
         Map<ShaderPath, String> texts = new HashMap<>();
-        // Text files are only read when something asks for them, so unused ones stay on disk.
         IncludeResolver.FileText reader = path -> {
             if (!source.files().contains(path)) {
                 return null;
@@ -100,7 +99,6 @@ public final class ShaderPackLoader {
             }
         }
 
-        // Read now so configurations can use them later without touching the pack again.
         String properties = reader.read(ShaderPath.of(ShaderProperties.FILE_NAME));
         Map<ShaderPath, byte[]> images = properties == null ? Collections.<ShaderPath, byte[]>emptyMap()
                 : readImages(source, properties, reader, issues);
@@ -169,7 +167,6 @@ public final class ShaderPackLoader {
         }
     }
 
-    // Options only come from .vsh and .fsh sources, like the format documents.
     @Nullable
     private static String checkIncludes(String label, Map<ProgramStage, ShaderPath> stages, IncludeResolver resolver,
             OptionScanner options, List<PackIssue> issues) throws IOException {

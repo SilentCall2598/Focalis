@@ -40,7 +40,6 @@ public final class RenderSubsystem {
         lifecycle.register(RenderStage.FRAME, LISTENER_OWNER, this::onFrame);
     }
 
-    // Null until the first frame, or if capturing failed.
     @Nullable
     public GlContextInfo glContext() {
         return glContext;

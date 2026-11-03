@@ -8,7 +8,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-/** Every option a pack defines, found once when the pack loads. Immutable. */
 public final class ShaderOptions {
 
     static final List<String> SWITCH_VALUES = Collections.unmodifiableList(Arrays.asList("true", "false"));
@@ -19,7 +18,6 @@ public final class ShaderOptions {
         this.options = options;
     }
 
-    /** Options by name in name order. Read only. */
     public Map<String, ShaderOption> all() {
         return options;
     }

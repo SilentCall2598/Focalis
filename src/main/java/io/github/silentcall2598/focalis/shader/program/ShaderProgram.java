@@ -3,8 +3,8 @@
 package io.github.silentcall2598.focalis.shader.program;
 
 /**
- * A linked OpenGL program. Whoever receives it owns it and has to call {@link #delete()} on the client thread
- * while a context is current. Nothing frees it automatically.
+ * Whoever receives it owns it and has to call {@link #delete()} on the client thread while a context is current.
+ * Nothing frees it automatically.
  */
 public final class ShaderProgram {
 
@@ -27,12 +27,10 @@ public final class ShaderProgram {
         this.vertexInputs = vertexInputs;
     }
 
-    /** The inputs it reads that only the chunk attribute stream supplies. */
     public VertexInputs vertexInputs() {
         return vertexInputs;
     }
 
-    /** The OpenGL program name. Throws once the program has been deleted. */
     public int id() {
         if (deleted) {
             throw new IllegalStateException(name + " was already deleted");
@@ -48,7 +46,6 @@ public final class ShaderProgram {
         return gl;
     }
 
-    /** Warnings the driver reported while building the program, grouped by file, or an empty string. */
     public String driverLog() {
         return driverLog;
     }
@@ -57,7 +54,6 @@ public final class ShaderProgram {
         return deleted;
     }
 
-    /** Deletes the program. Calling it again does nothing. */
     public void delete() {
         if (!deleted) {
             deleted = true;

@@ -10,8 +10,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Expands {@code #include "path"} directives. A path starting with a slash is relative to the shaders directory,
- * anything else is relative to the including file. Directives inside comments are left alone.
+ * A path starting with a slash is relative to the shaders directory, anything else is relative to the including
+ * file. Directives inside comments are left alone.
  */
 final class IncludeResolver {
 
@@ -21,13 +21,11 @@ final class IncludeResolver {
     static final int MAX_RESOLVED_CHARS = 16 * 1024 * 1024;
 
     private static final Pattern INCLUDE_DIRECTIVE = Pattern.compile("^\\s*#\\s*include\\b(.*)$");
-    // Comments are already blanked out by CommentScanner by the time this runs.
     private static final Pattern QUOTED_PATH = Pattern.compile("^\\s*\"([^\"]*)\"\\s*$");
 
     @FunctionalInterface
     interface FileText {
 
-        /** Returns the text of {@code path}, or null when the pack has no such file. */
         @Nullable
         String read(ShaderPath path) throws IOException;
     }
@@ -44,8 +42,7 @@ final class IncludeResolver {
         return output.build();
     }
 
-    // Includes are expanded before any other preprocessing, so #ifdef guards can't break a cycle. Iris works the
-    // same way.
+    // Includes are expanded before any other preprocessing, so #ifdef guards can't break a cycle.
     private void expand(ShaderPath file, List<ShaderPath> chain, @Nullable SourceLocation includedAt,
             ResolvedSource.Builder output) throws IncludeException {
         int cycleStart = chain.indexOf(file);
@@ -64,7 +61,6 @@ final class IncludeResolver {
         chain.add(file);
         CommentScanner comments = new CommentScanner();
         String[] lines = text.split("\n", -1);
-        // A trailing newline leaves an empty last element that isn't a real line.
         int lineCount = text.endsWith("\n") ? lines.length - 1 : lines.length;
         for (int i = 0; i < lineCount; i++) {
             String line = lines[i].endsWith("\r") ? lines[i].substring(0, lines[i].length() - 1) : lines[i];

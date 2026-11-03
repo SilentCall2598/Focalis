@@ -9,12 +9,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * The built-in values custom uniform expressions can read, all as floats like the format documents. These are the
- * values Focalis has for its standard uniforms, read from the same inputs, plus the documented biome_precipitation
- * parameter, and never the per draw fog values the format excludes. A vector is read one component at a time, like
- * {@code eyeBrightness.y}.
- */
 public enum CustomInput {
     VIEW_WIDTH("viewWidth"),
     VIEW_HEIGHT("viewHeight"),
@@ -30,6 +24,11 @@ public enum CustomInput {
     RAIN_STRENGTH("rainStrength"),
     IS_EYE_IN_WATER("isEyeInWater"),
     EYE_ALTITUDE("eyeAltitude"),
+    NEAR("near"),
+    FAR("far"),
+    NIGHT_VISION("nightVision"),
+    BLINDNESS("blindness"),
+    SCREEN_BRIGHTNESS("screenBrightness"),
     BIOME_PRECIPITATION("biome_precipitation"),
     EYE_BRIGHTNESS_X("eyeBrightness", "x"),
     EYE_BRIGHTNESS_Y("eyeBrightness", "y"),
@@ -43,7 +42,6 @@ public enum CustomInput {
     PREVIOUS_CAMERA_POSITION_Y("previousCameraPosition", "y"),
     PREVIOUS_CAMERA_POSITION_Z("previousCameraPosition", "z");
 
-    // values() copies the array, and lookups happen for every name in every expression.
     private static final CustomInput[] ALL = values();
     private static final Set<String> BASE_NAMES = new HashSet<>();
 
@@ -61,12 +59,10 @@ public enum CustomInput {
         this.components = Collections.unmodifiableList(Arrays.asList(components));
     }
 
-    /** The uniform name, without a component. */
     public String baseName() {
         return base;
     }
 
-    /** The input for a name like {@code frameTime} or {@code cameraPosition.x}, or null when there is none. */
     @Nullable
     static CustomInput find(String name) {
         int dot = name.indexOf('.');

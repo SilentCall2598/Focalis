@@ -4,10 +4,6 @@ package io.github.silentcall2598.focalis.shader.pack;
 
 import java.util.Objects;
 
-/**
- * What the user picked for a pack, as written. A profile name from {@code shaders.properties}, empty for none, and
- * option entries in the profile syntax like {@code SHADOW_QUALITY=3 BLOOM !SSAO}. Immutable.
- */
 public final class PackSettings {
 
     public static final PackSettings NONE = new PackSettings("", "");

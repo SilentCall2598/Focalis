@@ -4,7 +4,6 @@ package io.github.silentcall2598.focalis.shader.pack;
 
 import javax.annotation.Nullable;
 
-/** A shader stage and the file extension OptiFine-style packs use for it. */
 public enum ProgramStage {
     VERTEX("vsh"),
     GEOMETRY("gsh"),
@@ -21,7 +20,6 @@ public enum ProgramStage {
         return extension;
     }
 
-    /** The stage for a file name like {@code final.fsh}, or null if it isn't a stage file. */
     @Nullable
     static ProgramStage forFileName(String fileName) {
         int dot = fileName.lastIndexOf('.');

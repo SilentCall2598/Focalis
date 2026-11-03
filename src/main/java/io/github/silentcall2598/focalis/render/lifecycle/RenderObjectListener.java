@@ -26,14 +26,11 @@ public interface RenderObjectListener {
     void objectEnded();
 
     /**
-     * A special draw of the innermost object starts, which is {@link RenderDrawKind#ARMOR_GLINT},
-     * {@link RenderDrawKind#ITEM_GLINT}, {@link RenderDrawKind#EYES} or {@link RenderDrawKind#BEACON_BEAM}. Also
-     * outside any object, like an item in a screen. A special draw whose code throws gets no end, see
+     * Also outside any object, like an item in a screen. A special draw whose code throws gets no end, see
      * {@link #specialDrawsAbandoned}.
      */
     void specialDrawStarted(RenderDrawKind kind);
 
-    /** The special draw of that kind returned. */
     void specialDrawEnded(RenderDrawKind kind);
 
     /**

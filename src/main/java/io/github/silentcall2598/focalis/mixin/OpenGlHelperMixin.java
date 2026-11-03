@@ -8,8 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
-// Swaps Minecraft's framebuffer for the Focalis world target while a world pass draws into it, and changes nothing
-// otherwise. require = 0 because the world target notices on its own when this never runs and stops.
+// require = 0 because the world target notices on its own when this never runs and stops.
 @Mixin(OpenGlHelper.class)
 public abstract class OpenGlHelperMixin {
 

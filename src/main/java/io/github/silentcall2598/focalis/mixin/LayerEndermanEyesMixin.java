@@ -10,7 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-// Reports the enderman's eye layer, on the typed method like LayerSpiderEyesMixin.
 @Mixin(LayerEndermanEyes.class)
 public abstract class LayerEndermanEyesMixin {
 

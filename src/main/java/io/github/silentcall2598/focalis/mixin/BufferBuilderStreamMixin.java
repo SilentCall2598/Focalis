@@ -15,8 +15,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import javax.annotation.Nullable;
 import java.util.Comparator;
 
-// Gives every builder a place for its stream companion, and lets the stream observe the order vanilla's translucent
-// sort puts its quad indices in. The sort and the data it moves stay untouched.
+// The stream only observes the order vanilla's translucent sort puts its quad indices in. The sort and the data it
+// moves stay untouched.
 @Mixin(BufferBuilder.class)
 public abstract class BufferBuilderStreamMixin implements StreamBufferBuilder {
 

@@ -4,11 +4,7 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import javax.annotation.Nullable;
 
-/**
- * The camera of one world pass, taken once before any of its stages draws, together with the previous capture of the
- * same camera lane. Never changes after it's made. Matrices are stored column by column like OpenGL keeps
- * them, and the getters hand out copies.
- */
+/** Matrices are stored column by column like OpenGL keeps them, and the getters hand out copies. */
 public final class CameraSnapshot {
 
     private final long sequence;
@@ -33,12 +29,6 @@ public final class CameraSnapshot {
     @Nullable
     final float[] projectionInverse;
 
-    /**
-     * @param world counts the client worlds and dimensions of the session the captures were in
-     * @param previous whose current values become the previous ones, or null to start the history over
-     * @param sameFrame true when {@code previous} is an earlier capture of this lane in the same frame, which shares
-     *     its previous values instead
-     */
     CameraSnapshot(long sequence, long world, int lane, long frame, @Nullable String historyBreak, double x, double y,
             double z, float[] modelView, float[] projection, @Nullable CameraSnapshot previous, boolean sameFrame) {
         this.sequence = sequence;
@@ -77,35 +67,27 @@ public final class CameraSnapshot {
         }
     }
 
-    /**
-     * Counts the client worlds and dimensions the session's captures were taken in, from 1. It changes whenever
-     * Minecraft replaces the world or the dimension changes, and stays the same for every capture in between.
-     */
+    /** Counts the client worlds and dimensions the session's captures were taken in, from 1. */
     public long world() {
         return world;
     }
 
-    /** Counts every capture of the session from 1, and never wraps in practice. */
     public long sequence() {
         return sequence;
     }
 
-    /** The camera lane, see {@link CameraInputs}, or -1 for a world pass that keeps no history. */
     public int lane() {
         return lane;
     }
 
-    /** The FrameInputs sequence of the displayed frame this was captured in. */
     public long frame() {
         return frame;
     }
 
-    /** Whether the previous values come from an earlier capture rather than this one. */
     public boolean continuesHistory() {
         return historyBreak == null;
     }
 
-    /** Why the history of this lane started over at this capture, or null when it went on. */
     @Nullable
     public String historyBreak() {
         return historyBreak;
@@ -159,13 +141,11 @@ public final class CameraSnapshot {
         return projectionInverse != null;
     }
 
-    /** Null when the model-view matrix has no inverse. */
     @Nullable
     float[] modelViewInverse() {
         return modelViewInverse == null ? null : modelViewInverse.clone();
     }
 
-    /** Null when the projection matrix has no inverse. */
     @Nullable
     float[] projectionInverse() {
         return projectionInverse == null ? null : projectionInverse.clone();

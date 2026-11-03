@@ -24,7 +24,6 @@ public final class ForgeRenderEventBridge {
         MinecraftForge.EVENT_BUS.register(new ForgeRenderEventBridge(lifecycle));
     }
 
-    // Minecraft doesn't fire this on frames it skips entirely.
     @SubscribeEvent
     public void onRenderTick(TickEvent.RenderTickEvent event) {
         RenderPhase phase = event.phase == TickEvent.Phase.START ? RenderPhase.START : RenderPhase.END;

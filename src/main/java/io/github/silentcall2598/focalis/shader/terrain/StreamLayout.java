@@ -5,10 +5,8 @@ package io.github.silentcall2598.focalis.shader.terrain;
 import org.lwjgl.opengl.GL11;
 
 /**
- * How chunk terrain gets the attributes vanilla's block vertex format doesn't have: a stream next to vanilla's vertex
- * data, which stays exactly as vanilla built it. All four vertices of a quad get the same values. Vertex buffers use a
- * compact layout. Display lists use floats for the normal and tangent, since drivers may convert normalized bytes in a
- * list with the older (2c+1)/255 rule, which has no exact 0. Immutable.
+ * Display lists use floats for the normal and tangent, since drivers may convert normalized bytes in a list with the
+ * older (2c+1)/255 rule, which has no exact 0.
  */
 public final class StreamLayout {
 
@@ -23,20 +21,15 @@ public final class StreamLayout {
     public static final int ENTITY_LOCATION = 6;
     public static final int MID_TEX_COORD_LOCATION = 7;
 
-    /** The largest material ID mc_Entity can carry. It's stored as a signed short. */
     public static final int MAX_ENTITY_ID = Short.MAX_VALUE;
 
-    /**
-     * For vertex buffers, 20 bytes a vertex. The normal as three normalized bytes and a pad, the ID and a 0 as two
-     * shorts, the midpoint as two floats and the tangent as four normalized bytes.
-     */
-    public static final StreamLayout BUFFER = new StreamLayout("buffer", 20, GL11.GL_BYTE, 4, 8, GL11.GL_BYTE, 16);
+    public static final StreamLayout BUFFER = new StreamLayout("buffer", 20, GL11.GL_BYTE, 4, 8, GL11.GL_BYTE, 16, -1);
 
-    /**
-     * For display lists, 40 bytes a vertex. The normal as three floats, the ID and a 0 as two shorts, the midpoint as
-     * two floats and the tangent as four floats.
-     */
-    public static final StreamLayout LIST = new StreamLayout("list", 40, GL11.GL_FLOAT, 12, 16, GL11.GL_FLOAT, 24);
+    public static final StreamLayout BUFFER_COLOR = new StreamLayout("buffer with colors", 24, GL11.GL_BYTE, 4, 8,
+            GL11.GL_BYTE, 16, 20);
+
+    public static final StreamLayout LIST = new StreamLayout("list", 40, GL11.GL_FLOAT, 12, 16, GL11.GL_FLOAT, 24,
+            -1);
 
     private final String name;
     private final int stride;
@@ -45,9 +38,10 @@ public final class StreamLayout {
     private final int midTexCoordOffset;
     private final int tangentType;
     private final int tangentOffset;
+    private final int colorOffset;
 
     private StreamLayout(String name, int stride, int vectorType, int entityOffset, int midTexCoordOffset,
-            int tangentType, int tangentOffset) {
+            int tangentType, int tangentOffset, int colorOffset) {
         this.name = name;
         this.stride = stride;
         this.vectorType = vectorType;
@@ -55,29 +49,25 @@ public final class StreamLayout {
         this.midTexCoordOffset = midTexCoordOffset;
         this.tangentType = tangentType;
         this.tangentOffset = tangentOffset;
+        this.colorOffset = colorOffset;
     }
 
-    /** Bytes per vertex. */
     public int stride() {
         return stride;
     }
 
-    /** GL_BYTE or GL_FLOAT. The normal always starts at byte 0. */
     public int normalType() {
         return vectorType;
     }
 
-    /** Where the two shorts of mc_Entity start. */
     public int entityOffset() {
         return entityOffset;
     }
 
-    /** Where the two floats of mc_midTexCoord start. */
     public int midTexCoordOffset() {
         return midTexCoordOffset;
     }
 
-    /** GL_BYTE, normalized, or GL_FLOAT. */
     public int tangentType() {
         return tangentType;
     }
@@ -86,10 +76,18 @@ public final class StreamLayout {
         return tangentOffset;
     }
 
-    /**
-     * A material ID the way mc_Entity.x stores it. Unmapped stays -1. An ID the short can't hold becomes -1 too, rather
-     * than wrapping around into some other ID, and the world programs log those IDs when the stream starts.
-     */
+    public int colorOffset() {
+        return colorOffset;
+    }
+
+    public boolean hasColors() {
+        return colorOffset >= 0;
+    }
+
+    public boolean forBuffers() {
+        return this != LIST;
+    }
+
     public static short entityId(int id) {
         return id >= 0 && id <= MAX_ENTITY_ID ? (short) id : (short) -1;
     }

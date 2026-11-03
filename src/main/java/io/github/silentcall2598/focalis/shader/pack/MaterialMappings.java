@@ -14,12 +14,8 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * The material IDs one configuration declares in {@code block.properties}, {@code item.properties} and
- * {@code entity.properties}, after the preprocessor. Only names and properties are kept. Matching them against the
- * game's registries is separate and has to wait until those are complete. Immutable.
- *
- * <p>Declarations are in file order, which is the order matching tries them. Only one line per ID counts. When an ID
- * is declared again, with the same key or another spelling of the number like {@code block.010}, the later line
+ * Declarations are in file order, which is the order matching tries them. Only one line per ID counts. When an ID is
+ * declared again, with the same key or another spelling of the number like {@code block.010}, the later line
  * replaces the earlier one at its own place, as if the earlier line weren't written. The format only says one line
  * per ID is allowed, so this is Focalis's own rule for packs that break that.
  */
@@ -33,7 +29,6 @@ public final class MaterialMappings {
     private static final List<String> LAYERS = Arrays.asList("solid", "cutout", "translucent");
     private static final Pattern DIGITS = Pattern.compile("[0-9]+");
 
-    /** The three mapping files and the key prefix each one uses. */
     public enum Kind {
         BLOCK("block.properties", "block."),
         ITEM("item.properties", "item."),
@@ -56,7 +51,6 @@ public final class MaterialMappings {
         }
     }
 
-    /** One {@code <kind>.<id>} line. It may list nothing, which maps nothing. */
     public static final class Declaration {
 
         private final Kind kind;
@@ -81,17 +75,14 @@ public final class MaterialMappings {
             return id;
         }
 
-        /** The key as written, like {@code block.10005}. */
         public String key() {
             return key;
         }
 
-        /** The names on the line in written order, without the ones that couldn't be read. */
         public List<Selector> selectors() {
             return selectors;
         }
 
-        /** The line the value came from. */
         public SourceLocation location() {
             return location;
         }
@@ -121,7 +112,6 @@ public final class MaterialMappings {
             this.properties = properties;
         }
 
-        /** The entry as written. */
         public String text() {
             return text;
         }
@@ -134,12 +124,10 @@ public final class MaterialMappings {
             return path;
         }
 
-        /** The registry name like {@code minecraft:stone}. */
         public String name() {
             return namespace + ":" + path;
         }
 
-        /** Property name to its allowed values, both in written order. Empty for a plain name. Read only. */
         public Map<String, List<String>> properties() {
             return properties;
         }
@@ -150,7 +138,6 @@ public final class MaterialMappings {
         }
     }
 
-    /** A {@code layer.<name>} line. Kept for when Focalis can move blocks to another render layer. */
     public static final class Layer {
 
         private final String name;
@@ -163,7 +150,6 @@ public final class MaterialMappings {
             this.location = location;
         }
 
-        /** solid, cutout or translucent. */
         public String name() {
             return name;
         }
@@ -176,7 +162,6 @@ public final class MaterialMappings {
             return location;
         }
 
-        /** What Focalis still needs before it can apply this. */
         public String requires() {
             return "render layer overrides";
         }
@@ -190,10 +175,7 @@ public final class MaterialMappings {
         this.layers = layers;
     }
 
-    /**
-     * Reads the mapping files the pack has with the given macros, which should be the ones its other properties
-     * see. A line that can't be read is reported and left out, and a bad entry only costs itself.
-     */
+    /** The macros should be the ones the pack's other properties see. */
     static MaterialMappings read(ShaderPack pack, Map<String, String> macros, List<PackIssue> issues) {
         Map<Kind, List<Declaration>> declarations = new EnumMap<>(Kind.class);
         List<Layer> layers = new ArrayList<>();
@@ -279,8 +261,6 @@ public final class MaterialMappings {
         return Collections.unmodifiableList(selectors);
     }
 
-    // Why an entry can't be read, or null when it can. The name is everything before the first part with an equals
-    // sign, which may have a namespace in front.
     @Nullable
     private static String problem(Kind kind, String text) {
         String[] parts = text.split(":", -1);
@@ -331,7 +311,6 @@ public final class MaterialMappings {
         return names;
     }
 
-    // Only for entries problem() accepted.
     private static Selector selector(String text) {
         String[] parts = text.split(":", -1);
         int names = nameParts(parts);
@@ -347,13 +326,11 @@ public final class MaterialMappings {
                 ? Collections.<String, List<String>>emptyMap() : Collections.unmodifiableMap(properties));
     }
 
-    /** The declarations of one file in matching order, empty when the pack doesn't have the file. */
     public List<Declaration> declarations(Kind kind) {
         List<Declaration> list = declarations.get(kind);
         return list == null ? Collections.<Declaration>emptyList() : list;
     }
 
-    /** The layer lines of block.properties in file order. None of them is applied yet. */
     public List<Layer> layers() {
         return layers;
     }

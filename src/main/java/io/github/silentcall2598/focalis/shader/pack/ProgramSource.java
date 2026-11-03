@@ -7,10 +7,6 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 
-/**
- * The stage files a pack provides under one program name, such as {@code final.vsh} and {@code final.fsh}.
- * Nothing here says whether Focalis knows what the program is for.
- */
 public final class ProgramSource {
 
     private final String name;
@@ -30,7 +26,6 @@ public final class ProgramSource {
         return name;
     }
 
-    /** The folder the program was found in, empty for the shaders folder itself. */
     public String directory() {
         return directory;
     }
@@ -44,10 +39,7 @@ public final class ProgramSource {
         return stages.get(stage);
     }
 
-    /**
-     * Why the program's source couldn't be loaded, such as a broken include, or null if it loaded cleanly.
-     * Compile and link results belong to the GL layer and are never recorded here.
-     */
+    /** Compile and link results belong to the GL layer and are never recorded here. */
     @Nullable
     public String problem() {
         return problem;

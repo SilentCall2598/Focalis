@@ -4,7 +4,6 @@ package io.github.silentcall2598.focalis.shader.pack;
 
 import javax.annotation.Nullable;
 
-/** An {@code #include} that can't be resolved, with the location of the directive that caused it. */
 public final class IncludeException extends ShaderPackException {
 
     private static final long serialVersionUID = 1L;
@@ -19,12 +18,10 @@ public final class IncludeException extends ShaderPackException {
         this.location = location;
     }
 
-    /** The message without the location. */
     public String reason() {
         return reason;
     }
 
-    /** The {@code #include} line that failed, or null when the program's own file is the problem. */
     @Nullable
     public SourceLocation location() {
         return location;

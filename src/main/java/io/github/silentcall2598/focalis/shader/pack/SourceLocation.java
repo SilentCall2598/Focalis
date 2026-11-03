@@ -5,7 +5,6 @@ package io.github.silentcall2598.focalis.shader.pack;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-/** A line in a pack file, or a line Focalis added itself when {@link #file()} is null. */
 public final class SourceLocation {
 
     static final SourceLocation ADDED_BY_FOCALIS = new SourceLocation(null, 0);

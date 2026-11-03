@@ -15,21 +15,16 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * The GL textures one pack configuration gives its gbuffers programs, made once the first time a world pass needs
- * programs and shared by every folder and dimension. Owns each texture it made and deletes each once. A declared
- * texture that can't be made is kept as a failure, so the programs that sample it can be left unbuilt while the
- * rest still work. Nothing is bound afterwards. Client thread only, with the GL context current.
+ * A declared texture that can't be made is kept as a failure, so the programs that sample it can be left unbuilt
+ * while the rest still work. Nothing is bound afterwards.
  */
 public final class ProgramTextures {
 
-    /** The units a gbuffers custom texture can use go up to noisetex on 15. */
     public static final int UNITS = 16;
 
-    /** No textures. Never touches GL. */
     public static final ProgramTextures NONE = new ProgramTextures(null, new Outcome[UNITS],
             Collections.<Outcome>emptyList());
 
-    /** How one declared unit came out. */
     public static final class Outcome {
 
         private final PackTextures.Declaration declaration;
@@ -64,12 +59,10 @@ public final class ProgramTextures {
             return declaration.unit();
         }
 
-        /** The GL texture name, or 0 when it couldn't be made. */
         public int texture() {
             return texture;
         }
 
-        /** Why it couldn't be made, or null when it was. */
         @Nullable
         public String failure() {
             return failure;
@@ -105,9 +98,8 @@ public final class ProgramTextures {
     }
 
     /**
-     * Decodes and uploads every gbuffers texture the configuration declares. A configuration without any makes no GL
-     * call. Images that can't be read or are too big for the driver become failures. Anything else that throws
-     * deletes what was made so far and is rethrown.
+     * A configuration without any makes no GL call. Images that can't be read or are too big for the driver become
+     * failures. Anything else that throws deletes what was made so far and is rethrown.
      */
     public static ProgramTextures create(PackConfiguration configuration) {
         return create(configuration, LwjglTextureGl.INSTANCE);
@@ -195,25 +187,21 @@ public final class ProgramTextures {
         return failure;
     }
 
-    /** Whether the configuration declares a gbuffers texture on this unit, made or not. */
     public boolean declared(int unit) {
         return unit >= 0 && unit < UNITS && byUnit[unit] != null;
     }
 
-    /** The texture on a unit, or 0 when none is declared there, it failed or the set was deleted. */
     public int texture(int unit) {
         Outcome outcome = unit >= 0 && unit < UNITS ? byUnit[unit] : null;
         return outcome == null || deleted ? 0 : outcome.texture;
     }
 
-    /** Why the texture declared on a unit couldn't be made, or null when it was or none is declared. */
     @Nullable
     public String failure(int unit) {
         Outcome outcome = unit >= 0 && unit < UNITS ? byUnit[unit] : null;
         return outcome == null ? null : outcome.failure;
     }
 
-    /** Every declared unit in unit order, failures included. Read only. */
     public List<Outcome> outcomes() {
         return outcomes;
     }
@@ -223,8 +211,8 @@ public final class ProgramTextures {
     }
 
     /**
-     * Deletes every texture this set made, each once, newest first. If a delete throws, the rest are still attempted
-     * and the first failure is rethrown. Either way the set counts as deleted and calling it again does nothing.
+     * If a delete throws, the rest are still attempted and the first failure is rethrown. Either way the set counts as
+     * deleted.
      */
     public void delete() {
         // NONE is shared and owns nothing.

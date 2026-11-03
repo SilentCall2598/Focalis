@@ -14,7 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-// Features are registered during mod construction and initialized once in pre-init.
 public final class FeatureManager {
 
     private final Map<String, Entry> entries = new LinkedHashMap<>();
@@ -88,7 +87,6 @@ public final class FeatureManager {
         entry.status = new FeatureStatus(feature.id(), FeatureState.ACTIVE, null);
     }
 
-    /** Turns an active feature off for the rest of the session. Call it on the client thread. */
     public void disable(String featureId) {
         Entry entry = entries.get(featureId);
         if (entry == null) {
@@ -115,21 +113,17 @@ public final class FeatureManager {
     }
 
     private void onRenderFailure(String owner, String during, Throwable error) {
-        // Internal owners like focalis:render aren't features, so there's nothing to update for them.
         Entry entry = entries.get(owner);
         if (entry == null || entry.status.state() != FeatureState.ACTIVE) {
             return;
         }
-        // The lifecycle has already removed the listeners and logged the stack trace.
         entry.status = new FeatureStatus(owner, FeatureState.FAILED, "failed during " + during + ": " + error);
         FocalisLog.LOGGER.error("Feature '{}' is disabled for this session. Other features are unaffected.", owner);
         deactivate(entry);
     }
 
-    // Detaches what the manager tracks, then lets the feature release the rest. Returns the cleanup error or null.
     @Nullable
     private Throwable deactivate(Entry entry) {
-        // Skip features that never reached setup, and never clean up twice.
         if (entry.context == null || entry.deactivated) {
             return null;
         }

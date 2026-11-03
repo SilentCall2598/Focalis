@@ -8,7 +8,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
-// Only reports where Minecraft is. RenderHooks and the render lifecycle decide what happens there.
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin {
 

@@ -7,8 +7,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-// How often each stage and draw kind fired during the first world pass. The stage hooks may not apply without any
-// error, so this is how a missing hook, or a wrong draw kind, shows up in a normal log.
 final class FirstPassStages {
 
     private static final int KINDS = RenderDrawKind.values().length;
@@ -21,7 +19,6 @@ final class FirstPassStages {
 
     static {
         EXPECTED[index(RenderStage.SKY, RenderDrawKind.SKY_BASIC)] = 1;
-        // The sun and the moon.
         EXPECTED[index(RenderStage.SKY, RenderDrawKind.SKY_TEXTURED)] = 2;
         EXPECTED[index(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_SOLID)] = 1;
         EXPECTED[index(RenderStage.TERRAIN, RenderDrawKind.TERRAIN_CUTOUT_MIPPED)] = 1;
@@ -45,7 +42,6 @@ final class FirstPassStages {
         return EXPECTED[index(stage, kind)];
     }
 
-    // True when the first world pass, hand included, has just finished and should be reported.
     boolean worldPassStarted() {
         if (passesStarted >= 2) {
             return false;
@@ -60,7 +56,6 @@ final class FirstPassStages {
         }
     }
 
-    // Like TERRAIN/TERRAIN_SOLID=1, in stage and kind order.
     List<String> seen() {
         List<String> seen = new ArrayList<>();
         for (RenderStage stage : RenderStage.values()) {
@@ -74,7 +69,6 @@ final class FirstPassStages {
         return seen;
     }
 
-    // Required stages and kinds whose count isn't vanilla's, like ENTITIES/ENTITY_PASS_1 0 instead of 1.
     List<String> mismatches() {
         List<String> wrong = new ArrayList<>();
         // The camera's kind depends on whether anaglyph 3D is on, so only its total is checked.

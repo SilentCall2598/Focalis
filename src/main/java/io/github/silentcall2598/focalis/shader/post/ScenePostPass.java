@@ -16,18 +16,12 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Copies the world image as it stands into Focalis textures and draws the pack's post program back over Minecraft's
- * framebuffer. It runs at the end of the world pass, so the hand, HUD and screens still draw on top as usual.
- * Client thread only, with the GL context current.
- */
 public final class ScenePostPass {
 
     // Unit 0 holds the block atlas and unit 1 the lightmap. These stay clear of both.
     public static final int SCENE_COLOR_UNIT = 2;
     public static final int SCENE_DEPTH_UNIT = 3;
 
-    /** The only uniforms the pass sets, with the type each has to be declared as. */
     enum Input {
         SCENE_COLOR("sceneColor", GL20.GL_SAMPLER_2D, "sampler2D"),
         SCENE_DEPTH("sceneDepth", GL20.GL_SAMPLER_2D, "sampler2D"),
@@ -68,7 +62,6 @@ public final class ScenePostPass {
         this.logger = logger;
         this.monitor = monitor;
         for (Input input : Input.values()) {
-            // -1 when the program doesn't use it, and setting -1 does nothing.
             locations[input.ordinal()] = GL20.glGetUniformLocation(program.id(), input.uniformName);
         }
     }
@@ -112,10 +105,8 @@ public final class ScenePostPass {
     }
 
     /**
-     * Returns false without changing anything when Minecraft's framebuffer isn't the one being drawn to, which
-     * happens when something else renders the world into its own target.
-     *
-     * @throws PostPassException if the scene can't be captured safely on this setup
+     * Returns false without changing anything when Minecraft's framebuffer isn't the one being drawn to, which happens
+     * when something else renders the world into its own target.
      */
     public boolean render(Framebuffer target) throws PostPassException {
         state.record();
@@ -168,7 +159,6 @@ public final class ScenePostPass {
         GL11.glEnd();
     }
 
-    /** Frees the capture and the program. Calling it again does nothing. */
     public void delete() {
         deleteCapture();
         program.delete();

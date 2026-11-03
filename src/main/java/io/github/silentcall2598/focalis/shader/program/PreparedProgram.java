@@ -15,7 +15,6 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 
-/** The exact text that will be handed to the driver for each stage of one program. No OpenGL is involved yet. */
 public final class PreparedProgram {
 
     private final String name;
@@ -26,15 +25,12 @@ public final class PreparedProgram {
         this.stages = Collections.unmodifiableMap(new EnumMap<>(stages));
     }
 
-    /**
-     * Expands a program's includes with the configuration's option values written into the pack's own definition
-     * lines, then adds the environment defines to every stage.
-     */
-    public static PreparedProgram prepare(ShaderPack pack, ProgramSource program, ShaderMacros environment,
-            PackConfiguration configuration) throws IncludeException {
+    public static PreparedProgram prepare(ShaderPack pack, ProgramSource program, PackConfiguration configuration)
+            throws IncludeException {
+        ShaderMacros macros = configuration.standardMacros();
         Map<ProgramStage, Stage> stages = new EnumMap<>(ProgramStage.class);
         for (ProgramStage stage : program.stages().keySet()) {
-            ResolvedSource source = pack.resolve(program, stage, configuration).withDefines(environment,
+            ResolvedSource source = pack.resolve(program, stage, configuration).withDefines(macros,
                     ShaderMacros.empty());
             stages.put(stage, new Stage(stage, program.file(stage), source));
         }
@@ -42,7 +38,6 @@ public final class PreparedProgram {
         return new PreparedProgram(name, stages);
     }
 
-    /** The program name as users see it, like {@code world-1/composite}. */
     public String name() {
         return name;
     }

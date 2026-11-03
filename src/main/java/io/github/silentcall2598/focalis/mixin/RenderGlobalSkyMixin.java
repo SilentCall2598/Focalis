@@ -19,7 +19,6 @@ import org.spongepowered.asm.mixin.injection.Slice;
 @Mixin(RenderGlobal.class)
 public abstract class RenderGlobalSkyMixin {
 
-    // The trailing partialTicks is renderSky's own argument, so it matches the outer SKY boundary.
     @WrapOperation(method = "renderSky(FI)V",
             slice = @Slice(from = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/RenderGlobal;"
                     + "SUN_TEXTURES:Lnet/minecraft/util/ResourceLocation;")),

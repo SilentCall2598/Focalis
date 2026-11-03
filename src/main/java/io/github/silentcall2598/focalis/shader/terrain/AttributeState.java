@@ -5,15 +5,8 @@ package io.github.silentcall2598.focalis.shader.terrain;
 import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 
-/**
- * The vertex array state the stream changes: the normal array and the generic arrays at 1, 6 and 7 with their buffers,
- * pointers, enables and divisors, and separately the current normal and generic values. Captured right before the
- * stream first changes it and put back exactly, so arrays left enabled or pointing somewhere unusual stay that way.
- * Client thread only.
- */
 final class AttributeState {
 
-    /** The generic locations the stream feeds, in slot order. */
     static final int[] GENERIC = {StreamLayout.TANGENT_LOCATION, StreamLayout.ENTITY_LOCATION,
             StreamLayout.MID_TEX_COORD_LOCATION};
 
@@ -24,6 +17,16 @@ final class AttributeState {
     private long normalOffset;
     @Nullable
     private ByteBuffer normalClient;
+
+    private boolean colorCaptured;
+    private boolean colorEnabled;
+    private int colorSize;
+    private int colorType;
+    private int colorStride;
+    private int colorBuffer;
+    private long colorOffset;
+    @Nullable
+    private ByteBuffer colorClient;
 
     private final boolean[] enabled = new boolean[GENERIC.length];
     private final int[] size = new int[GENERIC.length];
@@ -40,6 +43,7 @@ final class AttributeState {
     private final float[] current = new float[GENERIC.length * 4];
 
     void captureArrays(AttributeGl gl) {
+        colorCaptured = false;
         normalEnabled = gl.normalArrayEnabled();
         normalType = gl.normalArrayType();
         normalStride = gl.normalArrayStride();
@@ -66,10 +70,31 @@ final class AttributeState {
                 offset[slot] = pointer;
                 client[slot] = null;
             } else {
-                // Something left a generic array on client memory. Only a buffer at that address can point back.
                 offset[slot] = 0L;
                 client[slot] = gl.attribArrayClientPointer(index);
             }
+        }
+    }
+
+    void captureColor(AttributeGl gl) {
+        colorEnabled = gl.colorArrayEnabled();
+        colorSize = gl.colorArraySize();
+        colorType = gl.colorArrayType();
+        colorStride = gl.colorArrayStride();
+        colorBuffer = gl.colorArrayBuffer();
+        if (colorBuffer != 0) {
+            colorOffset = gl.colorArrayPointer();
+            colorClient = null;
+        } else {
+            colorOffset = 0L;
+            colorClient = gl.colorArrayClientPointer();
+        }
+        colorCaptured = true;
+    }
+
+    void endColorOn(int buffer) {
+        if (colorCaptured && colorBuffer != 0 && buffer > 0) {
+            colorBuffer = buffer;
         }
     }
 
@@ -80,27 +105,18 @@ final class AttributeState {
         }
     }
 
-    /** Whether the generic array in {@code slot} had an instancing divisor, which the stream has to clear. */
     boolean hadDivisor(int slot) {
         return divisor[slot] != 0;
     }
 
     /**
-     * Puts the arrays back and leaves GL_ARRAY_BUFFER bound to what it is now. A null pointer without a buffer can't
-     * be set directly, so the array points at a scratch buffer that's deleted at the end, which resets it to buffer 0.
-     * The scratch buffer is made before anything changes, and always deleted. If the arrays can't all be put back, the
-     * stream's arrays are turned off, since half of them pointing at the stream is worse than off.
+     * A null pointer without a buffer can't be set directly, so the array points at a scratch buffer that's deleted
+     * at the end, which resets it to buffer 0.
      */
     void restoreArrays(AttributeGl gl) {
         restore(gl, gl.arrayBuffer(), false);
     }
 
-    /**
-     * For a draw that doesn't use the stream, after streamed draws changed the arrays. The arrays that were on are
-     * pointed where they pointed, with their divisors, and turned on again. The others are only turned off, since a
-     * draw doesn't read those. {@link #restoreArrays} still has to run when the layer is done. {@code bound} is the
-     * buffer bound to GL_ARRAY_BUFFER, which stays bound.
-     */
     void restoreForDraw(AttributeGl gl, int bound) {
         restore(gl, bound, true);
     }
@@ -158,6 +174,20 @@ final class AttributeState {
                     gl.attribDivisor(index, divisor[slot]);
                 }
             }
+            if (colorCaptured && forDraw) {
+                if (!colorEnabled) {
+                    gl.colorArray(false);
+                }
+            } else if (colorCaptured) {
+                if (colorBuffer != 0 || colorClient == null) {
+                    active = bind(gl, colorBuffer != 0 ? colorBuffer : scratch, active);
+                    gl.colorPointer(colorSize, colorType, colorStride, colorOffset);
+                } else {
+                    active = bind(gl, 0, active);
+                    gl.colorPointer(colorSize, colorType, colorStride, colorClient);
+                }
+                gl.colorArray(colorEnabled);
+            }
             restored = true;
         } finally {
             try {
@@ -167,8 +197,8 @@ final class AttributeState {
                 }
             } finally {
                 if (!forDraw) {
-                    // Nothing to keep alive past the end of the layer. A restore for a draw leaves it for that.
                     normalClient = null;
+                    colorClient = null;
                     for (int slot = 0; slot < GENERIC.length; slot++) {
                         client[slot] = null;
                     }
@@ -180,10 +210,11 @@ final class AttributeState {
         }
     }
 
-    // Whether an array that gets its pointer back was on no buffer and on no client memory, which only a scratch buffer
-    // can restore.
     private boolean needsScratch(boolean forDraw) {
         if ((!forDraw || normalEnabled) && normalBuffer == 0 && normalClient == null) {
+            return true;
+        }
+        if (colorCaptured && !forDraw && colorBuffer == 0 && colorClient == null) {
             return true;
         }
         for (int slot = 0; slot < GENERIC.length; slot++) {
@@ -198,7 +229,6 @@ final class AttributeState {
         try {
             StreamArrays.enable(gl, false);
         } catch (RuntimeException | LinkageError e) {
-            // Whatever made the restore fail may stop this too, and there is nothing left to try.
         }
     }
 

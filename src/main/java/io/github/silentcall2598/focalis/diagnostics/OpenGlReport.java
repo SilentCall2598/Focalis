@@ -16,7 +16,6 @@ public final class OpenGlReport {
     private OpenGlReport() {
     }
 
-    // Client thread only, because it also reads Minecraft's render settings.
     public static void log(GlContextInfo gl, boolean includeExtensions) {
         Logger log = FocalisLog.LOGGER;
         log.info("OpenGL renderer: {} ({})", gl.renderer(), gl.vendor());

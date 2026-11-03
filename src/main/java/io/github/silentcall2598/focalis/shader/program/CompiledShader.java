@@ -29,7 +29,6 @@ final class CompiledShader {
         return stage;
     }
 
-    /** Warnings the driver reported while compiling successfully, or an empty string. */
     String driverLog() {
         return driverLog;
     }

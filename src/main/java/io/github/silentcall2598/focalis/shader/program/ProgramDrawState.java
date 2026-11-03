@@ -6,10 +6,6 @@ import io.github.silentcall2598.focalis.shader.pack.ProgramStates;
 
 import javax.annotation.Nullable;
 
-/**
- * What one built program needs while it's bound besides its uniforms. That's the alpha test and blend mode its pack
- * program name sets, and the custom textures on the units its samplers read. Immutable.
- */
 public final class ProgramDrawState {
 
     static final ProgramDrawState NONE = new ProgramDrawState(null, null, new int[0], new int[0]);
@@ -38,13 +34,11 @@ public final class ProgramDrawState {
         return new ProgramDrawState(alphaTest, blend, units.clone(), textures.clone());
     }
 
-    /** The alpha test the program sets, or null when it leaves the test alone. */
     @Nullable
     public ProgramStates.AlphaTest alphaTest() {
         return alphaTest;
     }
 
-    /** The blend mode the program sets, or null when it leaves blending alone. */
     @Nullable
     public ProgramStates.Blend blend() {
         return blend;

@@ -20,11 +20,9 @@ import java.util.Set;
  */
 public final class RenderLifecycle {
 
-    /** Notified after a listener failed and its owner's listeners were removed. */
     @FunctionalInterface
     public interface FailureHandler {
 
-        /** @param during where it failed, like "render stage SKY START (SKY_TEXTURED)" */
         void onListenerFailure(String owner, String during, Throwable error);
     }
 
@@ -51,7 +49,6 @@ public final class RenderLifecycle {
         this.failureHandler = Objects.requireNonNull(failureHandler, "failureHandler");
     }
 
-    /** Called by hooks to declare which stages they actually deliver. */
     public void markDispatched(RenderStage stage) {
         dispatchedStages.add(stage);
     }
@@ -130,8 +127,6 @@ public final class RenderLifecycle {
         objectListeners = keptObjects.toArray(NO_OBJECTS);
     }
 
-    // Same failure handling as a checkpoint. The switch keeps one loop for every kind of object event. kind is the
-    // special draw's, or for a block entity start DAMAGED_BLOCK_ENTITY when it draws its breaking overlay.
     void dispatchObject(int event, @Nullable Entity entity, @Nullable TileEntity blockEntity, RenderDrawKind kind,
             float red, float green, float blue, float alpha) {
         for (ObjectRegistration registration : objectListeners) {
@@ -207,7 +202,7 @@ public final class RenderLifecycle {
             }
             try {
                 registration.listener.onRenderStage(stage, phase, drawKind, partialTicks);
-            } catch (Exception | LinkageError e) { // VM errors such as OutOfMemoryError deliberately propagate
+            } catch (Exception | LinkageError e) {
                 // Any GL state the listener left behind stays as it is.
                 removeOwner(registration.owner);
                 FocalisLog.LOGGER.error("Render listener of '{}' failed during {} {} ({}). All of its render"
@@ -218,7 +213,6 @@ public final class RenderLifecycle {
         }
     }
 
-    // Same failure handling as a stage, without anything that allocates on the way through.
     public void dispatchCheckpoint(RenderCheckpoint checkpoint) {
         for (CheckpointRegistration registration : checkpointListeners) {
             if (!registration.active) {
@@ -226,7 +220,7 @@ public final class RenderLifecycle {
             }
             try {
                 registration.listener.onCheckpoint(checkpoint);
-            } catch (Exception | LinkageError e) { // VM errors such as OutOfMemoryError deliberately propagate
+            } catch (Exception | LinkageError e) {
                 removeOwner(registration.owner);
                 FocalisLog.LOGGER.error("Render listener of '{}' failed at renderer checkpoint {}. All of its render"
                         + " listeners have been removed.", registration.owner, checkpoint, e);

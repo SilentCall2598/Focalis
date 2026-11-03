@@ -4,10 +4,6 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import javax.annotation.Nullable;
 
-/**
- * The legacy world and environment uniforms world programs get, with the names and types of the OptiFine shader
- * documentation. Each one belongs to the update that sets it, see {@link Update}.
- */
 public enum EnvironmentUniform {
 
     WORLD_TIME("worldTime", Type.INT, Update.FRAME),
@@ -18,6 +14,11 @@ public enum EnvironmentUniform {
     RAIN_STRENGTH("rainStrength", Type.FLOAT, Update.FRAME),
     SKY_COLOR("skyColor", Type.VEC3, Update.FRAME),
     EYE_BRIGHTNESS("eyeBrightness", Type.IVEC2, Update.FRAME),
+    NEAR("near", Type.FLOAT, Update.FRAME),
+    FAR("far", Type.FLOAT, Update.FRAME),
+    NIGHT_VISION("nightVision", Type.FLOAT, Update.FRAME),
+    BLINDNESS("blindness", Type.FLOAT, Update.FRAME),
+    SCREEN_BRIGHTNESS("screenBrightness", Type.FLOAT, Update.FRAME),
     SUN_POSITION("sunPosition", Type.VEC3, Update.PASS),
     MOON_POSITION("moonPosition", Type.VEC3, Update.PASS),
     SHADOW_LIGHT_POSITION("shadowLightPosition", Type.VEC3, Update.PASS),
@@ -28,7 +29,8 @@ public enum EnvironmentUniform {
     FOG_START("fogStart", Type.FLOAT, Update.BIND),
     FOG_END("fogEnd", Type.FLOAT, Update.BIND),
     FOG_DENSITY("fogDensity", Type.FLOAT, Update.BIND),
-    FOG_COLOR("fogColor", Type.VEC3, Update.BIND);
+    FOG_COLOR("fogColor", Type.VEC3, Update.BIND),
+    ATLAS_SIZE("atlasSize", Type.IVEC2, Update.SCOPE);
 
     public enum Type {
         INT(0x1404, "an int"),
@@ -46,12 +48,10 @@ public enum EnvironmentUniform {
     }
 
     public enum Update {
-        /** World values, taken once per displayed frame and the same in every world pass of it. */
         FRAME,
-        /** Values that depend on the camera of one world pass, like positions in eye space. */
         PASS,
-        /** Draw state, taken from Minecraft's fog every time a stage binds the program. */
-        BIND
+        BIND,
+        SCOPE
     }
 
     private final String uniformName;

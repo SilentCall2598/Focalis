@@ -14,64 +14,42 @@ import io.github.silentcall2598.focalis.shader.program.ProgramTextures;
 
 import javax.annotation.Nullable;
 
-/**
- * Lets an optional development probe watch the world programs. Every method does nothing by default, and normal play
- * only ever uses {@link #NONE}. Client thread only.
- */
 public interface WorldProgramMonitor {
 
     WorldProgramMonitor NONE = new WorldProgramMonitor() {
     };
 
-    /** The pack's configuration was worked out, right after the pack loaded and before anything is prepared. */
     default void packConfigured(PackConfiguration configuration) {
     }
 
-    /** The configuration's custom textures were made, once per configuration and before any program is built. */
     default void texturesMade(ProgramTextures textures) {
     }
 
-    /** The configuration's material IDs were resolved against the registries, once per configuration. */
     default void materialsResolved(MaterialIds ids) {
     }
 
-    /** The programs of one folder were built, which happens once per folder and session. */
     default void programsBuilt(ProgramDirectory directory, BuiltWorldPrograms programs) {
     }
 
-    /**
-     * A world pass selected other programs than the one before, or the same ones for another dimension. Runs before
-     * any of its stages.
-     */
     default void programsSelected(int dimension, ProgramDirectory directory, BuiltWorldPrograms programs) {
     }
 
-    /** The camera of a world pass was just captured, right before its first world stage binds anything. */
     default void cameraCaptured(RenderDrawKind drawKind, CameraSnapshot snapshot) {
     }
 
-    /** The environment values of a world pass were just taken, right after its camera. */
     default void environmentCaptured(CameraSnapshot snapshot, EnvironmentInputs environment) {
     }
 
-    /** Runs right after a stage's program scope opened, before vanilla draws. */
     default void scopeStarted(RenderStage stage, RenderDrawKind drawKind) {
     }
 
-    /**
-     * Runs right after an entity ({@link RenderDrawKind#ENTITY}), block entity ({@link RenderDrawKind#BLOCK_ENTITY}) or
-     * block entity's breaking overlay ({@link RenderDrawKind#DAMAGED_BLOCK_ENTITY}) started and got its program and ID,
-     * before its renderer draws. {@code object} is the entity or block entity, or null for the batch of fast block
-     * entity renderers.
-     */
+    /** {@code object} is the entity or block entity, or null for the batch of fast block entity renderers. */
     default void objectStarted(RenderDrawKind kind, @Nullable Object object, int id) {
     }
 
-    /** Runs right after an object ended and the one around it, if any, got its program and values back. */
     default void objectEnded() {
     }
 
-    /** Runs right after a special draw of the innermost object started and got its program, before it draws. */
     default void specialDrawStarted(RenderDrawKind kind) {
     }
 

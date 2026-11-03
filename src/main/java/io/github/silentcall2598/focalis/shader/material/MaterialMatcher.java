@@ -14,42 +14,33 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Matches declarations against registries seen only through names and property values, so it works without
- * Minecraft. A block state, item or entity type gets the ID of the first declaration that matches it, in the file
- * order {@link MaterialMappings} keeps, however specific a later one is. Later matches are reported as conflicts
- * that name the line above them that won. This is Focalis's own deterministic rule.
+ * A block state, item or entity type gets the ID of the first declaration that matches it, in the file order
+ * {@link MaterialMappings} keeps, however specific a later one is. Later matches are reported as conflicts that name
+ * the line above them that won. This is Focalis's own deterministic rule.
  *
  * <p>A property the block doesn't have is left out of the entry, so packs that add 1.13 properties to 1.12 names still
  * map those blocks. A value the property doesn't have matches nothing.
  */
 final class MaterialMatcher {
 
-    /** Blocks by registry name. */
     interface Blocks<S> {
 
-        /** The block registered under a name like {@code minecraft:stone}, or null when there is none. */
         @Nullable
         Block<S> find(String name);
     }
 
-    /** One block's states and how they read. */
     interface Block<S> {
 
-        /** Every valid state, each one a distinct object. */
         Collection<S> states();
 
-        /** The allowed values of a property as the game writes them, or null when the block has no such property. */
         @Nullable
         Collection<String> values(String property);
 
-        /** A state's value of a property the block has, as the game writes it. */
         String value(S state, String property);
     }
 
-    /** Items or entity types by registry name. */
     interface Names<T> {
 
-        /** The object registered under a name like {@code minecraft:pig}, or null when there is none. */
         @Nullable
         T find(String name);
     }
@@ -64,7 +55,6 @@ final class MaterialMatcher {
         Map<S, Integer> ids = new IdentityHashMap<>();
         Set<String> mappedBlocks = new HashSet<>();
         for (MaterialMappings.Declaration declaration : declarations) {
-            // One box per line, shared by every state it maps.
             Integer id = declaration.id();
             for (MaterialMappings.Selector selector : declaration.selectors()) {
                 List<S> states;
@@ -153,7 +143,6 @@ final class MaterialMatcher {
         return true;
     }
 
-    /** Items or entity types to their IDs, by object identity. */
     static <T> Map<T, Integer> named(MaterialMappings.Kind kind, List<MaterialMappings.Declaration> declarations,
             Names<T> names, MaterialReport.Builder report) {
         Map<T, MaterialMappings.Declaration> owners = new IdentityHashMap<>();

@@ -4,18 +4,11 @@ package io.github.silentcall2598.focalis.shader.pack;
 
 import java.util.List;
 
-/**
- * One option a pack's program sources define, found the way the shaderpack format documents it. Its values are kept
- * as the text the pack writes, and a switch uses {@code true} and {@code false}. Immutable.
- */
 public final class ShaderOption {
 
     public enum Kind {
-        /** {@code #define NAME} for on or {@code // #define NAME} for off, tested by an #ifdef or #ifndef. */
         SWITCH,
-        /** {@code #define NAME value // [allowed values]}. */
         VALUE,
-        /** One of the documented {@code const} names with a list of allowed values. */
         CONST
     }
 
@@ -44,17 +37,14 @@ public final class ShaderOption {
         return kind;
     }
 
-    /** The value the sources have as written. For an ambiguous option it's the first definition's value. */
     public String defaultValue() {
         return defaultValue;
     }
 
-    /** The values the option may take, always including the default. A switch allows true and false. */
     public List<String> allowedValues() {
         return allowedValues;
     }
 
-    /** Every place the option is defined, in path and line order. They all change together. */
     public List<SourceLocation> definitions() {
         return definitions;
     }

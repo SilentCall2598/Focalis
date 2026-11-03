@@ -16,7 +16,6 @@ public final class Availability {
         this.reason = reason;
     }
 
-    // The reason shows up in the log and in crash reports.
     public static Availability unavailable(String reason) {
         return new Availability(Objects.requireNonNull(reason, "reason"));
     }

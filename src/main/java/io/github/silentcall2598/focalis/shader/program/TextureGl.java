@@ -4,10 +4,8 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import java.nio.ByteBuffer;
 
-/** The OpenGL calls custom textures need. Every method needs a current context on the calling thread. */
 interface TextureGl {
 
-    /** GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, so the highest unit that can be used is one less. */
     int maxTextureUnits();
 
     int maxTextureSize();
@@ -16,12 +14,10 @@ interface TextureGl {
 
     void deleteTexture(int texture);
 
-    /** The active texture unit as an index, 0 for GL_TEXTURE0. */
     int activeUnit();
 
     void activeUnit(int unit);
 
-    /** The 2D texture bound on the active unit. */
     int boundTexture();
 
     /** Binds on the active unit without Minecraft's cache knowing. Only for bindings that are put back right away. */

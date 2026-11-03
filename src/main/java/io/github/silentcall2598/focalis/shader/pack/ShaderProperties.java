@@ -25,7 +25,6 @@ final class ShaderProperties {
             Pattern.compile("^#(define|undef|ifdef|ifndef|if|elif|else|endif)\\b\\s*(.*)$");
     private static final Pattern NAME = Pattern.compile("[A-Za-z_]\\w*");
 
-    /** One key's value and the line it came from. */
     static final class Property {
 
         final String value;
@@ -37,7 +36,6 @@ final class ShaderProperties {
         }
     }
 
-    /** One active line, with a key that may repeat a key from an earlier line. */
     static final class Line {
 
         final String key;
@@ -51,7 +49,6 @@ final class ShaderProperties {
         }
     }
 
-    // One #if level. Lines count only while every level is active.
     private static final class Level {
 
         final boolean parentActive;
@@ -70,10 +67,7 @@ final class ShaderProperties {
     }
 
     /**
-     * Returns the keys the active lines set, in file order.
-     *
-     * @param macros the macros visible at the start of the file. {@code #define} and {@code #undef} only change a
-     *     copy.
+     * @param macros the macros visible at the start of the file. {@code #define} and {@code #undef} only change a copy.
      */
     static Map<String, Property> read(ShaderPath file, String text, Map<String, String> macros,
             List<PackIssue> issues) {
@@ -84,7 +78,6 @@ final class ShaderProperties {
         return properties;
     }
 
-    /** Every line {@link #read} would use, in file order, with repeated keys kept as separate lines. */
     static List<Line> readLines(ShaderPath file, String text, Map<String, String> macros, List<PackIssue> issues) {
         Map<String, String> defined = new LinkedHashMap<>(macros);
         List<Line> properties = new ArrayList<>();
@@ -127,7 +120,6 @@ final class ShaderProperties {
         String[] lines = text.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
             String line = strip(lines[i]);
-            // Directives start with # too.
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
                 continue;
             }
@@ -141,7 +133,6 @@ final class ShaderProperties {
         return values;
     }
 
-    // Joins a line ending in a backslash with the ones after it. Returns the index of the last line used.
     private static int join(String[] lines, int index, String first, StringBuilder logical) {
         int i = index;
         String line = first;

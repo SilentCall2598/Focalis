@@ -9,15 +9,6 @@ import io.github.silentcall2598.focalis.shader.pack.CustomUniforms;
 import java.util.Arrays;
 import java.util.Objects;
 
-/**
- * The current values of one session's custom uniforms and variables, and the state their smooth() calls keep. Every
- * world pass computes them at most once, when the first program that needs them binds, and all programs share the
- * result. Built-ins come from the same frame, camera and environment inputs the standard uniforms use.
- *
- * <p>Smoothed values move toward their target by {@code 2^(-10 dt / fade)} of the remaining gap, with dt the time
- * between frame starts, so extra world passes and programs in one frame don't move them. The first value of a call
- * site is taken as is, and a new client world or dimension starts every call site over. Client thread only.
- */
 public final class CustomUniformValues implements CustomContext {
 
     private static final int INPUTS = CustomInput.values().length;
@@ -29,7 +20,6 @@ public final class CustomUniformValues implements CustomContext {
     private final boolean[] started;
     private final long[] smoothedAt;
     private long now;
-    // What the values were last computed for, so a world pass computes them only once.
     private long evaluatedPass = -1;
     private long evaluatedCamera = -1;
     private long world = -1;
@@ -50,10 +40,6 @@ public final class CustomUniformValues implements CustomContext {
         return uniforms;
     }
 
-    /**
-     * Computes the values for the world pass {@code camera} and {@code environment} belong to, unless that was done
-     * already. The frame has to be captured and the environment taken for this camera.
-     */
     public void prepare(FrameInputs frame, CameraSnapshot camera, EnvironmentInputs environment) {
         if (environment.pass() == evaluatedPass && camera.sequence() == evaluatedCamera) {
             return;
@@ -78,13 +64,17 @@ public final class CustomUniformValues implements CustomContext {
         in[CustomInput.RAIN_STRENGTH.ordinal()] = environment.rainStrength();
         in[CustomInput.IS_EYE_IN_WATER.ordinal()] = environment.medium();
         in[CustomInput.EYE_ALTITUDE.ordinal()] = environment.eyeAltitude();
+        in[CustomInput.NEAR.ordinal()] = EnvironmentInputs.NEAR;
+        in[CustomInput.FAR.ordinal()] = environment.far();
+        in[CustomInput.NIGHT_VISION.ordinal()] = environment.nightVision();
+        in[CustomInput.BLINDNESS.ordinal()] = environment.blindness();
+        in[CustomInput.SCREEN_BRIGHTNESS.ordinal()] = environment.screenBrightness();
         in[CustomInput.BIOME_PRECIPITATION.ordinal()] = environment.precipitation();
         in[CustomInput.EYE_BRIGHTNESS_X.ordinal()] = environment.blockBrightness();
         in[CustomInput.EYE_BRIGHTNESS_Y.ordinal()] = environment.skyBrightness();
         in[CustomInput.SKY_COLOR_R.ordinal()] = environment.skyRed();
         in[CustomInput.SKY_COLOR_G.ordinal()] = environment.skyGreen();
         in[CustomInput.SKY_COLOR_B.ordinal()] = environment.skyBlue();
-        // Programs get the position as floats too, so expressions see what the shaders see.
         in[CustomInput.CAMERA_POSITION_X.ordinal()] = (float) camera.x();
         in[CustomInput.CAMERA_POSITION_Y.ordinal()] = (float) camera.y();
         in[CustomInput.CAMERA_POSITION_Z.ordinal()] = (float) camera.z();
@@ -93,7 +83,6 @@ public final class CustomUniformValues implements CustomContext {
         in[CustomInput.PREVIOUS_CAMERA_POSITION_Z.ordinal()] = (float) camera.previousZ();
         now = frame.runNanos();
         uniforms.evaluate(this, values);
-        // Only marked once everything is in, so a throw never passes for a finished evaluation.
         evaluatedPass = environment.pass();
         evaluatedCamera = camera.sequence();
         generation++;
@@ -127,27 +116,22 @@ public final class CustomUniformValues implements CustomContext {
         return smoothed[site];
     }
 
-    /** The value of a declaration from the last evaluation, a bool as 1 or 0. */
     public float value(int declaration) {
         return values[declaration];
     }
 
-    /** Goes up by one with every evaluation, so programs can tell whether they have the latest values. */
     public long generation() {
         return generation;
     }
 
-    /** How many times the values were computed. */
     public long evaluations() {
         return evaluations;
     }
 
-    /** How many times a smoothed value moved because time had passed. */
     public long smoothSteps() {
         return smoothSteps;
     }
 
-    /** How many times the smoothing state started over, including the first world. */
     public long resets() {
         return resets;
     }

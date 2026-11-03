@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.terrain;
 
+import io.github.silentcall2598.focalis.shader.pack.LegacyLighting;
 import net.minecraft.block.state.IBlockState;
 import org.lwjgl.opengl.GL11;
 
@@ -9,19 +10,11 @@ import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-/**
- * The stream side of one BufferBuilder that builds chunk layers. It follows a layer build, keeps the material ID of
- * every quad through the translucent sort, and writes the stream once vanilla finished the layer. The builder's thread
- * uses it, and the client thread reads it for the upload after vanilla hands it over. Not thread safe otherwise.
- *
- * <p>A layer only gets a stream when everything that feeds it was seen. A hook that missed shows up as quads with no
- * block render or no actual state, and that layer gets no stream.
- */
 public final class StreamCompanion {
 
-    // Translucent data saved before the stream started, or under another plan, until the reload builds it again.
     static final String NO_SAVED_IDS = "the saved translucent data has no IDs";
     static final String OTHER_PLAN = "the saved translucent data has IDs of another plan";
+    static final String NO_SAVED_COLORS = "the saved translucent data has no vertex colors";
     static final String NO_BLOCKS = "no block render was seen while a layer with quads was built";
     static final String NO_ACTUAL_STATES = "vanilla's actual block states weren't seen while a layer was built";
 
@@ -31,35 +24,49 @@ public final class StreamCompanion {
     private final SortCheck sort = new SortCheck();
     private final StreamWriter writer = new StreamWriter();
 
-    // The plan of the build in progress, or null when this build has no stream.
     @Nullable
     private TerrainStreamPlan plan;
     private int generation;
     private StreamLayout layout = StreamLayout.BUFFER;
     @Nullable
+    private VertexColors colors;
+    private boolean colorMode;
+    @Nullable
     private String problem;
     private boolean observing;
     @Nullable
     private IBlockState observed;
-    // Block renders this build saw, and how many of them had vanilla's actual state observed.
     private int blocks;
     private int actualStates;
-    // Whether the IDs came from saved sorted data, which sorting again does without any block render.
     private boolean resorted;
 
     @Nullable
     private ByteBuffer stream;
-    // Vertices in the finished stream, or -1 when there is none.
     private int vertices = -1;
 
     StreamCompanion() {
     }
 
-    /** A layer build starts. Without a plan it gets no stream. */
     void begin(@Nullable TerrainStreamPlan buildPlan, StreamLayout streamLayout) {
+        if (buildPlan != null && buildPlan.colors() != streamLayout.hasColors()) {
+            throw new IllegalArgumentException("A plan " + (buildPlan.colors() ? "with" : "without")
+                    + " colors can't build into the " + streamLayout + " layout");
+        }
         plan = buildPlan;
         generation = buildPlan == null ? 0 : buildPlan.generation();
         layout = streamLayout;
+        colorMode = buildPlan != null && buildPlan.colors();
+        if (colorMode) {
+            LegacyLighting lighting = buildPlan.lighting();
+            if (colors == null) {
+                colors = new VertexColors();
+            }
+            colors.begin(lighting.faceShading(), lighting.separateAo());
+            LightingCapture.bind(colors);
+        } else {
+            colors = null;
+            LightingCapture.bind(null);
+        }
         problem = null;
         observing = false;
         observed = null;
@@ -74,25 +81,34 @@ public final class StreamCompanion {
         }
     }
 
-    // Nothing is built with a stream for now, so the builder doesn't keep what the biggest layer it ever built took.
     private void release() {
         stream = null;
         ids.release();
         sort.release();
     }
 
-    /** The bytes this builder holds on to for its streams, which grow to the biggest layer it built. */
-    int capacity() {
-        ByteBuffer held = stream;
-        return (held == null ? 0 : held.capacity()) + sort.capacity() + ids.capacity();
+    @Nullable
+    VertexColors colors() {
+        VertexColors held = colors;
+        return held != null && colorMode && active() && held.capturing() ? held : null;
     }
 
-    /** Whether this build is still on its way to a stream. */
+    @Nullable
+    VertexColors finishedColors() {
+        return colorMode ? colors : null;
+    }
+
+    int capacity() {
+        ByteBuffer held = stream;
+        VertexColors heldColors = colors;
+        return (held == null ? 0 : held.capacity()) + sort.capacity() + ids.capacity()
+                + (heldColors == null ? 0 : heldColors.capacity());
+    }
+
     boolean active() {
         return plan != null && problem == null;
     }
 
-    /** Why the last build has no stream, or null. */
     @Nullable
     String problem() {
         return problem;
@@ -104,21 +120,22 @@ public final class StreamCompanion {
         }
         blocks++;
         ids.blockStarted(bufferVertices);
+        if (colorMode) {
+            colors.blockStarted();
+            // A chunk build has a builder per layer, and begin() bound the one that started last. Vanilla's AO hook has no
+            // builder to look the layer up by, so the thread's binding has to follow the block's own layer.
+            LightingCapture.bind(colors);
+        }
         observing = true;
         observed = null;
     }
 
-    /** The first state vanilla's dispatcher works out for the block being rendered, before any nested render's. */
     void observeActualState(IBlockState actual) {
         if (observing && observed == null) {
             observed = actual;
         }
     }
 
-    /**
-     * The block render ended. Its quads get the ID of the actual state vanilla rendered it with, or of the stored
-     * state when vanilla doesn't work one out, like when getActualState throws.
-     */
     void blockEnded(int bufferVertices, IBlockState stored) {
         if (!observing) {
             return;
@@ -139,7 +156,6 @@ public final class StreamCompanion {
         }
     }
 
-    /** Vanilla is about to sort the translucent layer. */
     void sortStarting(ByteBuffer data, int bufferVertices, boolean blockFormat) {
         if (!active()) {
             return;
@@ -152,10 +168,13 @@ public final class StreamCompanion {
             fail("the layer doesn't end on a quad boundary");
             return;
         }
+        if (colorMode) {
+            // The captures are matched to the vertices as they stand now, before the sort moves any quad.
+            colors.resolve(data, bufferVertices);
+        }
         sort.prepare(data, bufferVertices / 4, QUAD_BYTES);
     }
 
-    /** The index array of vanilla's sort, right after it was sorted. */
     void sortObserved(Object[] sorted) {
         if (active()) {
             sort.observed(sorted);
@@ -173,15 +192,19 @@ public final class StreamCompanion {
             return;
         }
         ids.permute(sort.order(), sort.quads());
+        if (colorMode) {
+            colors.permute(sort.order(), sort.quads());
+        }
     }
 
-    /** The IDs to attach to the sorted data vanilla saves, or null when this build has no stream. */
     @Nullable
     SortedIds sortedIds() {
-        return active() ? new SortedIds(ids.copy(), generation) : null;
+        if (!active() || colorMode && colors.capturing()) {
+            return null;
+        }
+        return new SortedIds(ids.copy(), generation, colorMode ? colors.copy() : null);
     }
 
-    /** Vanilla put back saved sorted data to sort it again. Its IDs come along if it has them. */
     void restoreSorted(@Nullable SortedIds saved, int bufferVertices) {
         if (!active()) {
             return;
@@ -198,14 +221,22 @@ public final class StreamCompanion {
             fail("the saved translucent data doesn't have one ID per quad");
             return;
         }
+        if (colorMode) {
+            int[] savedColors = saved.colors();
+            if (savedColors == null) {
+                fail(NO_SAVED_COLORS);
+                return;
+            }
+            if (savedColors.length != bufferVertices) {
+                fail("the saved translucent data doesn't have one color per vertex");
+                return;
+            }
+            colors.load(savedColors);
+        }
         ids.load(saved.ids());
         resorted = true;
     }
 
-    /**
-     * Vanilla finished the layer. Writes the stream for exactly the data it's about to upload. A layer without
-     * vertices is never drawn and gets none.
-     */
     void finish(ByteBuffer data, int bufferVertices, boolean blockFormat, int drawMode) {
         if (!active() || bufferVertices == 0) {
             return;
@@ -236,21 +267,23 @@ public final class StreamCompanion {
         int bytes = bufferVertices * layout.stride();
         ByteBuffer target = stream;
         if (target == null || target.capacity() < bytes) {
-            // Grows with headroom, like vanilla's builders, so a slightly bigger chunk doesn't allocate again.
             int capacity = Math.max(bytes, target == null ? 0 : target.capacity() + (target.capacity() >> 1));
             target = ByteBuffer.allocateDirect(Math.max(capacity, 4096)).order(ByteOrder.nativeOrder());
             stream = target;
         }
-        writer.write(data, quads, ids.array(), layout, target);
+        int[] pack = null;
+        if (colorMode) {
+            colors.resolve(data, bufferVertices);
+            pack = colors.array();
+        }
+        writer.write(data, quads, ids.array(), pack, layout, target);
         vertices = bufferVertices;
     }
 
-    /** Whether a finished stream in this layout with exactly this many vertices is ready. */
     boolean ready(StreamLayout uploadLayout, int uploadVertices) {
         return vertices > 0 && problem == null && layout == uploadLayout && vertices == uploadVertices;
     }
 
-    /** The finished stream, starting at 0. Its position and limit mean nothing. */
     ByteBuffer stream() {
         ByteBuffer finished = stream;
         if (finished == null || vertices < 0) {

@@ -3,9 +3,8 @@
 package io.github.silentcall2598.focalis.shader.program;
 
 /**
- * The view and frame values every world program sees during one displayed frame. One instance is shared by all
- * programs of a session and is captured once at the start of each frame, so every program and world pass in a frame
- * reads the same values. Captured frames are counted from the session's first capture. Client thread only.
+ * One instance is shared by all programs of a session and is captured once at the start of each frame, so every
+ * program and world pass in a frame reads the same values.
  */
 public final class FrameInputs {
 
@@ -26,13 +25,7 @@ public final class FrameInputs {
     private int viewWidth = 1;
     private int viewHeight = 1;
 
-    /**
-     * Starts a new frame. The first capture is frame 0 with a frame time of 0 and starts the run time.
-     *
-     * @param nanoTime {@link System#nanoTime()} at the start of the frame
-     * @param width the width of the surface the world draws into, in pixels
-     * @param height its height in pixels
-     */
+    /** The first capture is frame 0 with a frame time of 0 and starts the run time. */
     public void capture(long nanoTime, int width, int height) {
         if (sequence == 0) {
             originNanos = nanoTime;
@@ -53,7 +46,6 @@ public final class FrameInputs {
         sequence++;
     }
 
-    /** Whether a frame was captured yet. Nothing may read the values before that. */
     public boolean captured() {
         return sequence > 0;
     }
@@ -67,12 +59,10 @@ public final class FrameInputs {
         return frameCounter;
     }
 
-    /** Seconds between the start of the previous frame and the start of this one, 0 for the first frame. */
     public float frameTime() {
         return frameTime;
     }
 
-    /** Nanoseconds from the start of the first captured frame to the start of this one. Never wraps or goes back. */
     public long runNanos() {
         return lastNanos - originNanos;
     }

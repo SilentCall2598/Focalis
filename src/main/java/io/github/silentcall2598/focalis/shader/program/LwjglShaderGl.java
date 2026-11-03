@@ -11,7 +11,6 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-/** {@link ShaderGl} on LWJGL 2, which throws if no context is current on the calling thread. */
 final class LwjglShaderGl implements ShaderGl {
 
     static final LwjglShaderGl INSTANCE = new LwjglShaderGl();

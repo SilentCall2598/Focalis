@@ -4,10 +4,6 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import javax.annotation.Nullable;
 
-/**
- * The legacy camera uniforms world programs get from {@link CameraSnapshot}, with the names and types of the OptiFine
- * shader documentation. The positions are vec3s and the matrices mat4s.
- */
 public enum CameraUniform {
 
     CAMERA_POSITION("cameraPosition", false),
@@ -31,7 +27,6 @@ public enum CameraUniform {
         return uniformName;
     }
 
-    /** True for a mat4, false for a vec3. */
     public boolean matrix() {
         return matrix;
     }

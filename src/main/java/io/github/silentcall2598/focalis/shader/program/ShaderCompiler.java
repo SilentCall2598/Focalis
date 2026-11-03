@@ -7,7 +7,6 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL32;
 import org.lwjgl.opengl.GL43;
 
-/** Compiles one stage. The source goes to the driver exactly as prepared, nothing is patched here. */
 final class ShaderCompiler {
 
     private final ShaderGl gl;
@@ -31,7 +30,6 @@ final class ShaderCompiler {
         }
     }
 
-    /** Returns a shader the caller owns, or throws with the full driver log. A failed shader is always deleted. */
     CompiledShader compile(String programName, PreparedProgram.Stage stage) throws ProgramBuildException {
         int shader = gl.createShader(glShaderType(stage.stage()));
         if (shader == 0) {

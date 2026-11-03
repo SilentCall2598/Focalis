@@ -4,14 +4,9 @@ package io.github.silentcall2598.focalis.shader.terrain;
 
 import org.lwjgl.opengl.GL11;
 
+import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 
-/**
- * Writes the stream for quads in vanilla's chunk vertex format, DefaultVertexFormats.BLOCK, which keeps the position
- * as three floats at byte 0 and the texture coordinates as two floats at byte 16 of each 28 byte vertex. Only absolute
- * gets and puts are used, so neither buffer's position or limit moves. Both have to be in native byte order. Not
- * thread safe.
- */
 final class StreamWriter {
 
     static final int SOURCE_STRIDE = 28;
@@ -20,13 +15,16 @@ final class StreamWriter {
 
     private final QuadFrame frame = new QuadFrame();
 
-    /**
-     * Writes {@code quads} quads from the start of {@code source} to the start of {@code target}, which needs room for
-     * {@code quads * 4 * layout.stride()} bytes.
-     *
-     * @param ids one material ID per quad, as mc_Entity stores it
-     */
     void write(ByteBuffer source, int quads, short[] ids, StreamLayout layout, ByteBuffer target) {
+        write(source, quads, ids, null, layout, target);
+    }
+
+    void write(ByteBuffer source, int quads, short[] ids, @Nullable int[] colors, StreamLayout layout,
+            ByteBuffer target) {
+        if (layout.hasColors() != (colors != null)) {
+            throw new IllegalArgumentException("The " + layout + " layout " + (layout.hasColors() ? "needs" : "has no")
+                    + " colors");
+        }
         int stride = layout.stride();
         boolean bytes = layout.normalType() == GL11.GL_BYTE;
         for (int quad = 0; quad < quads; quad++) {
@@ -45,6 +43,20 @@ final class StreamWriter {
             } else {
                 writeFloats(target, out, stride, layout, id);
             }
+            if (colors != null) {
+                writeColors(target, out, stride, layout.colorOffset(), colors, quad * 4);
+            }
+        }
+    }
+
+    private static void writeColors(ByteBuffer target, int out, int stride, int offset, int[] colors, int first) {
+        for (int i = 0; i < 4; i++) {
+            int at = out + i * stride + offset;
+            int color = colors[first + i];
+            target.put(at, (byte) color);
+            target.put(at + 1, (byte) (color >> 8));
+            target.put(at + 2, (byte) (color >> 16));
+            target.put(at + 3, (byte) (color >> 24));
         }
     }
 

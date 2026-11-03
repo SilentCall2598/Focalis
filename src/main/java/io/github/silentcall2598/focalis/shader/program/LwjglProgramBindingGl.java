@@ -5,7 +5,6 @@ package io.github.silentcall2598.focalis.shader.program;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
-/** {@link ProgramBindingGl} on LWJGL 2, which throws if no context is current on the calling thread. */
 final class LwjglProgramBindingGl implements ProgramBindingGl {
 
     static final LwjglProgramBindingGl INSTANCE = new LwjglProgramBindingGl();

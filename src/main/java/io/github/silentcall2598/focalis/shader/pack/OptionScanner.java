@@ -16,11 +16,7 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Finds the options of a pack while it loads and writes chosen values back into the lines that define them. Only
- * the documented forms count, and a value is applied by rewriting its definition line in place so every line keeps
- * its number.
- */
+/** A value is applied by rewriting its definition line in place so every line keeps its number. */
 final class OptionScanner {
 
     // The const names the format documents. Anything else declared const is plain GLSL.
@@ -45,7 +41,6 @@ final class OptionScanner {
                     + "\\s*//[^\\[]*\\[([^\\]]*)\\].*$");
     private static final Pattern IFDEF = Pattern.compile("^\\s*#\\s*(?:ifdef|ifndef)\\s+([A-Za-z_]\\w*)");
 
-    // One line that looks like an option. A switch only counts once some program tests it.
     private static final class Candidate {
 
         final String name;
@@ -63,7 +58,6 @@ final class OptionScanner {
         }
     }
 
-    // What one pack file holds. Each file is only scanned once however many programs include it.
     private static final class FileScan {
 
         final List<Candidate> candidates = new ArrayList<>();
@@ -72,7 +66,6 @@ final class OptionScanner {
 
     private final IncludeResolver.FileText files;
     private final Map<ShaderPath, FileScan> scans = new TreeMap<>();
-    // Switch lines some program tests with #ifdef or #ifndef.
     private final Set<SourceLocation> testedSwitches = new HashSet<>();
 
     OptionScanner(IncludeResolver.FileText files) {
@@ -80,8 +73,8 @@ final class OptionScanner {
     }
 
     /**
-     * Adds one expanded .vsh or .fsh source. The format tests a switch against the same file, which only makes
-     * sense for the expanded program since packs keep their options in included files.
+     * The format tests a switch against the same file, which only makes sense for the expanded program since packs keep
+     * their options in included files.
      */
     void addProgram(ResolvedSource source) throws IOException {
         Set<String> tested = new HashSet<>();
@@ -122,7 +115,6 @@ final class OptionScanner {
                     scan.tested.add(ifdef.group(1));
                 }
             }
-            // A line that starts inside a block comment is commented out, whatever it looks like.
             if (scanned.startedInComment() || scanned.openCommentStart() >= 0) {
                 continue;
             }
@@ -159,7 +151,6 @@ final class OptionScanner {
         return null;
     }
 
-    // The default joins the list when the pack left it out.
     private static List<String> allowed(String list, String defaultValue) {
         List<String> values = new ArrayList<>();
         for (String value : list.trim().split("\\s+")) {
@@ -173,7 +164,6 @@ final class OptionScanner {
         return Collections.unmodifiableList(values);
     }
 
-    /** Groups what was found into options and reports the ambiguous ones. */
     ShaderOptions finish(List<PackIssue> issues) {
         Map<String, List<Candidate>> byName = new TreeMap<>();
         for (FileScan scan : scans.values()) {
@@ -203,10 +193,7 @@ final class OptionScanner {
         return new ShaderOptions(Collections.unmodifiableMap(options));
     }
 
-    /**
-     * Rewrites the definition lines in one file's text for the given option values, keyed by line number. Line
-     * endings and every other line are kept exactly.
-     */
+    /** Line endings and every other line are kept exactly. */
     static String rewrite(String text, Map<Integer, OptionValue> changes) {
         String[] lines = text.split("\n", -1);
         for (Map.Entry<Integer, OptionValue> change : changes.entrySet()) {
@@ -219,7 +206,6 @@ final class OptionScanner {
         return String.join("\n", lines);
     }
 
-    /** The value an option gets written as on one of its lines. */
     static final class OptionValue {
 
         final ShaderOption.Kind kind;
@@ -262,7 +248,6 @@ final class OptionScanner {
             default:
                 break;
         }
-        // The scan found this line from the same text, so it always matches again.
         throw new IllegalStateException("Option line no longer matches: " + line);
     }
 

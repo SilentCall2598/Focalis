@@ -11,27 +11,16 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * What resolving one configuration's mappings found. Every entry that didn't do everything it says gets a note, so
- * logs can stay short and still point at the lines. Immutable.
- */
 public final class MaterialReport {
 
-    /** Why an entry did less than it says. */
     public enum Problem {
-        /** The game has nothing by that name, which is normal for packs written for several versions. */
         UNKNOWN_NAME,
-        /** The block has no property by that name, so the condition is left out and the rest of the entry applies. */
         UNKNOWN_PROPERTY,
-        /** The property doesn't have that value, so it matches no state. */
         UNKNOWN_VALUE,
-        /** Some of what the entry matches already has another ID from an earlier line, which it keeps. */
         CONFLICT,
-        /** Reading the entry's block, item or entity threw, so it maps nothing. */
         FAILED
     }
 
-    /** One entry and what happened to it. */
     public static final class Note {
 
         private final MaterialMappings.Kind kind;
@@ -59,12 +48,10 @@ public final class MaterialReport {
             return problem;
         }
 
-        /** The line's key, like {@code block.10005}. */
         public String key() {
             return key;
         }
 
-        /** The entry as written, like {@code furnace:lit=false}. */
         public String entry() {
             return entry;
         }
@@ -95,18 +82,15 @@ public final class MaterialReport {
         this.nanos = nanos;
     }
 
-    /** How many block states, items or entity types got an ID. */
     public int mapped(MaterialMappings.Kind kind) {
         Integer count = mapped.get(kind);
         return count == null ? 0 : count;
     }
 
-    /** How many different blocks have at least one state with an ID. */
     public int blocks() {
         return blocks;
     }
 
-    /** Every note in the order the entries were resolved. Read only. */
     public List<Note> notes() {
         return notes;
     }
@@ -121,12 +105,10 @@ public final class MaterialReport {
         return found;
     }
 
-    /** How long resolving took. */
     public long nanos() {
         return nanos;
     }
 
-    /** Collects a report while the matcher runs. */
     static final class Builder {
 
         private final Map<MaterialMappings.Kind, Integer> mapped = new EnumMap<>(MaterialMappings.Kind.class);

@@ -3,9 +3,8 @@
 package io.github.silentcall2598.focalis.render.target;
 
 /**
- * While the world is drawn into a Focalis target, binding Minecraft's framebuffer through OpenGlHelper binds that
- * target instead. Vanilla rebinds its framebuffer in the middle of the world pass, after drawing entity outlines, and
- * without this the rest of the world would miss the target. Client thread only.
+ * Vanilla rebinds its framebuffer in the middle of the world pass, after drawing entity outlines, so without this
+ * redirect the rest of the world would miss the Focalis target.
  */
 public final class MainFramebufferRedirect {
 
@@ -16,15 +15,12 @@ public final class MainFramebufferRedirect {
     private MainFramebufferRedirect() {
     }
 
-    /** Called by the Mixin in OpenGlHelper.glBindFramebuffer with the framebuffer about to be bound. */
     public static int substitute(int framebuffer) {
         hookCalled = true;
         return target != 0 && framebuffer == source ? target : framebuffer;
     }
 
-    // Minecraft binds its framebuffer through OpenGlHelper every frame before the world, so a hook that never ran
-    // by then didn't apply.
-    static boolean hookCalled() {
+    public static boolean hookCalled() {
         return hookCalled;
     }
 

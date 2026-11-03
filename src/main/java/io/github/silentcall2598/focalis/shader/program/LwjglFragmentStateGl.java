@@ -9,10 +9,10 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 
 /**
- * {@link FragmentStateGl} on LWJGL 2 and GlStateManager. Each change goes through GlStateManager first, so vanilla's
- * next call compares against the right value, and then straight to GL. GlStateManager skips calls that match its
- * cache, and its blend cache keeps old alpha factors after the two factor blendFunc, so on its own it could leave GL
- * unchanged. Changes are never held by {@link FragmentHold}, since they are Focalis's own.
+ * Each change goes through GlStateManager first, so vanilla's next call compares against the right value, and then
+ * straight to GL. GlStateManager skips calls that match its cache, and its blend cache keeps old alpha factors after
+ * the two factor blendFunc, so on its own it could leave GL unchanged. Changes are never held by {@link FragmentHold},
+ * since they are Focalis's own.
  */
 final class LwjglFragmentStateGl implements FragmentStateGl {
 

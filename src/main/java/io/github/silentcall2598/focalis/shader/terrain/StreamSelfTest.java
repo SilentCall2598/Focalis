@@ -18,18 +18,6 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.Locale;
 
-/**
- * Draws known stream values through one path, vertex buffers or display lists, the way terrain draws them, and reads
- * back what a program received. It checks the driver keeps the stream's attribute locations, converts every type the
- * way the stream expects, keeps generic arrays in display lists, and doesn't let the stream disturb the position,
- * color and texture coordinates vanilla's chunk data feeds. Runs once per path, and puts back everything it changes.
- * Client thread only, with the context current and no display list being compiled.
- *
- * <p>It reads the values back from an RGBA32F render target through GL30 framebuffer calls, which is what ties the
- * stream to OpenGL 3.0, the same minimum as the post pass and the world target. Older contexts get no stream and
- * terrain draws the normal way. A check through the framebuffer and float texture extensions of GL 2.1 hardware
- * would be code nothing here can run, and it would decide whether drawing is trusted, so there isn't one.
- */
 final class StreamSelfTest {
 
     enum Outcome {
@@ -81,7 +69,6 @@ final class StreamSelfTest {
             + "    gl_FragColor = value;\n"
             + "}\n";
 
-    // Per vertex. Bytes for the compact layout, and the floats the list layout carries in their place.
     private static final byte[][] NORMAL_BYTES = {{127, 0, -128}, {64, -64, 1}, {0, 127, -1}, {-128, 100, 50}};
     private static final float[][] NORMAL_FLOATS = {{1f, 0f, -1f}, {0.5f, -0.5f, 0.25f}, {0f, 1f, -0.125f},
             {-1f, 0.75f, 0.375f}};
@@ -94,6 +81,8 @@ final class StreamSelfTest {
     private static final float[][] TEXTURE = {{0.0625f, 0.9375f}, {0.5f, 0.125f}, {0.75f, 0.0f}, {1.0f, 0.5f}};
     private static final short[][] LIGHTMAP = {{240, 15}, {0, 240}, {128, 64}, {8, 200}};
     private static final int[][] COLOR = {{255, 128, 0, 64}, {0, 255, 32, 255}, {16, 8, 255, 0}, {200, 100, 50, 25}};
+    private static final int[][] STREAM_COLOR = {{1, 2, 200, 77}, {250, 3, 4, 5}, {99, 98, 97, 96},
+            {128, 255, 129, 254}};
 
     private StreamSelfTest() {
     }
@@ -147,7 +136,6 @@ final class StreamSelfTest {
         return result;
     }
 
-    // The first GL error the check itself raised, and after which step.
     private static final class Errors {
         @Nullable
         String first;
@@ -160,7 +148,6 @@ final class StreamSelfTest {
         }
     }
 
-    // Everything the check makes, deleted at the end whatever happened.
     private static final class Made {
         int framebuffer;
         int renderbuffer;
@@ -244,14 +231,13 @@ final class StreamSelfTest {
         ByteBuffer stream = streamVertices(layout);
         AttributeGl gl = LwjglAttributeGl.INSTANCE;
         disableArrays();
-        if (layout == StreamLayout.BUFFER) {
+        if (layout.forBuffers()) {
             made.vertexBuffer = GL15.glGenBuffers();
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, made.vertexBuffer);
             GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertices, GL15.GL_STATIC_DRAW);
             made.streamBuffer = GL15.glGenBuffers();
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, made.streamBuffer);
             GL15.glBufferData(GL15.GL_ARRAY_BUFFER, stream, GL15.GL_STATIC_DRAW);
-            // Like a chunk draw, with the stream pointed at while vanilla's buffer is bound around it.
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, made.vertexBuffer);
             vanillaPointers(null);
             gl.bindArrayBuffer(made.streamBuffer);
@@ -275,7 +261,6 @@ final class StreamSelfTest {
             GL11.glDrawArrays(GL11.GL_POINTS, 0, VERTICES);
             GL11.glEndList();
             errors.after("compiling the list");
-            // The list has to carry everything, so nothing is left for its draws to read from arrays.
             disableArrays();
             for (int r = 0; r < ROWS; r++) {
                 GL20.glUniform1f(row, r);
@@ -324,7 +309,6 @@ final class StreamSelfTest {
         return null;
     }
 
-    // 0 when it didn't compile, after deleting it.
     private static int compile(int type, String source) {
         int shader = GL20.glCreateShader(type);
         GL20.glShaderSource(shader, source);
@@ -341,8 +325,6 @@ final class StreamSelfTest {
         return end < 0 ? log : log.substring(0, end).trim();
     }
 
-    // Vanilla's block layout, position, color, texture and lightmap coordinates in 28 bytes. Each vertex lands on the
-    // center of its own column.
     private static ByteBuffer vanillaVertices() {
         ByteBuffer data = BufferUtils.createByteBuffer(VERTICES * StreamWriter.SOURCE_STRIDE);
         for (int i = 0; i < VERTICES; i++) {
@@ -385,11 +367,15 @@ final class StreamSelfTest {
                     data.putFloat(at + layout.tangentOffset() + c * 4, TANGENT_FLOATS[i][c]);
                 }
             }
+            if (layout.hasColors()) {
+                for (int c = 0; c < 4; c++) {
+                    data.put(at + layout.colorOffset() + c, (byte) STREAM_COLOR[i][c]);
+                }
+            }
         }
         return data;
     }
 
-    // The pointers vanilla sets for chunk data, from the bound buffer or from client memory.
     private static void vanillaPointers(@Nullable ByteBuffer client) {
         int stride = StreamWriter.SOURCE_STRIDE;
         if (client == null) {
@@ -417,7 +403,6 @@ final class StreamSelfTest {
         GL11.glEnableClientState(GL11.GL_COLOR_ARRAY);
     }
 
-    // Arrays the game left enabled would be drawn from too. The client attribute stack puts them back.
     private static void disableArrays() {
         GL11.glDisableClientState(GL11.GL_VERTEX_ARRAY);
         GL11.glDisableClientState(GL11.GL_COLOR_ARRAY);
@@ -440,7 +425,6 @@ final class StreamSelfTest {
 
     private static Result compare(StreamLayout layout, FloatBuffer pixels) {
         boolean compact = layout.normalType() == GL11.GL_BYTE;
-        // Normalized bytes may follow either rule, but the same one for every value.
         int rules = BOTH;
         for (int r = 0; r < ROWS; r++) {
             for (int i = 0; i < VERTICES; i++) {
@@ -455,7 +439,7 @@ final class StreamSelfTest {
                         rules &= byteRules(TANGENT_BYTES[i][c], got);
                         wrong = rules == 0;
                     } else {
-                        float expected = expected(r, i, c);
+                        float expected = expected(r, i, c, layout.hasColors());
                         wrong = !(Math.abs(got - expected) <= TOLERANCE * Math.max(1.0f, Math.abs(expected)));
                     }
                     if (wrong) {
@@ -472,7 +456,7 @@ final class StreamSelfTest {
                 : "normalized bytes follow the c/127 rule");
     }
 
-    private static float expected(int r, int i, int c) {
+    private static float expected(int r, int i, int c, boolean streamColors) {
         switch (r) {
             case 0:
                 return c < 3 ? NORMAL_FLOATS[i][c] : 0.0f;
@@ -483,7 +467,7 @@ final class StreamSelfTest {
             case 3:
                 return c < 2 ? TEXTURE[i][c] : LIGHTMAP[i][c - 2];
             default:
-                return COLOR[i][c] / 255.0f;
+                return (streamColors ? STREAM_COLOR : COLOR)[i][c] / 255.0f;
         }
     }
 
@@ -491,7 +475,6 @@ final class StreamSelfTest {
     private static final int OLDER = 2;
     private static final int BOTH = CURRENT | OLDER;
 
-    // Which conversion rules give the value read back.
     private static int byteRules(byte stored, float got) {
         int rules = 0;
         if (Math.abs(got - Math.max(stored / 127.0f, -1.0f)) <= TOLERANCE) {

@@ -15,8 +15,8 @@ import org.lwjgl.opengl.GLContext;
 import java.nio.ByteBuffer;
 
 /**
- * {@link TextureGl} on LWJGL 2. Short bindings and unit switches are raw GL and always put back, so GlStateManager's
- * texture cache never sees them. Bindings that stay while other code draws update its cache too.
+ * Short bindings and unit switches are raw GL and always put back, so GlStateManager's texture cache never sees them.
+ * Bindings that stay while other code draws update its cache too.
  */
 final class LwjglTextureGl implements TextureGl {
 
@@ -112,7 +112,6 @@ final class LwjglTextureGl implements TextureGl {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, filter);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, wrap);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, wrap);
-            // No mipmaps, so level 0 is the whole texture.
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_MAX_LEVEL, 0);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, width, height, 0, GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE, pixels);

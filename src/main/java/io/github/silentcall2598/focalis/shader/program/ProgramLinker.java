@@ -37,7 +37,6 @@ final class ProgramLinker {
     }
 
     private static final class Attempt {
-        // 0 when linking failed, and the program is already deleted then.
         final int program;
         final String log;
 
@@ -65,7 +64,6 @@ final class ProgramLinker {
             gl.linkProgram(program);
             linked = gl.linkSucceeded(program);
             String log = gl.programLog(program);
-            // A linked program doesn't need its stage shaders anymore, so they're detached and can be freed.
             for (CompiledShader shader : shaders) {
                 gl.detachShader(program, shader.id());
             }

@@ -29,17 +29,13 @@ public interface DevelopmentProbe {
 
     PostPassMonitor postPassMonitor();
 
-    /** Registers the listeners that have to run before the features' own. Called before features register. */
     void installBefore(RenderLifecycle lifecycle);
 
-    /** Registers the listeners that have to run after the features' own. */
     void installAfter(RenderLifecycle lifecycle);
 
     /**
-     * The probe the launch asked for, or null when it didn't ask for one.
-     *
-     * @throws IllegalStateException when the named probe can't be created, since a launch asking for one is a
-     *     development launch that should stop rather than run unwatched
+     * @throws IllegalStateException when the named probe can't be created, so a development launch stops instead of
+     *     running unwatched
      */
     @Nullable
     static DevelopmentProbe fromSystemProperty(Supplier<List<FeatureStatus>> features,

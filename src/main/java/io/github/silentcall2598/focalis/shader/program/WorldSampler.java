@@ -4,15 +4,13 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import javax.annotation.Nullable;
 
-/**
- * The legacy samplers world programs get. Each one reads the texture unit Minecraft already keeps that texture on,
- * so Focalis never binds a texture for them.
- */
 public enum WorldSampler {
 
-    /** Whatever Minecraft bound for the current draw, like the block atlas, an entity's skin or a chest texture. */
     TEXTURE("texture", 0),
-    /** Minecraft's lightmap, which it binds on unit 1 while a stage draws with lighting. */
+    GTEXTURE("gtexture", 0),
+    // shaders.txt lists tex for the shadow programs only, but packs that use GLSL 1.30, where texture is a built-in
+    // function, read the gbuffers albedo through it, like the pinned Complementary r5.9.3.
+    TEX("tex", 0),
     LIGHTMAP("lightmap", 1);
 
     private final String uniformName;
@@ -27,7 +25,6 @@ public enum WorldSampler {
         return uniformName;
     }
 
-    /** The texture unit index the uniform is set to. It's i for GL_TEXTUREi, never the enum itself. */
     public int unit() {
         return unit;
     }

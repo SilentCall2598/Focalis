@@ -4,10 +4,7 @@ package io.github.silentcall2598.focalis.shader.program;
 
 import io.github.silentcall2598.focalis.shader.pack.ProgramDirectory;
 
-/**
- * The world programs of one program folder, prepared and built once for the whole session. The session that made it
- * owns the built programs and deletes them.
- */
+/** The session that made it owns the built programs and deletes them. */
 public final class DirectoryPrograms {
 
     private final ProgramDirectory directory;
@@ -32,7 +29,6 @@ public final class DirectoryPrograms {
         return programs;
     }
 
-    /** Whether at least one program was built, so something can be bound. */
     public boolean usable() {
         for (BuiltWorldPrograms.Build build : programs.builds()) {
             if (build.succeeded()) {
