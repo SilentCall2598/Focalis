@@ -21,15 +21,14 @@ final class ObjectBlockDraws {
     private int[] ids = new int[0];
     @Nullable
     private ByteBuffer stream;
+    private boolean pushed;
     private boolean fedNormals;
-    @Nullable
-    private ByteBuffer fedColorsOf;
-    private int colorOffset;
-    private int colorStride;
+    private int maxDepth;
 
     private long draws;
     private long quads;
     private long coloredQuads;
+    private long refused;
 
     ObjectBlockDraws(AttributeGl gl) {
         this.gl = gl;
@@ -45,26 +44,25 @@ final class ObjectBlockDraws {
     }
 
     void abandon() {
-        LightingCapture.releaseObject(LightingCapture.objectBuffer());
+        LightingCapture.dropObject();
         restore();
     }
 
-    void drawing(BufferBuilder buffer, @Nullable ObjectBlockPrograms programs) {
+    boolean drawing(BufferBuilder buffer, @Nullable ObjectBlockPrograms programs) {
         boolean captured = LightingCapture.capturesObject(buffer);
         LightingCapture.releaseObject(buffer);
-        // Only a draw that threw leaves a feed behind. preDraw has already pointed the colors at this draw's buffer.
-        fedColorsOf = null;
-        restore();
         int vertices = buffer.getVertexCount();
-        if (programs == null || buffer.getDrawMode() != GL11.GL_QUADS || vertices == 0 || vertices % 4 != 0) {
-            return;
+        // A draw from inside a fed one, through another mod's wrapper of the same call, would replace the state the
+        // outer restore needs.
+        if (pushed || programs == null || buffer.getDrawMode() != GL11.GL_QUADS || vertices == 0 || vertices % 4 != 0) {
+            return false;
         }
         int flags = programs.blockDraw();
         if (flags == ObjectBlockPrograms.NONE) {
-            return;
+            return false;
         }
-        // Another renderer left the normal array on, so this draw reads its normals already. Taking it over would mean
-        // reading its pointer back, and LWJGL allocates a buffer for every such read.
+        // A normal array that is already on belongs to the renderer that turned it on, and this draw reads its normals
+        // as it would without Focalis.
         boolean normals = (flags & ObjectBlockPrograms.NORMAL) != 0 && !gl.normalArrayEnabled();
         ByteBuffer data = buffer.getByteBuffer();
         int[] pack = null;
@@ -75,7 +73,15 @@ final class ObjectBlockDraws {
             }
         }
         if (!normals && pack == null) {
-            return;
+            return false;
+        }
+        if (maxDepth == 0) {
+            maxDepth = gl.maxClientAttribDepth();
+        }
+        // A push onto a full stack only raises an error, and the pop would then take another renderer's state.
+        if (gl.clientAttribDepth() >= maxDepth) {
+            refused++;
+            return false;
         }
         StreamLayout layout = pack != null ? StreamLayout.BUFFER_COLOR : StreamLayout.BUFFER;
         int count = vertices / 4;
@@ -89,15 +95,16 @@ final class ObjectBlockDraws {
         quads += count;
         if (normals) {
             gl.currentNormal(normal);
-            gl.normalPointer(layout.normalType(), layout.stride(), target);
+        }
+        gl.pushClientArrays();
+        pushed = true;
+        if (normals) {
             fedNormals = true;
+            gl.normalPointer(layout.normalType(), layout.stride(), target);
             gl.normalArray(true);
         }
         if (pack != null) {
             coloredQuads += colors.capturedQuads();
-            colorOffset = buffer.getVertexFormat().getColorOffset();
-            colorStride = buffer.getVertexFormat().getSize();
-            fedColorsOf = data;
             try {
                 target.position(layout.colorOffset());
                 gl.colorPointer(4, GL11.GL_UNSIGNED_BYTE, layout.stride(), target);
@@ -105,30 +112,25 @@ final class ObjectBlockDraws {
                 target.position(0);
             }
         }
+        return true;
     }
 
-    // The normal array goes off with its pointer left on the stream, which LWJGL keeps referenced. Forge's preDraw, the
-    // only place vanilla and Forge turn the array on, sets the pointer first, and every draw of a format with normals
-    // moves it anyway. The color pointer goes back to vanilla's buffer exactly as its preDraw set it.
+    // The pop puts back every vertex array as the draw's preDraw left it, pointers and their buffer bindings included,
+    // and LWJGL's references to client buffers with them. The current normal is not client state, and a draw from an
+    // enabled normal array leaves it indeterminate.
     void restore() {
-        ByteBuffer vanilla = fedColorsOf;
+        boolean popping = pushed;
         boolean normals = fedNormals;
-        fedColorsOf = null;
+        pushed = false;
         fedNormals = false;
+        if (!popping) {
+            return;
+        }
         try {
-            if (normals) {
-                gl.normalArray(false);
-                gl.setCurrentNormal(normal[0], normal[1], normal[2]);
-            }
+            gl.popClientArrays();
         } finally {
-            if (vanilla != null) {
-                int position = vanilla.position();
-                try {
-                    vanilla.position(colorOffset);
-                    gl.colorPointer(4, GL11.GL_UNSIGNED_BYTE, colorStride, vanilla);
-                } finally {
-                    vanilla.position(position);
-                }
+            if (normals) {
+                gl.setCurrentNormal(normal[0], normal[1], normal[2]);
             }
         }
     }
@@ -145,6 +147,7 @@ final class ObjectBlockDraws {
     }
 
     String statistics() {
-        return "object block draws " + draws + " with " + quads + " quads, " + coloredQuads + " with captured colors";
+        return "object block draws " + draws + " with " + quads + " quads, " + coloredQuads + " with captured colors, "
+                + refused + " left to vanilla on a full client attribute stack";
     }
 }

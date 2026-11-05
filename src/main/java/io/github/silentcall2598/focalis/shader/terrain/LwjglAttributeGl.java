@@ -135,6 +135,26 @@ final class LwjglAttributeGl implements AttributeGl {
     }
 
     @Override
+    public int clientAttribDepth() {
+        return GL11.glGetInteger(GL11.GL_CLIENT_ATTRIB_STACK_DEPTH);
+    }
+
+    @Override
+    public int maxClientAttribDepth() {
+        return GL11.glGetInteger(GL11.GL_MAX_CLIENT_ATTRIB_STACK_DEPTH);
+    }
+
+    @Override
+    public void pushClientArrays() {
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
+    }
+
+    @Override
+    public void popClientArrays() {
+        GL11.glPopClientAttrib();
+    }
+
+    @Override
     public boolean colorArrayEnabled() {
         return GL11.glIsEnabled(GL11.GL_COLOR_ARRAY);
     }

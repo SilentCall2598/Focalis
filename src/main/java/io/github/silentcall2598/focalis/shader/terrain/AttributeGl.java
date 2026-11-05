@@ -44,6 +44,14 @@ interface AttributeGl {
 
     void setCurrentNormal(float x, float y, float z);
 
+    int clientAttribDepth();
+
+    int maxClientAttribDepth();
+
+    void pushClientArrays();
+
+    void popClientArrays();
+
     boolean colorArrayEnabled();
 
     void colorArray(boolean enabled);

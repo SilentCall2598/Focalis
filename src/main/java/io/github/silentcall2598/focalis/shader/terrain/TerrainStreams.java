@@ -54,7 +54,7 @@ public final class TerrainStreams {
     private static StreamBuffers buffers = new StreamBuffers(LwjglAttributeGl.INSTANCE);
 
     private static final AtomicReference<Throwable> failure = new AtomicReference<>();
-    private static final ObjectBlockDraws objects = new ObjectBlockDraws(LwjglAttributeGl.INSTANCE);
+    private static ObjectBlockDraws objects = new ObjectBlockDraws(LwjglAttributeGl.INSTANCE);
     @Nullable
     private static volatile Throwable objectsFailed;
     private static final Set<String> noted = ConcurrentHashMap.newKeySet();
@@ -368,26 +368,28 @@ public final class TerrainStreams {
     // The captured colors are kept per vertex, and a sort moves the quads (Forge's batch of fast block entity renderers
     // sorts its translucent pass).
     public static void objectSorted(BufferBuilder buffer) {
-        LightingCapture.releaseObject(buffer);
-    }
-
-    public static void objectDrawing(BufferBuilder buffer) {
-        if (objectsFailed != null) {
-            return;
-        }
         try {
-            TerrainDraws current = draws;
-            objects.drawing(buffer, current != null && isBlockFormat(buffer.getVertexFormat())
-                    ? current.objectPrograms() : null);
+            LightingCapture.releaseObject(buffer);
         } catch (RuntimeException | LinkageError e) {
             objectsFailed(e);
         }
     }
 
-    public static void objectDrawn() {
+    public static boolean objectDrawing(BufferBuilder buffer) {
         if (objectsFailed != null) {
-            return;
+            return false;
         }
+        try {
+            TerrainDraws current = draws;
+            return objects.drawing(buffer, current != null && isBlockFormat(buffer.getVertexFormat())
+                    ? current.objectPrograms() : null);
+        } catch (RuntimeException | LinkageError e) {
+            objectsFailed(e);
+            return false;
+        }
+    }
+
+    public static void objectDrawn() {
         try {
             objects.restore();
         } catch (RuntimeException | LinkageError e) {
@@ -395,15 +397,26 @@ public final class TerrainStreams {
         }
     }
 
+    static void objectCaptureFailed(Throwable e) {
+        objectsFailed(e);
+    }
+
+    @Nullable
+    static Throwable objectsFailure() {
+        return objectsFailed;
+    }
+
     private static void objectsFailed(Throwable e) {
-        objectsFailed = e;
+        if (objectsFailed == null) {
+            objectsFailed = e;
+        }
         note("Block models drawn by entity and block entity renderers lost Focalis's normals and lighting colors after"
                 + " a Focalis error, and draw with vanilla's inputs from now on: " + e);
-        if (!Minecraft.getMinecraft().isCallingFromMinecraftThread()) {
-            return;
-        }
         try {
-            objects.abandon();
+            LightingCapture.dropObject();
+            if (Minecraft.getMinecraft().isCallingFromMinecraftThread()) {
+                objects.abandon();
+            }
         } catch (RuntimeException | LinkageError suppressed) {
             if (suppressed != e) {
                 e.addSuppressed(suppressed);

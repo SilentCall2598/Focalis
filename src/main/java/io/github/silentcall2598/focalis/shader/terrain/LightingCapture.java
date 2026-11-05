@@ -18,6 +18,8 @@ public final class LightingCapture {
     // read it too, and only compare it with their own buffers.
     @Nullable
     private static volatile BufferBuilder objectBuffer;
+    // Kept after a release: a hook's failure belongs to the object feed when it came from this instance, which no chunk
+    // build ever holds.
     @Nullable
     private static volatile VertexColors objectColors;
 
@@ -56,8 +58,11 @@ public final class LightingCapture {
         if (companion != null) {
             return companion.colors();
         }
+        if (buffer != objectBuffer) {
+            return null;
+        }
         VertexColors object = objectColors;
-        return buffer == objectBuffer && object != null && object.capturing() ? object : null;
+        return object != null && object.capturing() ? object : null;
     }
 
     static void captureObject(BufferBuilder buffer, VertexColors colors) {
@@ -72,9 +77,23 @@ public final class LightingCapture {
 
     static void releaseObject(@Nullable BufferBuilder buffer) {
         if (buffer != null && buffer == objectBuffer) {
-            objectBuffer = null;
-            objectColors = null;
-            bind(null);
+            dropObject();
+        }
+    }
+
+    static void dropObject() {
+        objectBuffer = null;
+        VertexColors object = objectColors;
+        if (object != null && BOUND.get() == object) {
+            BOUND.remove();
+        }
+    }
+
+    private static void failed(@Nullable VertexColors colors, Throwable e) {
+        if (colors != null && colors == objectColors) {
+            TerrainStreams.objectCaptureFailed(e);
+        } else {
+            TerrainStreams.captureFailed(e);
         }
     }
 
@@ -87,13 +106,14 @@ public final class LightingCapture {
         if (buffer == null) {
             return;
         }
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.forgeBase(color, tint != -1, multiplier);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
@@ -101,13 +121,14 @@ public final class LightingCapture {
         if (buffer == null) {
             return;
         }
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.forgeAo(ao);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
@@ -115,24 +136,26 @@ public final class LightingCapture {
         if (buffer == null) {
             return;
         }
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.forgeDiffuse(diffuse);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
     public static void forgeColor(BufferBuilder buffer, int vertex, float[] color) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.forgeColor(buffer.getVertexCount() + vertex, color);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
@@ -140,84 +163,92 @@ public final class LightingCapture {
         if (!enabled) {
             return;
         }
+        VertexColors colors = null;
         try {
-            VertexColors colors = BOUND.get();
-            if (colors != null && colors.capturing()) {
+            colors = BOUND.get();
+            // An object capture dropped from another thread leaves the render thread's binding behind.
+            if (colors != null && colors.capturing() && (colors != objectColors || objectBuffer != null)) {
                 colors.modelAo(multipliers);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
     public static void modelQuad(BufferBuilder buffer, BakedQuad quad, boolean smooth) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.modelQuad(buffer.getVertexCount(), quad.getVertexData(), smooth);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
     public static float modelDiffuse(BufferBuilder buffer, float diffuse) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.modelDiffuse(diffuse);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
         return diffuse;
     }
 
     public static int modelTint(BufferBuilder buffer, int multiplier) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.modelTint(multiplier);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
         return multiplier;
     }
 
     public static void modelVertex(BufferBuilder buffer, float red, float green, float blue, int vertexIndex) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 int base = buffer.getByteBuffer().getInt(buffer.getColorIndex(vertexIndex) * 4);
                 colors.modelVertex(buffer.getVertexCount() - vertexIndex, 4 - vertexIndex,
                         LITTLE_ENDIAN ? base : Integer.reverseBytes(base), red, green, blue);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 
     public static int fluidTint(BufferBuilder buffer, int multiplier) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.fluidTint(multiplier);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
         return multiplier;
     }
 
     public static void fluidVertex(BufferBuilder buffer, float red, float green, float blue, float alpha) {
+        VertexColors colors = null;
         try {
-            VertexColors colors = colors(buffer);
+            colors = colors(buffer);
             if (colors != null) {
                 colors.fluidVertex(buffer.getVertexCount(), red, green, blue, alpha);
             }
         } catch (RuntimeException | LinkageError e) {
-            TerrainStreams.captureFailed(e);
+            failed(colors, e);
         }
     }
 }
