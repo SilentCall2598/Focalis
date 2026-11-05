@@ -150,8 +150,10 @@ public final class StreamCompanion {
         if (current == null || problem != null) {
             return;
         }
+        // OptiFine 1.12.2 HD U G5 gives the actual state's render type, though vanilla picks the renderer by the stored
+        // state's. They differ only for a block whose render type depends on its actual state.
         ids.blockEnded(bufferVertices, StreamLayout.entityWord(current.block(state),
-                stored.getRenderType().ordinal()));
+                state.getRenderType().ordinal()));
         if (ids.broken()) {
             fail("a block render added part of a quad");
         }
