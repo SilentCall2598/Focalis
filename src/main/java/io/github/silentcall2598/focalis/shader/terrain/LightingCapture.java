@@ -14,6 +14,12 @@ public final class LightingCapture {
 
     private static volatile boolean enabled;
     private static final ThreadLocal<VertexColors> BOUND = new ThreadLocal<>();
+    // The Tessellator buffer an object renderer is building on the render thread. The hooks on chunk worker threads
+    // read it too, and only compare it with their own buffers.
+    @Nullable
+    private static volatile BufferBuilder objectBuffer;
+    @Nullable
+    private static volatile VertexColors objectColors;
 
     private LightingCapture() {
     }
@@ -47,7 +53,34 @@ public final class LightingCapture {
             return null;
         }
         StreamCompanion companion = ((StreamBufferBuilder) buffer).focalis$streamCompanion();
-        return companion == null ? null : companion.colors();
+        if (companion != null) {
+            return companion.colors();
+        }
+        VertexColors object = objectColors;
+        return buffer == objectBuffer && object != null && object.capturing() ? object : null;
+    }
+
+    static void captureObject(BufferBuilder buffer, VertexColors colors) {
+        objectColors = colors;
+        objectBuffer = buffer;
+        bind(colors);
+    }
+
+    static boolean capturesObject(BufferBuilder buffer) {
+        return buffer == objectBuffer;
+    }
+
+    static void releaseObject(@Nullable BufferBuilder buffer) {
+        if (buffer != null && buffer == objectBuffer) {
+            objectBuffer = null;
+            objectColors = null;
+            bind(null);
+        }
+    }
+
+    @Nullable
+    static BufferBuilder objectBuffer() {
+        return objectBuffer;
     }
 
     public static void forgeBase(@Nullable BufferBuilder buffer, float[] color, float tint, int multiplier) {

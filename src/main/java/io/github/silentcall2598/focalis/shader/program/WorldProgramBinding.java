@@ -14,7 +14,7 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 
-public final class WorldProgramBinding implements DrawSuspension {
+public final class WorldProgramBinding implements DrawSuspension, ObjectBlockPrograms {
 
     public static final Set<RenderStage> STAGES = Collections.unmodifiableSet(EnumSet.of(RenderStage.SKY,
             RenderStage.TERRAIN, RenderStage.ENTITIES, RenderStage.BLOCK_DAMAGE, RenderStage.PARTICLES,
@@ -33,6 +33,9 @@ public final class WorldProgramBinding implements DrawSuspension {
             ShaderProgramRole.TERRAIN_SOLID, ShaderProgramRole.TERRAIN_CUTOUT_MIPPED, ShaderProgramRole.TERRAIN_CUTOUT,
             ShaderProgramRole.TERRAIN_TRANSLUCENT));
 
+    private static final Set<ShaderProgramRole> OBJECT_ROLES = Collections.unmodifiableSet(EnumSet.of(
+            ShaderProgramRole.ENTITIES, ShaderProgramRole.BLOCK_ENTITIES));
+
     private final ScopedProgramBinding scopes;
     private final ScopedProgramState state;
     private final FrameInputs frame;
@@ -47,6 +50,7 @@ public final class WorldProgramBinding implements DrawSuspension {
     private boolean terrainColors;
     private boolean[] streamScopes = new boolean[8];
     private BuiltWorldPrograms.Build[] scopeBuilds = new BuiltWorldPrograms.Build[8];
+    private ShaderProgramRole[] scopeRoles = new ShaderProgramRole[8];
 
     private static final byte PASSIVE = 0;
     private static final byte CONTEXT = 1;
@@ -105,7 +109,10 @@ public final class WorldProgramBinding implements DrawSuspension {
             abort();
             throw new IllegalStateException("The terrain stream gate can't change while a program scope is open");
         }
-        streams = Objects.requireNonNull(gate, "gate");
+        Objects.requireNonNull(gate, "gate");
+        streams.detach(this);
+        streams = gate;
+        gate.attach(this);
     }
 
     @Nullable
@@ -159,7 +166,8 @@ public final class WorldProgramBinding implements DrawSuspension {
     private void open(RenderStage stage, RenderDrawKind drawKind, @Nullable BuiltWorldPrograms.Build build,
             boolean hold) {
         CameraSnapshot snapshot = camera.current();
-        boolean terrain = TERRAIN_ROLES.contains(ShaderProgramRouter.route(stage, drawKind));
+        ShaderProgramRole role = ShaderProgramRouter.route(stage, drawKind);
+        boolean terrain = TERRAIN_ROLES.contains(role);
         boolean stream = build != null && terrain && (terrainColors || build.program().vertexInputs().needsStream());
         boolean atlas = terrain || stage == RenderStage.BLOCK_DAMAGE;
         ShaderProgram program = build == null ? null : build.program();
@@ -172,6 +180,7 @@ public final class WorldProgramBinding implements DrawSuspension {
         }
         markStream(stream);
         scopeBuilds[scopes.depth() - 1] = build;
+        scopeRoles[scopes.depth() - 1] = role;
         try {
             state.start(build == null ? null : build.drawState(), hold);
         } catch (RuntimeException | LinkageError e) {
@@ -379,6 +388,7 @@ public final class WorldProgramBinding implements DrawSuspension {
         }
         if (index >= scopeBuilds.length) {
             scopeBuilds = Arrays.copyOf(scopeBuilds, Math.max(index + 1, scopeBuilds.length * 2));
+            scopeRoles = Arrays.copyOf(scopeRoles, scopeBuilds.length);
         }
         streamScopes[index] = stream;
     }
@@ -656,6 +666,38 @@ public final class WorldProgramBinding implements DrawSuspension {
         int at = index * 4;
         build.inputs().object(objectEntityIds[index], objectBlockEntityIds[index], objectColors[at],
                 objectColors[at + 1], objectColors[at + 2], objectColors[at + 3]);
+    }
+
+    @Override
+    public int blockDraw() {
+        if (scopes.isEmpty() || scopes.isSuspended() || scopes.innermostStage() != RenderStage.ENTITIES) {
+            return NONE;
+        }
+        for (int i = scopes.depth() - 1; i >= 0; i--) {
+            BuiltWorldPrograms.Build build = i < scopeBuilds.length ? scopeBuilds[i] : null;
+            if (build == null) {
+                continue;
+            }
+            if (!OBJECT_ROLES.contains(scopeRoles[i])) {
+                return NONE;
+            }
+            ShaderProgram program = build.program();
+            boolean normal = program.vertexInputs().normal();
+            if (!normal && !terrainColors) {
+                return NONE;
+            }
+            try {
+                if (!scopes.isCurrent(program)) {
+                    return NONE;
+                }
+            } catch (RuntimeException | LinkageError e) {
+                abortState(e);
+                resetStreams(e);
+                throw e;
+            }
+            return (normal ? NORMAL : 0) | (terrainColors ? COLORS : 0);
+        }
+        return NONE;
     }
 
     @Nullable

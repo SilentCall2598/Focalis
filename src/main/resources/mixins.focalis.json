@@ -48,6 +48,7 @@
     "VertexBufferConsumerMixin",
     "VertexBufferStreamMixin",
     "VertexLighterFlatMixin",
-    "VertexLighterSmoothAoMixin"
+    "VertexLighterSmoothAoMixin",
+    "WorldVertexBufferUploaderMixin"
   ]
 }

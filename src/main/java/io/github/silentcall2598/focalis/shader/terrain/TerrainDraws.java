@@ -5,6 +5,7 @@ package io.github.silentcall2598.focalis.shader.terrain;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderDrawKind;
 import io.github.silentcall2598.focalis.render.lifecycle.RenderStage;
 import io.github.silentcall2598.focalis.shader.program.DrawSuspension;
+import io.github.silentcall2598.focalis.shader.program.ObjectBlockPrograms;
 import io.github.silentcall2598.focalis.shader.program.TerrainStreamGate;
 
 import javax.annotation.Nullable;
@@ -46,6 +47,8 @@ final class TerrainDraws implements TerrainStreamGate {
     private boolean currentCaptured;
     private boolean arraysOn;
     private boolean valuesDirty;
+    @Nullable
+    private ObjectBlockPrograms objectPrograms;
 
     TerrainDraws(AttributeGl gl, Status status) {
         this.gl = Objects.requireNonNull(gl, "gl");
@@ -104,6 +107,23 @@ final class TerrainDraws implements TerrainStreamGate {
         depth = 0;
         stepped = false;
         feeding = false;
+    }
+
+    @Override
+    public void attach(ObjectBlockPrograms programs) {
+        objectPrograms = programs;
+    }
+
+    @Override
+    public void detach(ObjectBlockPrograms programs) {
+        if (objectPrograms == programs) {
+            objectPrograms = null;
+        }
+    }
+
+    @Nullable
+    ObjectBlockPrograms objectPrograms() {
+        return objectPrograms;
     }
 
     void containerStarted(@Nullable RenderDrawKind layer) {

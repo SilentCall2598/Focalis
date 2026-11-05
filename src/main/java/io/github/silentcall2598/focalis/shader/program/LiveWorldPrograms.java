@@ -282,6 +282,11 @@ public final class LiveWorldPrograms {
         } catch (RuntimeException | LinkageError e) {
             failure = e;
         }
+        try {
+            binding.terrainStreams(TerrainStreamGate.CLOSED);
+        } catch (RuntimeException | LinkageError e) {
+            failure = collect(failure, e);
+        }
         rethrow(deleteFolders(failure));
     }
 

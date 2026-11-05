@@ -41,6 +41,8 @@ public abstract class BufferBuilderStreamMixin implements StreamBufferBuilder {
         original.call(indices, comparator);
         if (focalis$companion != null) {
             TerrainStreams.sortObserved((BufferBuilder) (Object) this, indices);
+        } else {
+            TerrainStreams.objectSorted((BufferBuilder) (Object) this);
         }
     }
 }

@@ -13,10 +13,6 @@ import java.util.Objects;
  * Puts back whatever program was active before each scope, even when that program belongs to Minecraft or another
  * mod. Only changes Focalis made are undone. It never owns or deletes the programs it binds.
  *
- * <p>The open scopes can step aside for a region that binds its own programs, like vanilla's entity outline shaders.
- * While suspended they stay open but leave the program alone, and resuming binds the Focalis program again. Code that
- * only borrows the program for a moment, like a mod's renderer, is repaired afterwards with {@link #reassert}.
- *
  * <p>If a call throws, every open scope is unwound first, so no Focalis program stays bound after a failure.
  */
 public final class ScopedProgramBinding {
@@ -195,6 +191,15 @@ public final class ScopedProgramBinding {
     @Nullable
     public RenderStage innermostStage() {
         return depth == 0 ? null : stages[depth - 1];
+    }
+
+    public boolean isCurrent(ShaderProgram program) {
+        try {
+            return gl.currentProgram() == program.id();
+        } catch (RuntimeException | LinkageError e) {
+            unwind(e);
+            throw e;
+        }
     }
 
     public boolean ownsCurrent() {
