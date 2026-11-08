@@ -30,6 +30,7 @@ final class VertexColors {
     private boolean forgeTinted;
     private int forgeMultiplier;
     private float forgeAo;
+    private boolean forgeSmooth;
     private float forgeDiffuse;
 
     private boolean modelSmooth;
@@ -72,12 +73,14 @@ final class VertexColors {
         forgeTinted = tinted;
         forgeMultiplier = multiplier;
         forgeAo = 1.0F;
+        forgeSmooth = false;
         forgeDiffuse = 1.0F;
         forgeBaseSeen = true;
     }
 
     void forgeAo(float ao) {
         forgeAo = ao;
+        forgeSmooth = true;
     }
 
     void forgeDiffuse(float diffuse) {
@@ -99,8 +102,8 @@ final class VertexColors {
             return;
         }
         capture(vertex, PackColors.forgePack(forgeBase, forgeTinted, forgeMultiplier, forgeAo, forgeDiffuse,
-                faceShading, separateAo), PackColors.forgeVanilla(forgeBase, forgeTinted, forgeMultiplier, forgeAo,
-                forgeDiffuse));
+                forgeSmooth, faceShading, separateAo), PackColors.forgeVanilla(forgeBase, forgeTinted, forgeMultiplier,
+                forgeAo, forgeDiffuse));
     }
 
     void modelQuad(int first, int[] data, boolean smooth) {

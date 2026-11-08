@@ -36,4 +36,10 @@ public interface TerrainStreamGate {
     void closed(RenderStage stage, RenderDrawKind layer);
 
     void reset();
+
+    default void attach(ObjectBlockPrograms programs) {
+    }
+
+    default void detach(ObjectBlockPrograms programs) {
+    }
 }

@@ -373,12 +373,12 @@ public final class SessionPrograms {
                 report.mapped(MaterialMappings.Kind.ENTITY),
                 String.format(Locale.ROOT, "%.1f", report.nanos() / 1_000_000.0));
         logNotes(report, MaterialReport.Problem.UNKNOWN_NAME, "name things this game doesn't have");
-        logNotes(report, MaterialReport.Problem.UNKNOWN_PROPERTY, "name block properties that don't exist, which are"
-                + " left out");
+        logNotes(report, MaterialReport.Problem.UNKNOWN_PROPERTY, "name block properties that don't exist, which"
+                + " match nothing");
         logNotes(report, MaterialReport.Problem.UNKNOWN_VALUE, "name property values that don't exist, which match"
                 + " nothing");
-        logNotes(report, MaterialReport.Problem.CONFLICT, "match things an earlier line already maps, which keep the"
-                + " earlier ID");
+        logNotes(report, MaterialReport.Problem.CONFLICT, "match things another line maps too: a block state keeps"
+                + " the first line's ID, an item or entity takes the last one's");
         List<MaterialReport.Note> failed = report.notes(MaterialReport.Problem.FAILED);
         if (!failed.isEmpty()) {
             logger.warn("{} material mapping entries couldn't be read and map nothing: {}", failed.size(),

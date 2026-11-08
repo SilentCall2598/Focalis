@@ -15,11 +15,11 @@ final class StreamWriter {
 
     private final QuadFrame frame = new QuadFrame();
 
-    void write(ByteBuffer source, int quads, short[] ids, StreamLayout layout, ByteBuffer target) {
+    void write(ByteBuffer source, int quads, int[] ids, StreamLayout layout, ByteBuffer target) {
         write(source, quads, ids, null, layout, target);
     }
 
-    void write(ByteBuffer source, int quads, short[] ids, @Nullable int[] colors, StreamLayout layout,
+    void write(ByteBuffer source, int quads, int[] ids, @Nullable int[] colors, StreamLayout layout,
             ByteBuffer target) {
         if (layout.hasColors() != (colors != null)) {
             throw new IllegalArgumentException("The " + layout + " layout " + (layout.hasColors() ? "needs" : "has no")
@@ -36,12 +36,12 @@ final class StreamWriter {
                         source.getFloat(at + TEXTURE + 4));
             }
             frame.compute();
-            short id = ids[quad];
+            int word = ids[quad];
             int out = quad * 4 * stride;
             if (bytes) {
-                writeCompact(target, out, stride, layout, id);
+                writeCompact(target, out, stride, layout, word);
             } else {
-                writeFloats(target, out, stride, layout, id);
+                writeFloats(target, out, stride, layout, word);
             }
             if (colors != null) {
                 writeColors(target, out, stride, layout.colorOffset(), colors, quad * 4);
@@ -60,7 +60,7 @@ final class StreamWriter {
         }
     }
 
-    private void writeCompact(ByteBuffer target, int out, int stride, StreamLayout layout, short id) {
+    private void writeCompact(ByteBuffer target, int out, int stride, StreamLayout layout, int word) {
         byte nx = StreamLayout.snorm8(frame.normalX);
         byte ny = StreamLayout.snorm8(frame.normalY);
         byte nz = StreamLayout.snorm8(frame.normalZ);
@@ -79,8 +79,8 @@ final class StreamWriter {
             target.put(at + 1, ny);
             target.put(at + 2, nz);
             target.put(at + 3, (byte) 0);
-            target.putShort(at + entity, id);
-            target.putShort(at + entity + 2, (short) 0);
+            target.putShort(at + entity, (short) word);
+            target.putShort(at + entity + 2, (short) (word >> 16));
             target.putFloat(at + mid, midU);
             target.putFloat(at + mid + 4, midV);
             target.put(at + tangent, tx);
@@ -90,7 +90,7 @@ final class StreamWriter {
         }
     }
 
-    private void writeFloats(ByteBuffer target, int out, int stride, StreamLayout layout, short id) {
+    private void writeFloats(ByteBuffer target, int out, int stride, StreamLayout layout, int word) {
         float nx = (float) frame.normalX;
         float ny = (float) frame.normalY;
         float nz = (float) frame.normalZ;
@@ -108,8 +108,8 @@ final class StreamWriter {
             target.putFloat(at, nx);
             target.putFloat(at + 4, ny);
             target.putFloat(at + 8, nz);
-            target.putShort(at + entity, id);
-            target.putShort(at + entity + 2, (short) 0);
+            target.putShort(at + entity, (short) word);
+            target.putShort(at + entity + 2, (short) (word >> 16));
             target.putFloat(at + mid, midU);
             target.putFloat(at + mid + 4, midV);
             target.putFloat(at + tangent, tx);

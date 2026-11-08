@@ -26,8 +26,8 @@ import java.util.Map;
 
 /**
  * Block states match by every listed property, so the state the renderer works out from the world can have another ID
- * than the stored state it came from, like grass under snow. Nothing here goes through numeric IDs or metadata.
- * Immutable, so any thread can read it once it's published.
+ * than the stored state it came from, like grass under snow. Like OptiFine's mapping, whose IDs substitute the game's
+ * own, anything unmapped gets its numeric registry ID. Immutable, so any thread can read it once it's published.
  */
 public final class MaterialIds {
 
@@ -133,7 +133,17 @@ public final class MaterialIds {
         if (id == null && state instanceof IExtendedBlockState) {
             id = extendedCopy((IExtendedBlockState) state);
         }
-        return id == null ? UNMAPPED : id;
+        return id == null ? numericId(state.getBlock()) : id;
+    }
+
+    // Forge rewrites numeric IDs when a world is joined or closed (GameData.injectSnapshot, revertToFrozen), so they're
+    // read on each lookup and never kept. A chunk build of a closing world can read the map while it's rewritten.
+    private static int numericId(Block block) {
+        try {
+            return Block.getIdFromBlock(block);
+        } catch (RuntimeException e) {
+            return UNMAPPED;
+        }
     }
 
     // A Forge copy keeps the properties map of the listed state it stands for. Its getClean is that state until a listed
@@ -150,7 +160,14 @@ public final class MaterialIds {
 
     public int item(Item item) {
         Integer id = items.get(item);
-        return id == null ? UNMAPPED : id;
+        if (id != null) {
+            return id;
+        }
+        try {
+            return Item.getIdFromItem(item);
+        } catch (RuntimeException e) {
+            return UNMAPPED;
+        }
     }
 
     public int entity(Entity entity) {
@@ -158,13 +175,19 @@ public final class MaterialIds {
         if (id != null) {
             return id;
         }
-        if ((player == UNMAPPED && lightningBolt == UNMAPPED) || EntityList.getKey(entity) != null) {
+        if ((player != UNMAPPED || lightningBolt != UNMAPPED) && EntityList.getKey(entity) == null) {
+            if (entity instanceof EntityPlayer && player != UNMAPPED) {
+                return player;
+            }
+            if (entity instanceof EntityLightningBolt && lightningBolt != UNMAPPED) {
+                return lightningBolt;
+            }
+        }
+        try {
+            return EntityList.getID(entity.getClass());
+        } catch (RuntimeException e) {
             return UNMAPPED;
         }
-        if (entity instanceof EntityPlayer) {
-            return player;
-        }
-        return entity instanceof EntityLightningBolt ? lightningBolt : UNMAPPED;
     }
 
     private static final class RegistryBlock implements MaterialMatcher.Block<IBlockState> {
@@ -190,6 +213,11 @@ public final class MaterialIds {
         @Override
         public String value(IBlockState state, String property) {
             return name(state, container.getProperty(property));
+        }
+
+        @Override
+        public int metadata(IBlockState state) {
+            return state.getBlock().getMetaFromState(state);
         }
 
         private static <T extends Comparable<T>> List<String> names(IProperty<T> property) {

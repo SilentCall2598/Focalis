@@ -106,7 +106,7 @@ public final class PackConfiguration {
         ProgramStates programStates = ProgramStates.read(PROPERTIES, conditions, resolution.issues);
         PackTextures textures = PackTextures.read(PROPERTIES, conditions, pack, resolution.issues);
         List<PackIssue> materialIssues = new ArrayList<>();
-        MaterialMappings materialMappings = MaterialMappings.read(pack, optionMacros, materialIssues);
+        MaterialMappings materialMappings = MaterialMappings.read(pack, environment.asMap(), materialIssues);
 
         List<PackIssue> issues = new ArrayList<>(resolution.issues);
         issues.addAll(lightingIssues);

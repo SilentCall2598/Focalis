@@ -54,6 +54,9 @@ public final class TerrainStreams {
     private static StreamBuffers buffers = new StreamBuffers(LwjglAttributeGl.INSTANCE);
 
     private static final AtomicReference<Throwable> failure = new AtomicReference<>();
+    private static ObjectBlockDraws objects = new ObjectBlockDraws(LwjglAttributeGl.INSTANCE);
+    @Nullable
+    private static volatile Throwable objectsFailed;
     private static final Set<String> noted = ConcurrentHashMap.newKeySet();
     private static final Queue<String> notes = new ConcurrentLinkedQueue<>();
 
@@ -171,7 +174,7 @@ public final class TerrainStreams {
                 + quadsMismatched.sum() + " mismatched), build ms " + String.format(Locale.ROOT, "%.1f",
                 buildNanos.sum() / 1_000_000.0) + ", uploads " + uploads + " with " + uploadedBytes + " bytes in "
                 + String.format(Locale.ROOT, "%.1f", uploadNanos / 1_000_000.0) + " ms, refused " + uploadsRefused
-                + ", live stream buffers " + buffers.live();
+                + ", live stream buffers " + buffers.live() + ", " + objects.statistics();
     }
 
     public static int liveBuffers() {
@@ -340,6 +343,84 @@ public final class TerrainStreams {
             failed(e);
         } finally {
             LightingCapture.bind(null);
+        }
+    }
+
+    public static void objectBegun(BufferBuilder buffer, int mode, @Nullable VertexFormat format) {
+        if (objectsFailed != null) {
+            return;
+        }
+        try {
+            TerrainStreamPlan current = usablePlan();
+            boolean capture = current != null && current.colors() && LightingCapture.enabled()
+                    && companion(buffer) == null && isBlockFormat(format)
+                    && Minecraft.getMinecraft().isCallingFromMinecraftThread();
+            if (capture) {
+                objects.begun(buffer, mode, current.lighting());
+            } else {
+                LightingCapture.releaseObject(buffer);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            objectsFailed(e);
+        }
+    }
+
+    // The captured colors are kept per vertex, and a sort moves the quads (Forge's batch of fast block entity renderers
+    // sorts its translucent pass).
+    public static void objectSorted(BufferBuilder buffer) {
+        try {
+            LightingCapture.releaseObject(buffer);
+        } catch (RuntimeException | LinkageError e) {
+            objectsFailed(e);
+        }
+    }
+
+    public static boolean objectDrawing(BufferBuilder buffer) {
+        if (objectsFailed != null) {
+            return false;
+        }
+        try {
+            TerrainDraws current = draws;
+            return objects.drawing(buffer, current != null && isBlockFormat(buffer.getVertexFormat())
+                    ? current.objectPrograms() : null);
+        } catch (RuntimeException | LinkageError e) {
+            objectsFailed(e);
+            return false;
+        }
+    }
+
+    public static void objectDrawn() {
+        try {
+            objects.restore();
+        } catch (RuntimeException | LinkageError e) {
+            objectsFailed(e);
+        }
+    }
+
+    static void objectCaptureFailed(Throwable e) {
+        objectsFailed(e);
+    }
+
+    @Nullable
+    static Throwable objectsFailure() {
+        return objectsFailed;
+    }
+
+    private static void objectsFailed(Throwable e) {
+        if (objectsFailed == null) {
+            objectsFailed = e;
+        }
+        note("Block models drawn by entity and block entity renderers lost Focalis's normals and lighting colors after"
+                + " a Focalis error, and draw with vanilla's inputs from now on: " + e);
+        try {
+            LightingCapture.dropObject();
+            if (Minecraft.getMinecraft().isCallingFromMinecraftThread()) {
+                objects.abandon();
+            }
+        } catch (RuntimeException | LinkageError suppressed) {
+            if (suppressed != e) {
+                e.addSuppressed(suppressed);
+            }
         }
     }
 
