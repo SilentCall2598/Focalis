@@ -29,7 +29,7 @@ public final class CustomUniforms {
             "gbufferPreviousModelView", "gbufferProjection", "gbufferProjectionInverse", "gbufferPreviousProjection",
             "shadowProjection", "shadowProjectionInverse", "shadowModelView", "shadowModelViewInverse", "wetness",
             "eyeBrightnessSmooth", "terrainTextureSize", "terrainIconSize", "hideGUI", "centerDepthSmooth",
-            "atlasSize", "playerMood", "biome", "biome_category",
+            "atlasSize", "playerMood", "biome", "biome_category", "blendFunc", "instanceId",
             "temperature", "rainfall", "is_alive", "is_burning", "is_child", "is_glowing",
             "is_hurt", "is_in_lava", "is_in_water", "is_invisible", "is_on_ground", "is_ridden", "is_riding",
             "is_sneaking", "is_sprinting", "is_wet"));
@@ -42,15 +42,41 @@ public final class CustomUniforms {
     private static final Set<String> UNIMPLEMENTED_FUNCTIONS = new HashSet<>(Arrays.asList("sin", "cos", "asin",
             "acos", "tan", "atan", "atan2", "torad", "todeg", "exp", "frac", "log", "pow", "random", "round", "signum",
             "fmod", "equals", "vec2", "vec3", "vec4"));
-    private static final Set<String> UNIMPLEMENTED_INPUTS = new HashSet<>(Arrays.asList("heldItemId",
-            "heldBlockLightValue", "heldItemId2", "heldBlockLightValue2", "fogDensity", "wetness", "terrainIconSize",
-            "hideGUI", "centerDepthSmooth", "instanceId", "sunPosition", "moonPosition", "shadowLightPosition",
-            "upPosition", "eyeBrightnessSmooth", "terrainTextureSize", "atlasSize", "gbufferModelView",
-            "gbufferModelViewInverse", "gbufferPreviousModelView", "gbufferProjection", "gbufferProjectionInverse",
-            "gbufferPreviousProjection", "shadowProjection", "shadowProjectionInverse", "shadowModelView",
-            "shadowModelViewInverse", "biome", "temperature", "rainfall", "is_alive", "is_burning", "is_child",
-            "is_glowing", "is_hurt", "is_in_lava", "is_in_water", "is_invisible", "is_on_ground", "is_ridden",
-            "is_riding", "is_sneaking", "is_sprinting", "is_wet"));
+    private static final Map<String, Pattern> UNIMPLEMENTED_INPUTS = new HashMap<>();
+    private static final Pattern SCALAR = Pattern.compile("");
+    private static final Pattern VEC3 = Pattern.compile("|[xyz]");
+    private static final Pattern IVEC2 = Pattern.compile("|[xy]");
+    private static final Pattern IVEC4 = Pattern.compile("|[xyzw]");
+    private static final Pattern MAT4 = Pattern.compile("|[0-3]\\.[0-3]");
+
+    static {
+        for (String name : Arrays.asList("heldItemId", "heldBlockLightValue", "heldItemId2", "heldBlockLightValue2",
+                "fogDensity", "wetness", "terrainIconSize", "hideGUI", "centerDepthSmooth", "instanceId", "biome",
+                "biome_category", "temperature", "rainfall", "is_alive", "is_burning", "is_child", "is_glowing",
+                "is_hurt", "is_in_lava", "is_in_water", "is_invisible", "is_on_ground", "is_ridden", "is_riding",
+                "is_sneaking", "is_sprinting", "is_wet")) {
+            UNIMPLEMENTED_INPUTS.put(name, SCALAR);
+        }
+        for (String name : Arrays.asList("sunPosition", "moonPosition", "shadowLightPosition", "upPosition")) {
+            UNIMPLEMENTED_INPUTS.put(name, VEC3);
+        }
+        for (String name : Arrays.asList("eyeBrightnessSmooth", "terrainTextureSize", "atlasSize")) {
+            UNIMPLEMENTED_INPUTS.put(name, IVEC2);
+        }
+        UNIMPLEMENTED_INPUTS.put("blendFunc", IVEC4);
+        for (String name : Arrays.asList("gbufferModelView", "gbufferModelViewInverse", "gbufferPreviousModelView",
+                "gbufferProjection", "gbufferProjectionInverse", "gbufferPreviousProjection", "shadowProjection",
+                "shadowProjectionInverse", "shadowModelView", "shadowModelViewInverse")) {
+            UNIMPLEMENTED_INPUTS.put(name, MAT4);
+        }
+    }
+
+    // The G5 docs mention biome category constants but neither biome_category nor their names, which come from the
+    // current docs. A program reading a uniform that uses them is refused rather than given 0, since whether G5 1.12.2
+    // provides them is unknown.
+    private static final Set<String> CATEGORIES = new HashSet<>(Arrays.asList("NONE", "TAIGA", "EXTREME_HILLS",
+            "JUNGLE", "MESA", "PLAINS", "SAVANNA", "ICY", "THE_END", "BEACH", "FOREST", "OCEAN", "DESERT", "RIVER",
+            "SWAMP", "MUSHROOM", "NETHER"));
     // BIOME_ constants of the vanilla 1.12.2 biome registry. Modded biomes' constants can't be told from typos here.
     private static final Set<String> BIOMES = new HashSet<>(Arrays.asList("OCEAN", "PLAINS", "DESERT",
             "EXTREME_HILLS", "FOREST", "TAIGA", "SWAMPLAND", "RIVER", "HELL", "SKY", "FROZEN_OCEAN", "FROZEN_RIVER",
@@ -316,10 +342,14 @@ public final class CustomUniforms {
             } else if (name.equals("pi") || name.equals("true") || name.equals("false") || name.equals("PPT_NONE")
                     || name.equals("PPT_RAIN") || name.equals("PPT_SNOW") || CustomInput.find(name) != null) {
                 continue;
-            } else if (UNIMPLEMENTED_INPUTS.contains(base) && !CustomInput.isBaseName(base)) {
+            } else if (UNIMPLEMENTED_INPUTS.containsKey(base) && !CustomInput.isBaseName(base)
+                    && UNIMPLEMENTED_INPUTS.get(base).matcher(name.substring(Math.min(name.length(),
+                    base.length() + 1))).matches()) {
                 missing = missing != null ? missing : "the input " + base;
             } else if (name.startsWith("BIOME_") && BIOMES.contains(name.substring("BIOME_".length()))) {
                 missing = missing != null ? missing : "the biome constants";
+            } else if (name.startsWith("CAT_") && CATEGORIES.contains(name.substring("CAT_".length()))) {
+                missing = missing != null ? missing : "the biome category constants";
             } else {
                 outside = true;
             }
