@@ -262,7 +262,7 @@ public final class SessionPrograms {
         if (selected != lastSelected || dimension != lastDimension) {
             selectionChanged(configuration.pack(), dimension, selected, selected == justBuilt);
         }
-        updateTerrainStreams(selected.programs(), dimension, configuration.lighting());
+        updateTerrainStreams(selected.programs(), dimension, configuration.lighting(selected.directory()));
     }
 
     private void updateTerrainStreams(BuiltWorldPrograms programs, int dimension, LegacyLighting lighting) {

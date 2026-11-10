@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 package io.github.silentcall2598.focalis.shader.pack;
 
+import java.util.Arrays;
+
 final class CommentScanner {
 
     private boolean inBlockComment;
@@ -9,11 +11,13 @@ final class CommentScanner {
     static final class ScannedLine {
 
         private final String code;
+        private final String blockComments;
         private final boolean startedInComment;
         private final int openCommentStart;
 
-        private ScannedLine(String code, boolean startedInComment, int openCommentStart) {
+        private ScannedLine(String code, String blockComments, boolean startedInComment, int openCommentStart) {
             this.code = code;
+            this.blockComments = blockComments;
             this.startedInComment = startedInComment;
             this.openCommentStart = openCommentStart;
         }
@@ -21,6 +25,11 @@ final class CommentScanner {
         /** The line with every comment character replaced by a space, so positions still match the original. */
         String code() {
             return code;
+        }
+
+        /** The text inside block comments, everything else (delimiters and line comments too) replaced by spaces. */
+        String blockComments() {
+            return blockComments;
         }
 
         boolean startedInComment() {
@@ -35,6 +44,8 @@ final class CommentScanner {
     ScannedLine scan(String line) {
         boolean startedInComment = inBlockComment;
         char[] code = line.toCharArray();
+        char[] block = new char[code.length];
+        Arrays.fill(block, ' ');
         int openCommentStart = -1;
         boolean inQuotes = false;
         int i = 0;
@@ -47,6 +58,7 @@ final class CommentScanner {
                     inBlockComment = false;
                     openCommentStart = -1;
                 } else {
+                    block[i] = code[i];
                     code[i++] = ' ';
                 }
             } else if (inQuotes) {
@@ -67,6 +79,6 @@ final class CommentScanner {
                 inQuotes = line.charAt(i++) == '"';
             }
         }
-        return new ScannedLine(new String(code), startedInComment, openCommentStart);
+        return new ScannedLine(new String(code), new String(block), startedInComment, openCommentStart);
     }
 }

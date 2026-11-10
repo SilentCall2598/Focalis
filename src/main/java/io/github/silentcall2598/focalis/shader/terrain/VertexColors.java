@@ -19,6 +19,7 @@ final class VertexColors {
     private int build;
     private boolean faceShading;
     private boolean separateAo;
+    private float aoLevel = 1.0F;
     private boolean resolved;
     private int quads;
     private int capturedQuads;
@@ -45,10 +46,11 @@ final class VertexColors {
     private int fluidMultiplier = -1;
     private boolean fluidTinted;
 
-    void begin(boolean keepFaceShading, boolean aoInAlpha) {
+    void begin(boolean keepFaceShading, boolean aoInAlpha, float ambientOcclusionLevel) {
         build = build == Integer.MAX_VALUE ? 1 : build + 1;
         faceShading = keepFaceShading;
         separateAo = aoInAlpha;
+        aoLevel = ambientOcclusionLevel;
         resolved = false;
         quads = 0;
         capturedQuads = 0;
@@ -101,9 +103,14 @@ final class VertexColors {
         if (color[3] != forgeBase[3]) {
             return;
         }
-        capture(vertex, PackColors.forgePack(forgeBase, forgeTinted, forgeMultiplier, forgeAo, forgeDiffuse,
+        capture(vertex, PackColors.forgePack(forgeBase, forgeTinted, forgeMultiplier, leveled(forgeAo), forgeDiffuse,
                 forgeSmooth, faceShading, separateAo), PackColors.forgeVanilla(forgeBase, forgeTinted, forgeMultiplier,
                 forgeAo, forgeDiffuse));
+    }
+
+    // Level 1 keeps the renderer's own AO value: 1 - 1 * (1 - ao) can differ from ao in its last float bit.
+    private float leveled(float ao) {
+        return aoLevel == 1.0F ? ao : 1.0F - aoLevel * (1.0F - ao);
     }
 
     void modelQuad(int first, int[] data, boolean smooth) {
@@ -152,8 +159,8 @@ final class VertexColors {
             forget(vertex);
             return;
         }
-        capture(vertex, PackColors.modelPack(base, modelSmooth, modelTinted, modelMultiplier, ao, modelDiffused,
-                modelDiffuse, faceShading, separateAo), PackColors.modelVanilla(base, red, green, blue));
+        capture(vertex, PackColors.modelPack(base, modelSmooth, modelTinted, modelMultiplier, leveled(ao),
+                modelDiffused, modelDiffuse, faceShading, separateAo), PackColors.modelVanilla(base, red, green, blue));
     }
 
     void fluidTint(int multiplier) {

@@ -61,7 +61,7 @@ public final class StreamCompanion {
             if (colors == null) {
                 colors = new VertexColors();
             }
-            colors.begin(lighting.faceShading(), lighting.separateAo());
+            colors.begin(lighting.faceShading(), lighting.separateAo(), lighting.ambientOcclusionLevel());
             LightingCapture.bind(colors);
         } else {
             colors = null;

@@ -10,7 +10,7 @@ import java.util.Objects;
 
 public final class LegacyLighting {
 
-    public static final LegacyLighting UNSET = new LegacyLighting(null, null);
+    public static final LegacyLighting UNSET = new LegacyLighting(null, null, 1.0F);
 
     static final String OLD_LIGHTING = "oldLighting";
     static final String SEPARATE_AO = "separateAo";
@@ -19,14 +19,26 @@ public final class LegacyLighting {
     private final Boolean oldLighting;
     @Nullable
     private final Boolean separateAo;
+    private final float ambientOcclusionLevel;
 
-    private LegacyLighting(@Nullable Boolean oldLighting, @Nullable Boolean separateAo) {
+    private LegacyLighting(@Nullable Boolean oldLighting, @Nullable Boolean separateAo, float ambientOcclusionLevel) {
         this.oldLighting = oldLighting;
         this.separateAo = separateAo;
+        this.ambientOcclusionLevel = ambientOcclusionLevel;
     }
 
     public static LegacyLighting of(@Nullable Boolean oldLighting, @Nullable Boolean separateAo) {
-        return oldLighting == null && separateAo == null ? UNSET : new LegacyLighting(oldLighting, separateAo);
+        return oldLighting == null && separateAo == null ? UNSET : new LegacyLighting(oldLighting, separateAo, 1.0F);
+    }
+
+    public LegacyLighting withAmbientOcclusionLevel(float level) {
+        if (!(level >= 0.0F && level <= 1.0F)) {
+            throw new IllegalArgumentException("ambientOcclusionLevel " + level + " is outside 0.0 to 1.0");
+        }
+        if (level == ambientOcclusionLevel) {
+            return this;
+        }
+        return new LegacyLighting(oldLighting, separateAo, level);
     }
 
     static LegacyLighting read(ShaderPath file, String text, Map<String, String> environment, List<PackIssue> issues) {
@@ -79,8 +91,12 @@ public final class LegacyLighting {
         return Boolean.TRUE.equals(separateAo);
     }
 
+    public float ambientOcclusionLevel() {
+        return ambientOcclusionLevel;
+    }
+
     public boolean changesTerrainColors() {
-        return !faceShading() || separateAo();
+        return !faceShading() || separateAo() || ambientOcclusionLevel != 1.0F;
     }
 
     @Override
@@ -89,17 +105,19 @@ public final class LegacyLighting {
             return false;
         }
         LegacyLighting lighting = (LegacyLighting) other;
-        return Objects.equals(oldLighting, lighting.oldLighting) && Objects.equals(separateAo, lighting.separateAo);
+        return Objects.equals(oldLighting, lighting.oldLighting) && Objects.equals(separateAo, lighting.separateAo)
+                && Float.compare(ambientOcclusionLevel, lighting.ambientOcclusionLevel) == 0;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(oldLighting, separateAo);
+        return Objects.hash(oldLighting, separateAo, ambientOcclusionLevel);
     }
 
     @Override
     public String toString() {
         return "oldLighting " + (oldLighting == null ? "unset" : oldLighting) + ", separateAo "
-                + (separateAo == null ? "unset" : separateAo);
+                + (separateAo == null ? "unset" : separateAo)
+                + (ambientOcclusionLevel == 1.0F ? "" : ", ambientOcclusionLevel " + ambientOcclusionLevel);
     }
 }

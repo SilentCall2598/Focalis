@@ -56,7 +56,7 @@ public final class LiveWorldPrograms {
         this.binding = new WorldProgramBinding(scopes, state, frame, camera, environment, fog);
         this.customValues = new CustomUniformValues(configuration.customUniforms());
         binding.customValues(customValues);
-        binding.terrainColors(configuration.lighting().changesTerrainColors());
+        binding.terrainColors(configuration.lighting(pack.root()).changesTerrainColors());
     }
 
     public static LiveWorldPrograms create(PackConfiguration configuration, ShaderCapabilities capabilities,
@@ -126,7 +126,7 @@ public final class LiveWorldPrograms {
         configuration = next;
         customValues = new CustomUniformValues(next.customUniforms());
         binding.customValues(customValues);
-        binding.terrainColors(next.lighting().changesTerrainColors());
+        binding.terrainColors(next.lighting(pack.root()).changesTerrainColors());
         rethrow(deleteFolders(null));
         return true;
     }
@@ -138,6 +138,7 @@ public final class LiveWorldPrograms {
         if (programs == null || dimension != selectedDimension) {
             programs = programsFor(pack.programDirectoryFor(dimension));
         }
+        binding.terrainColors(configuration.lighting(programs.directory()).changesTerrainColors());
         binding.select(programs.programs());
         selected = programs;
         selectedDimension = dimension;

@@ -34,14 +34,16 @@ public final class PackConfiguration {
     private final PackTextures textures;
     private final MaterialMappings materialMappings;
     private final LegacyLighting lighting;
+    private final Map<String, ShaderConstants> constants;
+    private final Map<String, LegacyLighting> lightingByFolder;
     private final ShaderMacros standardMacros;
     private final List<PackIssue> issues;
 
     private PackConfiguration(ShaderPack pack, @Nullable String profile, Map<String, String> values,
             Map<String, String> changed, Map<String, String> disabled, Map<ShaderPath, String> texts,
             CustomUniforms customUniforms, ProgramStates programStates, PackTextures textures,
-            MaterialMappings materialMappings, LegacyLighting lighting, ShaderMacros standardMacros,
-            List<PackIssue> issues) {
+            MaterialMappings materialMappings, LegacyLighting lighting, Map<String, ShaderConstants> constants,
+            ShaderMacros standardMacros, List<PackIssue> issues) {
         this.pack = pack;
         this.profile = profile;
         this.values = values;
@@ -53,6 +55,12 @@ public final class PackConfiguration {
         this.textures = textures;
         this.materialMappings = materialMappings;
         this.lighting = lighting;
+        this.constants = constants;
+        Map<String, LegacyLighting> folders = new LinkedHashMap<>();
+        for (Map.Entry<String, ShaderConstants> folder : constants.entrySet()) {
+            folders.put(folder.getKey(), lighting.withAmbientOcclusionLevel(folder.getValue().ambientOcclusionLevel()));
+        }
+        this.lightingByFolder = Collections.unmodifiableMap(folders);
         this.standardMacros = standardMacros;
         this.issues = issues;
     }
@@ -110,14 +118,22 @@ public final class PackConfiguration {
                 changed.put(option.name(), value);
             }
         }
+        Map<ShaderPath, String> texts = Collections.unmodifiableMap(rewrite(pack, changed));
+        List<PackIssue> constantIssues = new ArrayList<>();
+        Map<String, ShaderConstants> constants = ShaderConstants.readAll(pack, path -> {
+            String text = texts.get(path);
+            return text != null ? text : pack.text(path);
+        }, standard.asMap(), program -> !resolution.disabled.containsKey(label(program)), constantIssues);
+
         List<PackIssue> issues = new ArrayList<>(resolution.issues);
         issues.addAll(lightingIssues);
         issues.addAll(propertyIssues);
         issues.addAll(materialIssues);
+        issues.addAll(constantIssues);
         return new PackConfiguration(pack, profile, Collections.unmodifiableMap(resolution.values),
-                Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled),
-                Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms, programStates, textures,
-                materialMappings, lighting, standard, Collections.unmodifiableList(issues));
+                Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled), texts,
+                customUniforms, programStates, textures, materialMappings, lighting, constants, standard,
+                Collections.unmodifiableList(issues));
     }
 
     private static Map<ShaderPath, String> rewrite(ShaderPack pack, Map<String, String> changed) {
@@ -177,8 +193,30 @@ public final class PackConfiguration {
         return materialMappings;
     }
 
+    /**
+     * The shaders.properties settings only. The lighting a folder's terrain uses, with its ambientOcclusionLevel, is
+     * {@link #lighting(ProgramDirectory)}.
+     */
     public LegacyLighting lighting() {
         return lighting;
+    }
+
+    public LegacyLighting lighting(ProgramDirectory directory) {
+        constants(directory);
+        return lightingByFolder.get(directory.name());
+    }
+
+    public ShaderConstants constants(ProgramDirectory directory) {
+        ShaderConstants folder = constants.get(directory.name());
+        if (folder == null) {
+            throw new IllegalArgumentException("Shaderpack '" + pack.name() + "' has no program folder '"
+                    + directory.name() + "'");
+        }
+        return folder;
+    }
+
+    public Map<String, ShaderConstants> constantsByFolder() {
+        return constants;
     }
 
     public ShaderMacros standardMacros() {

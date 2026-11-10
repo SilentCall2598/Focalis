@@ -39,7 +39,7 @@ final class ObjectBlockDraws {
             LightingCapture.releaseObject(buffer);
             return;
         }
-        colors.begin(lighting.faceShading(), lighting.separateAo());
+        colors.begin(lighting.faceShading(), lighting.separateAo(), lighting.ambientOcclusionLevel());
         LightingCapture.captureObject(buffer, colors);
     }
 
