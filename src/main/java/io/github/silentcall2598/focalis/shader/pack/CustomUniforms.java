@@ -36,6 +36,44 @@ public final class CustomUniforms {
     private static final Set<String> PER_DRAW = new HashSet<>(Arrays.asList("entityColor", "entityId",
             "blockEntityId", "fogMode", "fogColor", "fogStart", "fogEnd", "fogDensity"));
 
+    // What the G5 docs give expressions and Focalis doesn't implement yet, as opposed to what they don't give at all.
+    private static final Set<String> FUNCTIONS = new HashSet<>(Arrays.asList("abs", "min", "max", "sqrt", "if", "ifb",
+            "in", "between", "smooth", "clamp", "floor", "ceil"));
+    private static final Set<String> UNIMPLEMENTED_FUNCTIONS = new HashSet<>(Arrays.asList("sin", "cos", "asin",
+            "acos", "tan", "atan", "atan2", "torad", "todeg", "exp", "frac", "log", "pow", "random", "round", "signum",
+            "fmod", "equals", "vec2", "vec3", "vec4"));
+    private static final Set<String> UNIMPLEMENTED_INPUTS = new HashSet<>(Arrays.asList("heldItemId",
+            "heldBlockLightValue", "heldItemId2", "heldBlockLightValue2", "fogDensity", "wetness", "terrainIconSize",
+            "hideGUI", "centerDepthSmooth", "instanceId", "sunPosition", "moonPosition", "shadowLightPosition",
+            "upPosition", "eyeBrightnessSmooth", "terrainTextureSize", "atlasSize", "gbufferModelView",
+            "gbufferModelViewInverse", "gbufferPreviousModelView", "gbufferProjection", "gbufferProjectionInverse",
+            "gbufferPreviousProjection", "shadowProjection", "shadowProjectionInverse", "shadowModelView",
+            "shadowModelViewInverse", "biome", "temperature", "rainfall", "is_alive", "is_burning", "is_child",
+            "is_glowing", "is_hurt", "is_in_lava", "is_in_water", "is_invisible", "is_on_ground", "is_ridden",
+            "is_riding", "is_sneaking", "is_sprinting", "is_wet"));
+    // BIOME_ constants of the vanilla 1.12.2 biome registry. Modded biomes' constants can't be told from typos here.
+    private static final Set<String> BIOMES = new HashSet<>(Arrays.asList("OCEAN", "PLAINS", "DESERT",
+            "EXTREME_HILLS", "FOREST", "TAIGA", "SWAMPLAND", "RIVER", "HELL", "SKY", "FROZEN_OCEAN", "FROZEN_RIVER",
+            "ICE_FLATS", "ICE_MOUNTAINS", "MUSHROOM_ISLAND", "MUSHROOM_ISLAND_SHORE", "BEACHES", "DESERT_HILLS",
+            "FOREST_HILLS", "TAIGA_HILLS", "SMALLER_EXTREME_HILLS", "JUNGLE", "JUNGLE_HILLS", "JUNGLE_EDGE",
+            "DEEP_OCEAN", "STONE_BEACH", "COLD_BEACH", "BIRCH_FOREST", "BIRCH_FOREST_HILLS", "ROOFED_FOREST",
+            "TAIGA_COLD", "TAIGA_COLD_HILLS", "REDWOOD_TAIGA", "REDWOOD_TAIGA_HILLS", "EXTREME_HILLS_WITH_TREES",
+            "SAVANNA", "SAVANNA_ROCK", "MESA", "MESA_ROCK", "MESA_CLEAR_ROCK", "VOID", "MUTATED_PLAINS",
+            "MUTATED_DESERT", "MUTATED_EXTREME_HILLS", "MUTATED_FOREST", "MUTATED_TAIGA", "MUTATED_SWAMPLAND",
+            "MUTATED_ICE_FLATS", "MUTATED_JUNGLE", "MUTATED_JUNGLE_EDGE", "MUTATED_BIRCH_FOREST",
+            "MUTATED_BIRCH_FOREST_HILLS", "MUTATED_ROOFED_FOREST", "MUTATED_TAIGA_COLD", "MUTATED_REDWOOD_TAIGA",
+            "MUTATED_REDWOOD_TAIGA_HILLS", "MUTATED_EXTREME_HILLS_WITH_TREES", "MUTATED_SAVANNA",
+            "MUTATED_SAVANNA_ROCK", "MUTATED_MESA", "MUTATED_MESA_ROCK", "MUTATED_MESA_CLEAR_ROCK"));
+    private static final Pattern TOKEN =
+            Pattern.compile("(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*)\\s*(\\()?");
+    private static final Pattern SYNTAX_TOKEN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*"
+            + "|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?[fF]?|&&|\\|\\||==|!=|<=|>=|[-+*/%!<>(),]");
+    private static final Set<String> BINARY = new HashSet<>(Arrays.asList("+", "-", "*", "/", "%", "&&", "||",
+            "==", "!=", "<", ">", "<=", ">="));
+    private static final int USABLE = 0;
+    private static final int UNIMPLEMENTED = 1;
+    private static final int OUTSIDE = 2;
+
     public static final class Declaration {
 
         private final int index;
@@ -48,6 +86,9 @@ public final class CustomUniforms {
         private CustomExpression expression;
         @Nullable
         private String problem;
+        @Nullable
+        private String missingFeature;
+        private boolean outside;
         private final Set<Integer> dependencies = new HashSet<>();
 
         private Declaration(int index, String name, boolean uniform, String type, String expressionText,
@@ -97,6 +138,15 @@ public final class CustomUniforms {
             return problem;
         }
 
+        /**
+         * The G5-documented feature this unusable declaration needs and Focalis lacks, or null when it's usable or
+         * would fail under G5 too (a name G5 doesn't have, a syntax or type error, a cycle).
+         */
+        @Nullable
+        public String missingFeature() {
+            return missingFeature;
+        }
+
         private String describe() {
             return (uniform ? "Custom uniform " : "Custom variable ") + name;
         }
@@ -104,6 +154,7 @@ public final class CustomUniforms {
 
     private final List<Declaration> declarations;
     private final Map<String, Declaration> uniforms;
+    private final Map<String, Declaration> unimplemented;
     private final int[] order;
     private final int smoothSites;
 
@@ -112,12 +163,16 @@ public final class CustomUniforms {
         this.order = order;
         this.smoothSites = smoothSites;
         Map<String, Declaration> usableUniforms = new LinkedHashMap<>();
+        Map<String, Declaration> missing = new LinkedHashMap<>();
         for (Declaration declaration : declarations) {
             if (declaration.uniform && declaration.usable()) {
                 usableUniforms.put(declaration.name, declaration);
+            } else if (declaration.uniform && declaration.missingFeature != null) {
+                missing.put(declaration.name, declaration);
             }
         }
         this.uniforms = Collections.unmodifiableMap(usableUniforms);
+        this.unimplemented = Collections.unmodifiableMap(missing);
     }
 
     static CustomUniforms compile(ShaderPath file, Map<String, ShaderProperties.Property> properties,
@@ -145,9 +200,16 @@ public final class CustomUniforms {
         for (Declaration declaration : declarations) {
             if (declaration.problem == null) {
                 compileExpression(declaration, byName, nextSite);
+            } else if (declaration.missingFeature != null) {
+                refuseBoolForInt(declaration, byName);
             }
         }
         int[] order = orderAndPropagate(declarations);
+        int[] kinds = new int[declarations.size()];
+        Arrays.fill(kinds, -1);
+        for (Declaration declaration : declarations) {
+            classify(declaration, declarations, byName, kinds, new HashSet<Integer>());
+        }
         for (Declaration declaration : declarations) {
             if (declaration.problem != null) {
                 issues.add(new PackIssue(declaration.location, declaration.describe() + " can't be used, "
@@ -159,13 +221,24 @@ public final class CustomUniforms {
 
     @Nullable
     private static String declarationProblem(Declaration declaration, Map<String, List<Declaration>> byName) {
+        String problem = outsideProblem(declaration, byName);
+        if (problem != null) {
+            declaration.outside = true;
+            return problem;
+        }
+        if (LATER_TYPES.contains(declaration.type)) {
+            declaration.missingFeature = "the custom uniform type " + declaration.type;
+            return "the type " + declaration.type + " isn't supported yet";
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String outsideProblem(Declaration declaration, Map<String, List<Declaration>> byName) {
         if (!NAME.matcher(declaration.name).matches()) {
             return "'" + declaration.name + "' isn't a valid name";
         }
-        if (LATER_TYPES.contains(declaration.type)) {
-            return "the type " + declaration.type + " isn't supported yet";
-        }
-        if (!SUPPORTED_TYPES.contains(declaration.type)) {
+        if (!SUPPORTED_TYPES.contains(declaration.type) && !LATER_TYPES.contains(declaration.type)) {
             return "there is no type " + declaration.type;
         }
         List<Declaration> same = byName.get(declaration.name);
@@ -180,6 +253,84 @@ public final class CustomUniforms {
             return declaration.name + " is the name of a built-in value";
         }
         return null;
+    }
+
+    // G5 refuses a bool expression in an int declaration and leaves the uniform at 0 (observed 2026-11-10).
+    private static void refuseBoolForInt(Declaration declaration, Map<String, List<Declaration>> byName) {
+        if (!declaration.type.equals("int")) {
+            return;
+        }
+        try {
+            CustomExpression trial = CustomExpressionParser.parse(declaration.expressionText,
+                    name -> resolve(name, declaration, byName), new int[1]);
+            if (trial.type == CustomExpression.Type.BOOL) {
+                declaration.outside = true;
+                declaration.problem = "it's declared int but its expression is a bool";
+            }
+        } catch (CustomExpressionParser.ParseException e) {
+            // Its other problems decide below.
+        }
+    }
+
+    // A declaration only needs a missing feature when nothing in it would fail under G5 as well.
+    private static int classify(Declaration declaration, List<Declaration> all, Map<String, List<Declaration>> byName,
+            int[] kinds, Set<Integer> visiting) {
+        if (kinds[declaration.index] >= 0) {
+            return kinds[declaration.index];
+        }
+        if (declaration.problem == null) {
+            return kinds[declaration.index] = USABLE;
+        }
+        if (!visiting.add(declaration.index) || declaration.outside) {
+            declaration.missingFeature = null;
+            return kinds[declaration.index] = OUTSIDE;
+        }
+        String missing = declaration.missingFeature;
+        boolean outside = !wellFormed(declaration.expressionText);
+        if (declaration.problem.contains("smooth needs 1 or 4 arguments")) {
+            missing = missing != null ? missing : "smooth with 2 or 3 arguments";
+        } else if (declaration.problem.startsWith("it's part of the cycle")) {
+            outside = true;
+        }
+        Matcher token = TOKEN.matcher(declaration.expressionText);
+        while (!outside && token.find()) {
+            String name = token.group(1);
+            String base = name.indexOf('.') < 0 ? name : name.substring(0, name.indexOf('.'));
+            if (token.group(2) != null) {
+                if (UNIMPLEMENTED_FUNCTIONS.contains(name)) {
+                    missing = missing != null ? missing : "the function " + name;
+                } else if (!FUNCTIONS.contains(name)) {
+                    outside = true;
+                }
+                continue;
+            }
+            List<Declaration> declared = byName.get(name);
+            if (declared != null) {
+                int kind = classify(declared.get(0), all, byName, kinds, visiting);
+                if (kind == OUTSIDE) {
+                    outside = true;
+                } else if (kind == UNIMPLEMENTED) {
+                    missing = missing != null ? missing : name + ", which needs "
+                            + declared.get(0).missingFeature;
+                }
+            } else if (name.equals("pi") || name.equals("true") || name.equals("false") || name.equals("PPT_NONE")
+                    || name.equals("PPT_RAIN") || name.equals("PPT_SNOW") || CustomInput.find(name) != null) {
+                continue;
+            } else if (UNIMPLEMENTED_INPUTS.contains(base) && !CustomInput.isBaseName(base)) {
+                missing = missing != null ? missing : "the input " + base;
+            } else if (name.startsWith("BIOME_") && BIOMES.contains(name.substring("BIOME_".length()))) {
+                missing = missing != null ? missing : "the biome constants";
+            } else {
+                outside = true;
+            }
+        }
+        visiting.remove(declaration.index);
+        if (outside || missing == null) {
+            declaration.missingFeature = null;
+            return kinds[declaration.index] = OUTSIDE;
+        }
+        declaration.missingFeature = missing;
+        return kinds[declaration.index] = UNIMPLEMENTED;
     }
 
     private static boolean isBuiltInName(String name) {
@@ -251,6 +402,78 @@ public final class CustomUniforms {
                     + " Focalis yet");
         }
         throw new CustomExpressionParser.ParseException("there is nothing named " + name);
+    }
+
+    // The parser stops at its first problem, often a name, so the grammar is checked on its own, whatever the names.
+    private static boolean wellFormed(String text) {
+        List<String> tokens = new ArrayList<>();
+        Matcher token = SYNTAX_TOKEN.matcher(text);
+        int end = 0;
+        while (token.find()) {
+            if (!text.substring(end, token.start()).trim().isEmpty()) {
+                return false;
+            }
+            tokens.add(token.group());
+            end = token.end();
+        }
+        if (!text.substring(end).trim().isEmpty()) {
+            return false;
+        }
+        int[] position = {0};
+        return expression(tokens, position) && position[0] == tokens.size();
+    }
+
+    private static boolean expression(List<String> tokens, int[] position) {
+        if (!operand(tokens, position)) {
+            return false;
+        }
+        while (position[0] < tokens.size() && BINARY.contains(tokens.get(position[0]))) {
+            position[0]++;
+            if (!operand(tokens, position)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean operand(List<String> tokens, int[] position) {
+        while (position[0] < tokens.size() && "!-+".contains(tokens.get(position[0]))
+                && tokens.get(position[0]).length() == 1) {
+            position[0]++;
+        }
+        if (position[0] >= tokens.size()) {
+            return false;
+        }
+        String first = tokens.get(position[0]++);
+        if (first.equals("(")) {
+            return expression(tokens, position) && accept(tokens, position, ")");
+        }
+        if (Character.isDigit(first.charAt(0)) || first.charAt(0) == '.') {
+            return true;
+        }
+        if (!Character.isLetter(first.charAt(0)) && first.charAt(0) != '_') {
+            return false;
+        }
+        if (!accept(tokens, position, "(")) {
+            return true;
+        }
+        if (accept(tokens, position, ")")) {
+            return true;
+        }
+        do {
+            if (!expression(tokens, position)) {
+                return false;
+            }
+        } while (accept(tokens, position, ","));
+        return accept(tokens, position, ")");
+    }
+
+    private static boolean accept(List<String> tokens, int[] position, String expected) {
+        if (position[0] < tokens.size() && tokens.get(position[0]).equals(expected)) {
+            position[0]++;
+            return true;
+        }
+        return false;
     }
 
     private static int[] orderAndPropagate(List<Declaration> declarations) {
@@ -330,6 +553,10 @@ public final class CustomUniforms {
 
     public Map<String, Declaration> uniforms() {
         return uniforms;
+    }
+
+    public Map<String, Declaration> unimplemented() {
+        return unimplemented;
     }
 
     public int smoothSites() {

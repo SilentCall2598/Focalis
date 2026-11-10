@@ -213,6 +213,12 @@ public final class WorldProgramInputs {
                 }
                 continue;
             }
+            CustomUniforms.Declaration missing = customs.unimplemented().get(name);
+            if (missing != null) {
+                throw new ProgramBuildException(ProgramFailure.inputs(program.name(), program.name() + " reads the"
+                        + " custom uniform " + name + ", which needs " + missing.missingFeature()
+                        + ", and Focalis doesn't implement that yet"));
+            }
             unprovided.add(name);
         }
         int[] textureLocationArray = new int[textureLocations.size()];
