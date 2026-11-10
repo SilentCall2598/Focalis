@@ -30,7 +30,7 @@ public final class LegacyLighting {
     }
 
     static LegacyLighting read(ShaderPath file, String text, Map<String, String> environment, List<PackIssue> issues) {
-        List<ShaderProperties.Line> lines = ShaderProperties.readLines(file, text, environment,
+        List<ShaderProperties.Line> lines = ShaderProperties.readLines(file, text, environment, true,
                 new ArrayList<PackIssue>());
         Boolean oldLighting = null;
         Boolean separateAo = null;

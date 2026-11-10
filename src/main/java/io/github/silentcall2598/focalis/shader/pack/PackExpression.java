@@ -25,15 +25,28 @@ final class PackExpression {
 
     private final List<String> tokens;
     private final Names names;
+    private final boolean typed;
     private int position;
+    // Whether the value the last production returned is a truth value (comparison, defined, !, && or ||).
+    private boolean truth;
 
-    private PackExpression(List<String> tokens, Names names) {
+    private PackExpression(List<String> tokens, Names names, boolean typed) {
         this.tokens = tokens;
         this.names = names;
+        this.typed = typed;
     }
 
     static double evaluate(String text, Names names) throws ExpressionException {
-        PackExpression expression = new PackExpression(tokenize(text), names);
+        return evaluate(text, names, false);
+    }
+
+    /**
+     * @param typed whether {@code &&} and {@code ||} refuse a number as an operand. OptiFine HD U G5 refuses
+     *     {@code 3 > 2 || 0} in shaders.properties (observed 2026-11-10); other mixes weren't observed and stay
+     *     C-like.
+     */
+    static double evaluate(String text, Names names, boolean typed) throws ExpressionException {
+        PackExpression expression = new PackExpression(tokenize(text), names, typed);
         if (expression.tokens.isEmpty()) {
             throw new ExpressionException("empty expression");
         }
@@ -51,8 +64,11 @@ final class PackExpression {
     private double or() throws ExpressionException {
         double value = and();
         while (accept("||")) {
+            boolean leftTruth = truth;
             double right = and();
+            requireTruths("||", leftTruth);
             value = isTrue(value) || isTrue(right) ? 1 : 0;
+            truth = true;
         }
         return value;
     }
@@ -60,10 +76,19 @@ final class PackExpression {
     private double and() throws ExpressionException {
         double value = equality();
         while (accept("&&")) {
+            boolean leftTruth = truth;
             double right = equality();
+            requireTruths("&&", leftTruth);
             value = isTrue(value) && isTrue(right) ? 1 : 0;
+            truth = true;
         }
         return value;
+    }
+
+    private void requireTruths(String operator, boolean leftTruth) throws ExpressionException {
+        if (typed && !(leftTruth && truth)) {
+            throw new ExpressionException(operator + " needs a comparison or defined on both sides, not a number");
+        }
     }
 
     private double equality() throws ExpressionException {
@@ -76,6 +101,7 @@ final class PackExpression {
             } else {
                 return value;
             }
+            truth = true;
         }
     }
 
@@ -93,6 +119,7 @@ final class PackExpression {
             } else {
                 return value;
             }
+            truth = true;
         }
     }
 
@@ -106,6 +133,7 @@ final class PackExpression {
             } else {
                 return value;
             }
+            truth = false;
         }
     }
 
@@ -129,18 +157,25 @@ final class PackExpression {
             } else {
                 return value;
             }
+            truth = false;
         }
     }
 
     private double unary() throws ExpressionException {
         if (accept("!")) {
-            return isTrue(unary()) ? 0 : 1;
+            double value = isTrue(unary()) ? 0 : 1;
+            truth = true;
+            return value;
         }
         if (accept("-")) {
-            return -unary();
+            double value = -unary();
+            truth = false;
+            return value;
         }
         if (accept("+")) {
-            return unary();
+            double value = unary();
+            truth = false;
+            return value;
         }
         return primary();
     }
@@ -161,8 +196,10 @@ final class PackExpression {
             if (parenthesized) {
                 expect(")");
             }
+            truth = true;
             return names.defined(name) ? 1 : 0;
         }
+        truth = false;
         if (isNameStart(token.charAt(0))) {
             return names.value(token);
         }

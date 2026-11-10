@@ -208,7 +208,7 @@ public final class MaterialMappings {
         ShaderPath file = kind.file();
         // Removing before putting moves a repeated key to its latest line, so the order stays the file's.
         Map<String, Declaration> byKey = new LinkedHashMap<>();
-        for (ShaderProperties.Line line : ShaderProperties.readLines(file, text, macros, issues)) {
+        for (ShaderProperties.Line line : ShaderProperties.readLines(file, text, macros, false, issues)) {
             SourceLocation here = new SourceLocation(file, line.line);
             if (line.key.startsWith(kind.prefix)) {
                 String written = line.key.substring(kind.prefix.length());

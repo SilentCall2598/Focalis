@@ -12,9 +12,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Reads {@code shaders.properties} through its preprocessor. Directives may be indented, any other line starting
- * with {@code #} or {@code !} is a comment, and a line ending in a backslash continues on the next one. A key
- * written twice keeps its last value, like Java properties.
+ * Reads {@code shaders.properties} and the mapping files through their preprocessor. Directives may be indented, any
+ * other line starting with {@code #} or {@code !} is a comment, and a line ending in a backslash continues on the next
+ * one. A key written twice keeps its last value, like Java properties.
  */
 final class ShaderProperties {
 
@@ -68,17 +68,20 @@ final class ShaderProperties {
 
     /**
      * @param macros the macros visible at the start of the file. {@code #define} and {@code #undef} only change a copy.
+     * @param typed whether conditions use the stricter typing OptiFine applies to shaders.properties (see
+     *     {@link PackExpression#evaluate(String, PackExpression.Names, boolean)}). Mapping files keep C semantics.
      */
-    static Map<String, Property> read(ShaderPath file, String text, Map<String, String> macros,
+    static Map<String, Property> read(ShaderPath file, String text, Map<String, String> macros, boolean typed,
             List<PackIssue> issues) {
         Map<String, Property> properties = new LinkedHashMap<>();
-        for (Line line : readLines(file, text, macros, issues)) {
+        for (Line line : readLines(file, text, macros, typed, issues)) {
             properties.put(line.key, new Property(line.value, line.line));
         }
         return properties;
     }
 
-    static List<Line> readLines(ShaderPath file, String text, Map<String, String> macros, List<PackIssue> issues) {
+    static List<Line> readLines(ShaderPath file, String text, Map<String, String> macros, boolean typed,
+            List<PackIssue> issues) {
         Map<String, String> defined = new LinkedHashMap<>(macros);
         List<Line> properties = new ArrayList<>();
         Deque<Level> levels = new ArrayDeque<>();
@@ -91,7 +94,7 @@ final class ShaderProperties {
             if (directive.matches()) {
                 String argument = argument(directive.group(2));
                 SourceLocation here = new SourceLocation(file, lineNumber);
-                directive(directive.group(1), argument, active, levels, defined, here, issues);
+                directive(directive.group(1), argument, active, levels, defined, typed, here, issues);
                 continue;
             }
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
@@ -145,7 +148,7 @@ final class ShaderProperties {
     }
 
     private static void directive(String name, String argument, boolean active, Deque<Level> levels,
-            Map<String, String> defined, SourceLocation here, List<PackIssue> issues) {
+            Map<String, String> defined, boolean typed, SourceLocation here, List<PackIssue> issues) {
         switch (name) {
             case "define":
             case "undef": {
@@ -176,7 +179,7 @@ final class ShaderProperties {
                 return;
             }
             case "if":
-                levels.push(new Level(active, active && test(argument, defined, here, issues)));
+                levels.push(new Level(active, active && test(argument, defined, typed, here, issues)));
                 return;
             case "elif": {
                 Level level = levels.peek();
@@ -184,7 +187,7 @@ final class ShaderProperties {
                     issues.add(new PackIssue(here, level == null ? "#elif without #if" : "#elif after #else"));
                     return;
                 }
-                level.active = !level.taken && level.parentActive && test(argument, defined, here, issues);
+                level.active = !level.taken && level.parentActive && test(argument, defined, typed, here, issues);
                 level.taken |= level.active;
                 return;
             }
@@ -206,8 +209,8 @@ final class ShaderProperties {
         }
     }
 
-    // A name that isn't defined counts as 0, as in C. One that is defined has to be a number.
-    private static boolean test(String expression, Map<String, String> defined, SourceLocation here,
+    // A name that isn't defined counts as 0, as in C and in G5. One that is defined has to be a number.
+    private static boolean test(String expression, Map<String, String> defined, boolean typed, SourceLocation here,
             List<PackIssue> issues) {
         try {
             return PackExpression.isTrue(PackExpression.evaluate(expression, new PackExpression.Names() {
@@ -227,7 +230,7 @@ final class ShaderProperties {
                 public boolean defined(String name) {
                     return defined.containsKey(name);
                 }
-            }));
+            }, typed));
         } catch (PackExpression.ExpressionException e) {
             issues.add(new PackIssue(here, "Can't evaluate #if " + expression + ", so the block is skipped: "
                     + e.getMessage()));

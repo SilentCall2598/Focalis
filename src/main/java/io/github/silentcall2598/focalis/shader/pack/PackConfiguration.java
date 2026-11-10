@@ -7,12 +7,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -69,10 +67,12 @@ public final class PackConfiguration {
         Objects.requireNonNull(environment, "environment");
         ShaderOptions options = pack.options();
         String properties = pack.text(PROPERTIES);
-        List<PackIssue> profileIssues = new ArrayList<>();
-        Map<String, ShaderProperties.Property> profiles = properties == null
+        // G5 gives shaders.properties only the environment macros, not option macros or MC_OLD_LIGHTING (observed
+        // 2026-11-10), so the whole file reads the same whatever the options are.
+        List<PackIssue> propertyIssues = new ArrayList<>();
+        Map<String, ShaderProperties.Property> conditions = properties == null
                 ? Collections.<String, ShaderProperties.Property>emptyMap()
-                : ShaderProperties.read(PROPERTIES, properties, environment.asMap(), profileIssues);
+                : ShaderProperties.read(PROPERTIES, properties, environment.asMap(), true, propertyIssues);
 
         List<PackIssue> lightingIssues = new ArrayList<>();
         LegacyLighting lighting = properties == null ? LegacyLighting.UNSET
@@ -80,13 +80,13 @@ public final class PackConfiguration {
         ShaderMacros standard = lighting.faceShading() ? environment.with(StandardMacros.OLD_LIGHTING, "")
                 : environment;
 
-        Resolution resolution = new Resolution(pack, profiles);
+        Resolution resolution = new Resolution(pack, conditions);
         for (ShaderOption option : options.all().values()) {
             resolution.values.put(option.name(), option.defaultValue());
         }
         String profile = null;
         if (!settings.profile().isEmpty()) {
-            if (profiles.containsKey(PROFILE + settings.profile())) {
+            if (conditions.containsKey(PROFILE + settings.profile())) {
                 profile = settings.profile();
                 resolution.applyProfile(profile, new ArrayDeque<String>());
             } else {
@@ -96,31 +96,12 @@ public final class PackConfiguration {
         }
         resolution.applyEntries(settings.options(), null, null, null);
 
-        List<PackIssue> conditionIssues = new ArrayList<>();
-        Map<String, String> optionMacros = optionMacros(options, resolution.values, standard);
-        Map<String, ShaderProperties.Property> conditions = properties == null
-                ? Collections.<String, ShaderProperties.Property>emptyMap()
-                : ShaderProperties.read(PROPERTIES, properties, optionMacros, conditionIssues);
         resolution.applyConditions(conditions);
         CustomUniforms customUniforms = CustomUniforms.compile(PROPERTIES, conditions, resolution.issues);
         ProgramStates programStates = ProgramStates.read(PROPERTIES, conditions, resolution.issues);
         PackTextures textures = PackTextures.read(PROPERTIES, conditions, pack, resolution.issues);
         List<PackIssue> materialIssues = new ArrayList<>();
         MaterialMappings materialMappings = MaterialMappings.read(pack, environment.asMap(), materialIssues);
-
-        List<PackIssue> issues = new ArrayList<>(resolution.issues);
-        issues.addAll(lightingIssues);
-        Set<String> reported = new HashSet<>();
-        for (PackIssue issue : conditionIssues) {
-            issues.add(issue);
-            reported.add(issue.toString());
-        }
-        for (PackIssue issue : profileIssues) {
-            if (!reported.contains(issue.toString())) {
-                issues.add(issue);
-            }
-        }
-        issues.addAll(materialIssues);
 
         Map<String, String> changed = new LinkedHashMap<>();
         for (ShaderOption option : options.all().values()) {
@@ -129,27 +110,14 @@ public final class PackConfiguration {
                 changed.put(option.name(), value);
             }
         }
+        List<PackIssue> issues = new ArrayList<>(resolution.issues);
+        issues.addAll(lightingIssues);
+        issues.addAll(propertyIssues);
+        issues.addAll(materialIssues);
         return new PackConfiguration(pack, profile, Collections.unmodifiableMap(resolution.values),
                 Collections.unmodifiableMap(changed), Collections.unmodifiableMap(resolution.disabled),
                 Collections.unmodifiableMap(rewrite(pack, changed)), customUniforms, programStates, textures,
                 materialMappings, lighting, standard, Collections.unmodifiableList(issues));
-    }
-
-    private static Map<String, String> optionMacros(ShaderOptions options, Map<String, String> values,
-            ShaderMacros environment) {
-        Map<String, String> macros = new LinkedHashMap<>(environment.asMap());
-        for (ShaderOption option : options.all().values()) {
-            if (option.ambiguous() || macros.containsKey(option.name())) {
-                continue;
-            }
-            String value = values.get(option.name());
-            if (option.kind() == ShaderOption.Kind.VALUE) {
-                macros.put(option.name(), value);
-            } else if (option.kind() == ShaderOption.Kind.SWITCH && value.equals("true")) {
-                macros.put(option.name(), "");
-            }
-        }
-        return macros;
     }
 
     private static Map<ShaderPath, String> rewrite(ShaderPack pack, Map<String, String> changed) {
